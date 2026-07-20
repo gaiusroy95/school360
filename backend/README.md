@@ -36,4 +36,26 @@ Stack: Node.js, Express, Prisma, TypeScript, Neon PostgreSQL, JWT auth.
 | PATCH | `/api/institution/setup/:tileKey` | Yes | Update one tile |
 | POST | `/api/institution/setup/express` | Yes | Express Setup bulk apply |
 
-Default seed login: `admin@360schoolerp.com` / `Admin@12345`
+## Render.com deploy
+
+**Root Directory:** `backend`
+
+**Build Command:**
+```bash
+npm install && npm run prisma:migrate && npm run build
+```
+
+**Start Command:**
+```bash
+npm start
+```
+
+**Environment variables** (same as `.env.example`):
+- `DATABASE_URL` (Neon)
+- `JWT_SECRET`
+- `JWT_EXPIRES_IN`
+- `FRONTEND_URL` (your frontend URL)
+- `PORT` (Render sets this automatically; optional)
+
+> Note: `@types/*`, `typescript`, and `prisma` are in `dependencies` so production installs on Render still have them for `tsc` / `prisma generate`.
+
