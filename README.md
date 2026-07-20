@@ -1,20 +1,33 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# 360schoolERP
 
-# Run and deploy your AI Studio app
+Monorepo layout:
 
-This contains everything you need to run your app locally.
+- `frontend/` — React + Vite dashboard
+- `backend/` — Node.js + Express + Prisma API (Neon PostgreSQL)
 
-View your app in AI Studio: https://ai.studio/apps/3acf70e7-e786-4a48-8b26-c0f52b294431
+## Quick start
 
-## Run Locally
+### 1. Backend
+```bash
+cd backend
+cp .env.example .env
+# Paste your Neon DATABASE_URL and set JWT_SECRET
+npm install
+npm run prisma:generate
+npm run prisma:migrate
+npm run prisma:seed
+npm run dev
+```
+API: http://localhost:4000
 
-**Prerequisites:**  Node.js
+### 2. Frontend
+```bash
+cd frontend
+cp .env.example .env
+# Set VITE_API_URL=http://localhost:4000
+npm install
+npm run dev
+```
+App: http://localhost:3000
 
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+Default admin (seeded): `admin@360schoolerp.com` / `Admin@12345`

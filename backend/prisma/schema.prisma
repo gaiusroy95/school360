@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  STAFF
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String
+  role         UserRole @default(ADMIN)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/// One row per institution (tenant). Setup tiles store JSON for flexibility until Excel schema arrives.
+model Institution {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  setup InstitutionSetup?
+}
+
+model InstitutionSetup {
+  id            String @id @default(cuid())
+  institutionId String @unique
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  /// Keys match Institution Setup tiles (basicInformation, academicSetup, ...)
+  basicInformation   Json @default("{}")
+  academicSetup      Json @default("{}")
+  classesSections    Json @default("{}")
+  subjectsSetup      Json @default("{}")
+  departmentsSetup   Json @default("{}")
+  sessionTermSetup   Json @default("{}")
+  gradeMarksSetup    Json @default("{}")
+  feeGroupSetup      Json @default("{}")
+  documentSetup      Json @default("{}")
+  idCardNumbering    Json @default("{}")
+  calendarSetup      Json @default("{}")
+  customFieldsSetup  Json @default("{}")
+  notificationSetup  Json @default("{}")
+  otherPreferences   Json @default("{}")
+  integrationSetup   Json @default("{}")
+  backupRecovery     Json @default("{}")
+  securitySettings   Json @default("{}")
+  dataImportExport   Json @default("{}")
+
+  expressSetupCompletedAt DateTime?
+  lastExpressImportMeta   Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

@@ -1,8 +1,16 @@
+# Root
 node_modules/
-build/
-dist/
-coverage/
 .DS_Store
 *.log
-.env*
+.env
+.env.local
+.env.*.local
+
+# Keep examples
 !.env.example
+
+# Build outputs
+frontend/dist/
+frontend/build/
+backend/dist/
+coverage/
