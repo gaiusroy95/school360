@@ -30,8 +30,86 @@ model Institution {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  setup    InstitutionSetup?
-  holidays Holiday[]
+  setup     InstitutionSetup?
+  holidays  Holiday[]
+  enquiries Enquiry[]
+}
+
+enum EnquiryStatus {
+  NEW
+  IN_PROCESS
+  FOLLOW_UP
+  CONVERTED
+  NOT_INTERESTED
+}
+
+enum EnquiryActivityType {
+  SYSTEM
+  CALL
+  EMAIL
+  SMS
+  STATUS_CHANGE
+  NOTE
+  MEETING
+  VISIT
+  ASSIGN
+}
+
+/// Admission CRM — student / parent enquiries
+model Enquiry {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  enquiryId       String
+  enquiryDate     DateTime @default(now())
+  enquirerName    String
+  mobile          String
+  email           String   @default("")
+  classInterested String   @default("")
+  source          String   @default("Website")
+  status          EnquiryStatus @default(NEW)
+  assignedTo      String   @default("")
+  nextFollowUp    DateTime?
+  notes           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activities EnquiryActivity[]
+  tasks      FollowUpTask[]
+
+  @@unique([institutionId, enquiryId])
+  @@index([institutionId, status])
+  @@index([institutionId, enquiryDate])
+  @@index([institutionId, source])
+}
+
+model EnquiryActivity {
+  id         String              @id @default(cuid())
+  enquiryId  String
+  enquiry    Enquiry             @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  type       EnquiryActivityType @default(SYSTEM)
+  description String
+  performedBy String             @default("System")
+  createdAt  DateTime            @default(now())
+
+  @@index([enquiryId, createdAt])
+}
+
+model FollowUpTask {
+  id         String   @id @default(cuid())
+  enquiryId  String
+  enquiry    Enquiry  @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  title      String
+  assignedTo String   @default("")
+  dueDate    DateTime
+  status     String   @default("Pending") // Pending | Completed
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([enquiryId, dueDate])
+  @@index([dueDate, status])
 }
 
 enum HolidayType {

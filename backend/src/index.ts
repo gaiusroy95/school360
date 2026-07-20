@@ -4,6 +4,7 @@ import cors from 'cors';
 import { authRouter } from './routes/auth.js';
 import { institutionRouter } from './routes/institution.js';
 import { holidaysRouter } from './routes/holidays.js';
+import { enquiriesRouter } from './routes/enquiries.js';
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
@@ -34,6 +35,7 @@ app.get('/health', (_req, res) => {
 app.use('/api/auth', authRouter);
 app.use('/api/institution', institutionRouter);
 app.use('/api/holidays', holidaysRouter);
+app.use('/api/enquiries', enquiriesRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
