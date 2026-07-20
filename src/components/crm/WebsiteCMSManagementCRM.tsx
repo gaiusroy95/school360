@@ -126,7 +126,13 @@ const Sparkline = ({ color }: { color: string }) => {
   );
 };
 
-export function WebsiteCMSManagementCRM() {
+import { SubModuleView } from './shared/SubModuleView';
+
+export function WebsiteCMSManagementCRM({ currentView = 'Website Dashboard' }: { currentView?: string }) {
+  if (currentView && currentView !== 'Website Dashboard') {
+    return <SubModuleView module="Website & CMS Management" title={currentView} />;
+  }
+
   const [selectedPeriod, setSelectedPeriod] = useState('This Month');
 
   return (

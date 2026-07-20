@@ -119,7 +119,13 @@ const importantNotices = [
   { title: 'Reading competition registration open.', issuedBy: 'Library Admin', date: '13 May 2025', icon: <BookMarked size={14} className="text-green-600" />, bg: 'bg-green-50' },
 ];
 
-export function LibraryManagementCRM() {
+import { SubModuleView } from './shared/SubModuleView';
+
+export function LibraryManagementCRM({ currentView = 'Library Dashboard' }: { currentView?: string }) {
+  if (currentView && currentView !== 'Library Dashboard') {
+    return <SubModuleView module="Library Management" title={currentView} />;
+  }
+
   return (
     <div className="flex flex-col space-y-4 h-full relative">
       {/* Header */}

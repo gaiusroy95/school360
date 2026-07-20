@@ -86,7 +86,13 @@ const quickActions = [
   { label: 'Attendance Settings', icon: <Settings size={16} className="text-blue-600" /> },
 ];
 
-export function AttendanceManagementCRM() {
+import { SubModuleView } from './shared/SubModuleView';
+
+export function AttendanceManagementCRM({ currentView = 'Student Attendance' }: { currentView?: string }) {
+  if (currentView && currentView !== 'Student Attendance') {
+    return <SubModuleView module="Attendance Management" title={currentView} />;
+  }
+
   const [academicYear, setAcademicYear] = useState('2025-26');
   const [section, setSection] = useState('All Sections');
   const [loading, setLoading] = useState(false);

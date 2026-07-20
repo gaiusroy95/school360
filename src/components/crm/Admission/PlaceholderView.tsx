@@ -21,7 +21,7 @@ export function PlaceholderView({ title, description }: { title: string, descrip
         </p>
         <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg flex gap-3 text-sm max-w-lg text-left">
           <Lightbulb size={20} className="flex-shrink-0 text-amber-600" />
-          <p>This module is part of the end-to-end automation pipeline. It integrates seamlessly with the ERP architecture and Firebase real-time sync.</p>
+          <p>This module can be completed with real backend data in the next phase.</p>
         </div>
       </div>
     </div>

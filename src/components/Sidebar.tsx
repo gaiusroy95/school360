@@ -1,9 +1,10 @@
 import { 
   LayoutDashboard, Users, GraduationCap, BookOpen, ClipboardCheck, 
   FileText, IndianRupee, UserCircle, Bus, Library, Building, 
-  Archive, MessageSquare, Calendar, Globe, BarChart, Settings, 
-  ShieldAlert, ChevronRight, HelpCircle, X, CalendarDays, Building2
+  Archive, MessageSquare, CalendarDays, Globe, BarChart, Settings, 
+  ShieldAlert, ChevronRight, X, Building2
 } from 'lucide-react';
+import { isModuleActive, isSubActive, toViewKey } from '../lib/navigation';
 
 const menuItems = [
   { icon: LayoutDashboard, label: 'Dashboard' },
@@ -133,8 +134,8 @@ export function Sidebar({ isOpen, setIsOpen, currentView, setCurrentView }: Side
       <div className="flex-1 overflow-y-auto py-2 custom-scrollbar">
         <nav className="flex flex-col gap-0.5 px-3 text-[11px]">
           {menuItems.map((item, index) => {
-            const isActive = currentView === item.label || (item.subItems && item.subItems.includes(currentView));
-            const isExpanded = isActive; // Expand if active
+            const isActive = isModuleActive(currentView, item.label, item.subItems);
+            const isExpanded = isActive;
 
             return (
               <div key={index} className="flex flex-col">
@@ -146,7 +147,7 @@ export function Sidebar({ isOpen, setIsOpen, currentView, setCurrentView }: Side
                       setCurrentView(item.label);
                       if (window.innerWidth < 1024) setIsOpen(false);
                     } else if (!isActive) {
-                      setCurrentView(item.subItems[0]); // default to first sub-item
+                      setCurrentView(toViewKey(item.label, item.subItems[0]));
                     }
                   }}
                   className={`flex items-center justify-between p-2 rounded transition-colors group cursor-pointer ${
@@ -163,28 +164,30 @@ export function Sidebar({ isOpen, setIsOpen, currentView, setCurrentView }: Side
                   {isActive && item.subItems && <ChevronRight size={14} className="text-slate-900 rotate-90" />}
                 </a>
 
-                {/* Sub-items */}
                 {isExpanded && item.subItems && (
                   <div className="flex flex-col gap-0.5 pl-8 mt-1 border-l-2 border-slate-700/50 ml-4 py-1">
-                    {item.subItems.map((subItem, subIndex) => (
-                      <a
-                        key={subIndex}
-                        href="#"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          setCurrentView(subItem);
-                          if (window.innerWidth < 1024) setIsOpen(false);
-                        }}
-                        className={`flex items-center gap-2 py-1.5 px-2 rounded-md text-[10.5px] transition-colors ${
-                          currentView === subItem
-                            ? 'text-amber-400 font-bold'
-                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-                        }`}
-                      >
-                        <div className={`w-1 h-1 rounded-full ${currentView === subItem ? 'bg-amber-400' : 'bg-slate-500'}`}></div>
-                        <span>{subItem}</span>
-                      </a>
-                    ))}
+                    {item.subItems.map((subItem, subIndex) => {
+                      const subActive = isSubActive(currentView, item.label, subItem);
+                      return (
+                        <a
+                          key={subIndex}
+                          href="#"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setCurrentView(toViewKey(item.label, subItem));
+                            if (window.innerWidth < 1024) setIsOpen(false);
+                          }}
+                          className={`flex items-center gap-2 py-1.5 px-2 rounded-md text-[10.5px] transition-colors ${
+                            subActive
+                              ? 'text-amber-400 font-bold'
+                              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                          }`}
+                        >
+                          <div className={`w-1 h-1 rounded-full ${subActive ? 'bg-amber-400' : 'bg-slate-500'}`}></div>
+                          <span>{subItem}</span>
+                        </a>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -210,3 +213,5 @@ export function Sidebar({ isOpen, setIsOpen, currentView, setCurrentView }: Side
     </aside>
   );
 }
+
+export { menuItems };

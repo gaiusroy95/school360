@@ -129,7 +129,13 @@ const reports = [
   'Cash Flow Report'
 ];
 
-export function FeeFinanceManagementCRM() {
+import { SubModuleView } from './shared/SubModuleView';
+
+export function FeeFinanceManagementCRM({ currentView = 'Fee Dashboard' }: { currentView?: string }) {
+  if (currentView && currentView !== 'Fee Dashboard') {
+    return <SubModuleView module="Fees & Finance" title={currentView} />;
+  }
+
   const [academicYear, setAcademicYear] = useState('2025-26');
   const [financialYear, setFinancialYear] = useState('2025-26');
   const [loading, setLoading] = useState(false);

@@ -97,7 +97,13 @@ const importantNotices = [
   { text: 'Water supply maintenance on 19 May.', date: '14 May 2025', icon: <Wrench size={12} className="text-purple-600" />, bg: 'bg-purple-50' },
 ];
 
-export function HostelManagementCRM() {
+import { SubModuleView } from './shared/SubModuleView';
+
+export function HostelManagementCRM({ currentView = 'Hostel Dashboard' }: { currentView?: string }) {
+  if (currentView && currentView !== 'Hostel Dashboard') {
+    return <SubModuleView module="Hostel Management" title={currentView} />;
+  }
+
   const [selectedHostel, setSelectedHostel] = useState('All Hostels');
 
   return (

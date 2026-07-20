@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Building2, Calendar, Users, Building, ShieldCheck, CheckCircle2,
   MapPin, Phone, Link2, Info, GraduationCap, Layout, Book, List, 
@@ -158,16 +158,22 @@ const keyBenefits = [
   { title: 'Accuracy & Compliance', desc: 'Track activities and ensure rules', icon: <CheckCircle2 size={14} className="text-indigo-600" />, bg: 'bg-indigo-50' },
 ];
 
-export function InstitutionSetupCRM() {
-  const [currentView, setCurrentView] = useState('Overview');
+export function InstitutionSetupCRM({ currentView: externalView }: { currentView?: string }) {
+  const [override, setOverride] = useState<string | null>(null);
 
-  if (currentView === 'Express Setup') {
-    return <ExpressSetupView onBack={() => setCurrentView('Overview')} />;
+  useEffect(() => {
+    setOverride(null);
+  }, [externalView]);
+
+  const view = override ?? externalView ?? 'Overview';
+
+  if (view === 'Express Setup') {
+    return <ExpressSetupView onBack={() => setOverride('Overview')} />;
   }
 
-  const activeModule = setupModules.find(m => m.title === currentView);
+  const activeModule = setupModules.find((m) => m.title === view);
   if (activeModule) {
-    return <ModuleConfigView module={activeModule} onBack={() => setCurrentView('Overview')} />;
+    return <ModuleConfigView module={activeModule} onBack={() => setOverride('Overview')} />;
   }
 
   return (
@@ -180,7 +186,7 @@ export function InstitutionSetupCRM() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button 
-            onClick={() => setCurrentView('Express Setup')}
+            onClick={() => setOverride('Express Setup')}
             className="bg-indigo-600 text-white hover:bg-indigo-700 font-bold text-xs px-4 py-2 rounded flex items-center gap-2 shadow-sm transition-colors">
             <Zap size={14} />
             <span>Express Setup Engine</span>
@@ -243,9 +249,9 @@ export function InstitutionSetupCRM() {
                   <button 
                     onClick={() => {
                       if (card.id === 18) {
-                        setCurrentView('Express Setup');
+                        setOverride('Express Setup');
                       } else {
-                        setCurrentView(card.title);
+                        setOverride(card.title);
                       }
                     }}
                     className="w-full border border-blue-600 text-blue-600 hover:bg-blue-50 hover:text-blue-700 font-bold text-[10px] py-2 rounded transition-colors flex items-center justify-center gap-1.5">

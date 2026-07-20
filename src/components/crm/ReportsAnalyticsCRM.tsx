@@ -115,7 +115,13 @@ const Sparkline = ({ color }: { color: string }) => {
   );
 };
 
-export function ReportsAnalyticsCRM() {
+import { SubModuleView } from './shared/SubModuleView';
+
+export function ReportsAnalyticsCRM({ currentView = 'Reports Dashboard' }: { currentView?: string }) {
+  if (currentView && currentView !== 'Reports Dashboard') {
+    return <SubModuleView module="Reports & Analytics" title={currentView} />;
+  }
+
   const [dateRange, setDateRange] = useState('01 Apr 2025 - 17 May 2025');
   const [moduleFilter, setModuleFilter] = useState('All Modules');
 

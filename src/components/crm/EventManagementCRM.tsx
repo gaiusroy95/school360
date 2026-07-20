@@ -105,7 +105,13 @@ const keyBenefits = [
   { title: 'Certificates & Reports', desc: 'Generate certificates & reports', icon: <FileText size={14} className="text-indigo-600" /> },
 ];
 
-export function EventManagementCRM() {
+import { SubModuleView } from './shared/SubModuleView';
+
+export function EventManagementCRM({ currentView = 'Event Dashboard' }: { currentView?: string }) {
+  if (currentView && currentView !== 'Event Dashboard') {
+    return <SubModuleView module="Event Management" title={currentView} />;
+  }
+
   const [selectedPeriod, setSelectedPeriod] = useState('This Month');
   const [selectedEventGroup, setSelectedEventGroup] = useState('All Events');
 

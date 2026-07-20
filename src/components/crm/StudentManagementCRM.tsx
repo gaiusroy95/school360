@@ -3,7 +3,7 @@ import { Search, Filter, Phone, Mail, User, PhoneCall, Calendar as CalendarIcon,
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip as RechartsTooltip } from 'recharts';
 import { AddNewStudentView } from './StudentManagement/AddNewStudentView';
 import { StudentProfilesView } from './StudentManagement/StudentProfilesView';
-import { PlaceholderView } from './StudentManagement/PlaceholderView';
+import { SubModuleView } from './shared/SubModuleView';
 
 const kpis = [
   { title: 'Total Students', value: '5,248', trend: '▲ 8.5%', trendText: 'from last month', color: 'bg-indigo-600', icon: <Users size={20} /> },
@@ -64,7 +64,7 @@ export function StudentManagementCRM({ currentView = 'Students List' }: { curren
     return <StudentProfilesView />;
   }
   if (currentView && currentView !== 'Students List') {
-    return <PlaceholderView title={currentView} description={`This module handles the ${currentView.toLowerCase()} functionality.`} />;
+    return <SubModuleView module="Student Management" title={currentView} />;
   }
 
   const filteredStudents = studentsData.filter(student => {

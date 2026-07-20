@@ -43,7 +43,13 @@ const engagementTrend = [
   { name: 'May', messages: 300, ptm: 100, logins: 500 },
 ];
 
-export function ParentManagementCRM() {
+import { SubModuleView } from './shared/SubModuleView';
+
+export function ParentManagementCRM({ currentView = 'Parents List' }: { currentView?: string }) {
+  if (currentView && currentView !== 'Parents List') {
+    return <SubModuleView module="Parent Management" title={currentView} />;
+  }
+
   const [activeTab, setActiveTab] = useState('All Parents (4,897)');
   const [selectedParent, setSelectedParent] = useState(parentsData[0]);
 

@@ -107,7 +107,13 @@ const quickActions = [
   { label: 'Inventory Report', icon: <BarChart2 size={16} className="text-blue-600" /> },
 ];
 
-export function InventoryManagementCRM() {
+import { SubModuleView } from './shared/SubModuleView';
+
+export function InventoryManagementCRM({ currentView = 'Inventory Dashboard' }: { currentView?: string }) {
+  if (currentView && currentView !== 'Inventory Dashboard') {
+    return <SubModuleView module="Inventory Management" title={currentView} />;
+  }
+
   const [selectedLocation, setSelectedLocation] = useState('Main Store');
 
   return (

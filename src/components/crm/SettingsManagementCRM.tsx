@@ -230,7 +230,13 @@ const keyBenefits = [
   { title: 'Better Experience', desc: 'Enhance productivity for all users.', icon: <CheckCircle2 size={14} className="text-pink-600" />, bg: 'bg-pink-50' },
 ];
 
-export function SettingsManagementCRM() {
+import { SubModuleView } from './shared/SubModuleView';
+
+export function SettingsManagementCRM({ currentView = 'General Settings' }: { currentView?: string }) {
+  if (currentView && currentView !== 'General Settings') {
+    return <SubModuleView module="Settings Management" title={currentView} />;
+  }
+
   return (
     <div className="flex flex-col space-y-4 h-full relative">
       {/* Header */}

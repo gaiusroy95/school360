@@ -74,7 +74,13 @@ const studentPerformanceTrend = [
   { name: 'Class 10', value: 83 },
 ];
 
-export function AcademicManagementCRM() {
+import { SubModuleView } from './shared/SubModuleView';
+
+export function AcademicManagementCRM({ currentView = 'Class & Sections' }: { currentView?: string }) {
+  if (currentView && currentView !== 'Class & Sections') {
+    return <SubModuleView module="Academic Management" title={currentView} />;
+  }
+
   const [academicYear, setAcademicYear] = useState('2025-26');
   const [term, setTerm] = useState('Term 1');
   const [loading, setLoading] = useState(false);

@@ -92,7 +92,13 @@ const quickActions = [
   { label: 'Settings', icon: <Settings size={16} className="text-slate-600" /> },
 ];
 
-export function TransportManagementCRM() {
+import { SubModuleView } from './shared/SubModuleView';
+
+export function TransportManagementCRM({ currentView = 'Transport Dashboard' }: { currentView?: string }) {
+  if (currentView && currentView !== 'Transport Dashboard') {
+    return <SubModuleView module="Transport Management" title={currentView} />;
+  }
+
   const [activeTripTab, setActiveTripTab] = useState('Morning Trip');
 
   return (

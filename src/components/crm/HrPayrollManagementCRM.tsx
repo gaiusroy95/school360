@@ -141,7 +141,13 @@ const hrAnalytics = [
   { name: 'Attrition %', value: 0.78, trend: '-0.21%', trendUp: false, color: '#ef4444' },
 ];
 
-export function HrPayrollManagementCRM() {
+import { SubModuleView } from './shared/SubModuleView';
+
+export function HrPayrollManagementCRM({ currentView = 'Employee Dashboard' }: { currentView?: string }) {
+  if (currentView && currentView !== 'Employee Dashboard') {
+    return <SubModuleView module="HR & Payroll Management" title={currentView} />;
+  }
+
   const [activeTab, setActiveTab] = useState('Birthdays');
 
   return (

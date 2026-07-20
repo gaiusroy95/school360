@@ -6,7 +6,7 @@ interface TopBarProps {
 }
 
 export function TopBar({ onMenuClick }: TopBarProps) {
-  const { user, logout, isDemo } = useAuth();
+  const { user, logout } = useAuth();
   
   return (
     <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-10 shrink-0">
@@ -27,11 +27,6 @@ export function TopBar({ onMenuClick }: TopBarProps) {
           />
         </div>
 
-        {isDemo && (
-          <span className="hidden sm:inline-flex items-center text-[10px] font-bold uppercase tracking-wide bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1 rounded">
-            Demo Mode
-          </span>
-        )}
       </div>
 
       <div className="flex items-center gap-5">

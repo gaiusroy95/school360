@@ -146,7 +146,13 @@ const Gauge = ({ value, color, name }: { value: number, color: string, name: str
   );
 };
 
-export function SystemAdministrationCRM() {
+import { SubModuleView } from './shared/SubModuleView';
+
+export function SystemAdministrationCRM({ currentView = 'Admin Dashboard' }: { currentView?: string }) {
+  if (currentView && currentView !== 'Admin Dashboard') {
+    return <SubModuleView module="System Administration" title={currentView} />;
+  }
+
   const [maintenanceMode, setMaintenanceMode] = useState(false);
 
   return (

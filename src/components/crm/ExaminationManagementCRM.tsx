@@ -78,7 +78,13 @@ const quickActions = [
   { label: 'Exam Settings', icon: <ClipboardCheck size={16} className="text-blue-600" /> },
 ];
 
-export function ExaminationManagementCRM() {
+import { SubModuleView } from './shared/SubModuleView';
+
+export function ExaminationManagementCRM({ currentView = 'Exam Dashboard' }: { currentView?: string }) {
+  if (currentView && currentView !== 'Exam Dashboard') {
+    return <SubModuleView module="Examination Management" title={currentView} />;
+  }
+
   const [academicYear, setAcademicYear] = useState('2025-26');
   const [examType, setExamType] = useState('Final Examination');
   const [loading, setLoading] = useState(false);

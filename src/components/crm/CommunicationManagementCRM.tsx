@@ -102,7 +102,13 @@ const keyBenefits = [
   { title: 'Track & Analyze', desc: 'Measure performance & improve', icon: <BarChart2 size={16} className="text-indigo-600" />, bg: 'bg-indigo-50' },
 ];
 
-export function CommunicationManagementCRM() {
+import { SubModuleView } from './shared/SubModuleView';
+
+export function CommunicationManagementCRM({ currentView = 'Communication Dashboard' }: { currentView?: string }) {
+  if (currentView && currentView !== 'Communication Dashboard') {
+    return <SubModuleView module="Communication Management" title={currentView} />;
+  }
+
   const [activeTab, setActiveTab] = useState('Total Sent');
 
   return (

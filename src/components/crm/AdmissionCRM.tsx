@@ -18,7 +18,7 @@ import { ApplicationsView } from './Admission/ApplicationsView';
 import { FollowUpsView } from './Admission/FollowUpsView';
 import { AdmissionTestView } from './Admission/AdmissionTestView';
 import { CounsellingView } from './Admission/CounsellingView';
-import { PlaceholderView } from './Admission/PlaceholderView';
+import { SubModuleView } from './shared/SubModuleView';
 
 const SPARK_DATA_UP = [{v: 10}, {v: 15}, {v: 12}, {v: 20}, {v: 25}, {v: 22}, {v: 30}];
 const SPARK_DATA_DOWN = [{v: 30}, {v: 28}, {v: 22}, {v: 25}, {v: 15}, {v: 18}, {v: 10}];
@@ -188,7 +188,7 @@ export function AdmissionCRM({ currentView = 'Enquiries' }: { currentView?: stri
     return <AdmissionTestView />;
   }
   if (currentView && currentView !== 'Enquiries') {
-    return <PlaceholderView title={currentView} description={`This module handles the ${currentView.toLowerCase()} functionality for the Admission CRM.`} />;
+    return <SubModuleView module="Admission CRM" title={currentView} />;
   }
 
   return (
