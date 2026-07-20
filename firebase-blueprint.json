@@ -1,0 +1,18 @@
+{
+  "entities": {
+    "test": {
+      "title": "Test",
+      "description": "Test collection",
+      "type": "object",
+      "properties": {}
+    }
+  },
+  "firestore": {
+    "test/{docId}": {
+      "schema": {
+        "$ref": "#/entities/test"
+      },
+      "description": "Test connection"
+    }
+  }
+}
