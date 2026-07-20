@@ -12,6 +12,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { applyExpressSetup, updateInstitutionTile } from '../../../lib/institutionApi';
+import { importHolidays } from '../../../lib/holidayApi';
 import {
   downloadInstitutionSetupTemplate,
   parseInstitutionSetupWorkbook,
@@ -80,6 +81,14 @@ export function ExpressSetupView({ onBack }: { onBack: () => void }) {
         summary: parsed.summary,
         warnings: softErrors,
       });
+
+      if (parsed.holidays && parsed.holidays.length > 0) {
+        setProgress(75);
+        setProgressStatus(`Importing ${parsed.holidays.length} holidays into payroll calendar...`);
+        const year = Number(String(parsed.holidays[0].date).slice(0, 4)) || undefined;
+        await importHolidays(parsed.holidays, year);
+      }
+
       setProgress(100);
       setProgressStatus('Express setup committed successfully.');
       setTimeout(() => setStep('final_steps'), 600);

@@ -1,4 +1,15 @@
-export type FieldType = 'text' | 'textarea' | 'number' | 'email' | 'tel' | 'url' | 'date' | 'select' | 'checkbox' | 'password';
+export type FieldType =
+  | 'text'
+  | 'textarea'
+  | 'number'
+  | 'email'
+  | 'tel'
+  | 'url'
+  | 'date'
+  | 'select'
+  | 'multiselect'
+  | 'checkbox'
+  | 'password';
 
 export type SetupField = {
   key: string;
@@ -15,6 +26,13 @@ export type SetupSection = {
   title: string;
   description?: string;
   fields: SetupField[];
+  /** Repeatable rows stored as JSON in one section field (storageKey). */
+  dynamicList?: {
+    storageKey: string;
+    addLabel: string;
+    itemLabel?: string;
+    fields: SetupField[];
+  };
 };
 
 export type SetupTileSchema = {
@@ -355,7 +373,13 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         id: 'holidays',
         title: 'Holidays',
         fields: [
-          { key: 'holidayList', label: 'Holiday Dates (comma separated)', type: 'textarea', placeholder: '2025-01-26, 2025-08-15' },
+          {
+            key: 'holidayMasterNote',
+            label: 'Holiday Master',
+            type: 'text',
+            placeholder: 'Managed via Excel holiday list below',
+            help: 'Use the Holiday List panel (Excel upload). Synced with HR & Payroll calendar.',
+          },
         ],
       },
       {
@@ -421,15 +445,29 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
     desc: 'Define fee structures and policies',
     hasRecords: true,
     recordColumns: [
-      { key: 'feeGroupName', label: 'Fee Group Name' },
-      { key: 'applicableClasses', label: 'Applicable Classes' },
-      { key: 'feeTypes', label: 'Fee Types' },
-      { key: 'installments', label: 'Installments' },
-      { key: 'lateFee', label: 'Late Fee Rule' },
+      { key: 'class', label: 'Class' },
+      { key: 'section', label: 'Section' },
+      { key: 'frequency', label: 'Frequency' },
+      { key: 'refundable', label: 'Refundable?' },
+      { key: 'tuitionFee', label: 'Tuition Fee' },
+      { key: 'transportFee', label: 'Transport Fee' },
+      { key: 'hostelFee', label: 'Hostel Fee' },
+      { key: 'librarySecurityDeposit', label: 'Library Security Deposit' },
+      { key: 'cautionMoney', label: 'Caution Money' },
+      { key: 'computerLabFee', label: 'Computer Lab Fee' },
+      { key: 'picnicFieldTrip', label: 'Picnic / Field Trip' },
+      { key: 'addOnFee', label: 'Add-on Fee' },
+      { key: 'admissionFee', label: 'Admission Fee' },
+      { key: 'registrationFee', label: 'Registration Fee' },
+      { key: 'examinationFee', label: 'Examination Fee' },
+      { key: 'annualCharges', label: 'Annual Charges' },
+      { key: 'sportsFee', label: 'Sports Fee' },
+      { key: 'lateFine', label: 'Late Fine' },
     ],
     sampleRecords: [
-      { feeGroupName: 'Primary', applicableClasses: '1-5', feeTypes: 'Tuition, Transport', installments: '4', lateFee: '50/day after due' },
-      { feeGroupName: 'Middle', applicableClasses: '6-8', feeTypes: 'Tuition, Lab, Library', installments: '2', lateFee: '2%' },
+      { class: '1', section: 'A', frequency: 'Monthly', refundable: 'No' },
+      { class: '1', section: 'B', frequency: 'Monthly', refundable: 'No' },
+      { class: '2', section: 'A', frequency: 'Monthly', refundable: 'No' },
     ],
     sections: [
       {
@@ -443,7 +481,23 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         id: 'feeTypeSetup',
         title: 'Fee Type Setup',
         fields: [
-          { key: 'defaultFeeTypes', label: 'Default Fee Types', type: 'text', placeholder: 'Tuition, Transport, Hostel' },
+          {
+            key: 'defaultFeeTypes',
+            label: 'Default Fee Types',
+            type: 'multiselect',
+            options: [
+              'Tuition',
+              'Transport',
+              'Hostel',
+              'Lab',
+              'Library',
+              'Admission',
+              'Examination',
+              'Annual',
+              'Miscellaneous',
+            ],
+            help: 'Select fee types to use across fee groups. Stored as a comma-separated list.',
+          },
         ],
       },
       {
@@ -501,10 +555,34 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
       {
         id: 'requiredDocuments',
         title: 'Required Documents',
-        fields: [
-          { key: 'admissionRequired', label: 'Required For Admission', type: 'textarea', placeholder: 'Birth Certificate, Photo, Address Proof' },
-          { key: 'staffRequired', label: 'Required For Staff', type: 'textarea' },
-        ],
+        description: 'Add documents required for admission, staff, and other processes.',
+        fields: [],
+        dynamicList: {
+          storageKey: 'documents',
+          addLabel: 'Add Document',
+          itemLabel: 'Document',
+          fields: [
+            {
+              key: 'name',
+              label: 'Document Name',
+              type: 'text',
+              required: true,
+              placeholder: 'Birth Certificate',
+            },
+            {
+              key: 'requiredFor',
+              label: 'Required For',
+              type: 'select',
+              options: ['Admission', 'Staff', 'Both', 'Other'],
+            },
+            {
+              key: 'mandatory',
+              label: 'Mandatory',
+              type: 'select',
+              options: ['Yes', 'No'],
+            },
+          ],
+        },
       },
       {
         id: 'documentNumbering',
@@ -525,9 +603,20 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
       {
         id: 'idCardTemplates',
         title: 'ID Card Templates',
+        description: 'Select a printable ID card design and download class-wise PDFs.',
         fields: [
-          { key: 'studentTemplate', label: 'Student ID Template', type: 'text', placeholder: 'Standard Student Card' },
-          { key: 'staffTemplate', label: 'Staff ID Template', type: 'text', placeholder: 'Standard Staff Card' },
+          {
+            key: 'studentTemplate',
+            label: 'Student ID Template',
+            type: 'select',
+            options: ['Sai Jyoti Style', 'Adarsh Model Style', 'Classic University Style'],
+          },
+          {
+            key: 'staffTemplate',
+            label: 'Staff ID Template',
+            type: 'select',
+            options: ['Sai Jyoti Style', 'Adarsh Model Style', 'Classic University Style'],
+          },
         ],
       },
       {
@@ -573,37 +662,32 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
       {
         id: 'academicCalendar',
         title: 'Academic Calendar',
-        fields: [
-          { key: 'academicEvents', label: 'Academic Events', type: 'textarea', placeholder: 'Session Start, PTM, Annual Day' },
-        ],
+        description: 'Session milestones, PTMs, and academic milestones.',
+        fields: [],
       },
       {
         id: 'eventCalendar',
         title: 'Event Calendar',
-        fields: [
-          { key: 'schoolEvents', label: 'School Events', type: 'textarea' },
-        ],
+        description: 'School events, exhibitions, and celebrations.',
+        fields: [],
       },
       {
         id: 'examCalendar',
         title: 'Exam Calendar',
-        fields: [
-          { key: 'examEvents', label: 'Exam Events', type: 'textarea' },
-        ],
+        description: 'Unit tests, mid-terms, and board exams.',
+        fields: [],
       },
       {
         id: 'holidayCalendar',
         title: 'Holiday Calendar',
-        fields: [
-          { key: 'holidays', label: 'Holiday Calendar', type: 'textarea', placeholder: 'Republic Day, Independence Day...' },
-        ],
+        description: 'Institution holidays shared with HR & Payroll.',
+        fields: [],
       },
       {
         id: 'customEvents',
         title: 'Custom Events',
-        fields: [
-          { key: 'customEvents', label: 'Custom Events', type: 'textarea' },
-        ],
+        description: 'Custom institution events and reminders.',
+        fields: [],
       },
     ],
   },
@@ -946,10 +1030,15 @@ export function emptyTileData(tile: SetupTileSchema): Record<string, unknown> {
     for (const field of section.fields) {
       values[field.key] = '';
     }
+    if (section.dynamicList) {
+      values[section.dynamicList.storageKey] = '[]';
+    }
     sections[section.title] = values;
   }
   return {
     sections,
-    records: tile.hasRecords ? [] : undefined,
+    ...(tile.hasRecords
+      ? { records: [], recordColumns: tile.recordColumns ? [...tile.recordColumns] : [] }
+      : {}),
   };
 }

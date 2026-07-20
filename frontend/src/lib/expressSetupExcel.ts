@@ -9,6 +9,14 @@ export type ParsedExpressSetup = {
   tiles: Record<string, Record<string, unknown>>;
   summary: { sheet: string; fields: number; records: number }[];
   errors: string[];
+  holidays?: {
+    date: string;
+    name: string;
+    type?: string;
+    applicableTo?: string;
+    isPaid?: boolean;
+    notes?: string | null;
+  }[];
 };
 
 function settingsSheetName(tile: SetupTileSchema) {
@@ -59,6 +67,16 @@ export function downloadInstitutionSetupTemplate() {
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataRows), recordsSheetName(tile));
     }
   }
+
+  // Dedicated holiday list sheet (shared payroll calendar source)
+  const holidayRows = [
+    ['Date', 'Holiday Name', 'Type', 'Applicable To', 'Is Paid', 'Notes'],
+    ['2026-01-26', 'Republic Day', 'NATIONAL', 'ALL', 'Yes', ''],
+    ['2026-08-15', 'Independence Day', 'NATIONAL', 'ALL', 'Yes', ''],
+    ['2026-10-02', 'Gandhi Jayanti', 'NATIONAL', 'ALL', 'Yes', ''],
+    ['2026-12-25', 'Christmas', 'NATIONAL', 'ALL', 'Yes', ''],
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(holidayRows), 'Holidays');
 
   XLSX.writeFile(wb, 'Institution_Master_Setup.xlsx');
 }
@@ -167,5 +185,37 @@ export function parseInstitutionSetupWorkbook(file: ArrayBuffer): ParsedExpressS
     });
   }
 
-  return { tiles, summary, errors };
+  // Optional Holidays sheet → payroll/institution holiday master
+  const holidays: NonNullable<ParsedExpressSetup['holidays']> = [];
+  const holidayMatrix = sheetToMatrix(wb, 'Holidays');
+  if (holidayMatrix.length >= 2) {
+    const header = (holidayMatrix[0] || []).map((h) => String(h).trim().toLowerCase());
+    const idx = (names: string[]) =>
+      header.findIndex((h) => names.some((n) => h === n.toLowerCase()));
+    const dateIdx = idx(['date', 'holiday date']);
+    const nameIdx = idx(['holiday name', 'name', 'holiday']);
+    const typeIdx = idx(['type', 'holiday type']);
+    const audienceIdx = idx(['applicable to', 'audience']);
+    const paidIdx = idx(['is paid', 'paid']);
+    const notesIdx = idx(['notes', 'remark']);
+
+    for (let r = 1; r < holidayMatrix.length; r++) {
+      const row = holidayMatrix[r] || [];
+      const date = String(dateIdx >= 0 ? row[dateIdx] ?? '' : '').trim();
+      const name = String(nameIdx >= 0 ? row[nameIdx] ?? '' : '').trim();
+      if (!date || !name) continue;
+      const paidRaw = String(paidIdx >= 0 ? row[paidIdx] ?? 'Yes' : 'Yes').toLowerCase();
+      holidays.push({
+        date,
+        name,
+        type: String(typeIdx >= 0 ? row[typeIdx] ?? 'NATIONAL' : 'NATIONAL'),
+        applicableTo: String(audienceIdx >= 0 ? row[audienceIdx] ?? 'ALL' : 'ALL'),
+        isPaid: paidRaw !== 'no' && paidRaw !== 'false',
+        notes: String(notesIdx >= 0 ? row[notesIdx] ?? '' : '') || null,
+      });
+    }
+    summary.push({ sheet: 'Holidays', fields: 0, records: holidays.length });
+  }
+
+  return { tiles, summary, errors, holidays };
 }

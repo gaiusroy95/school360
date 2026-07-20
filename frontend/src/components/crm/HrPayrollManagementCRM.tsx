@@ -142,8 +142,19 @@ const hrAnalytics = [
 ];
 
 import { SubModuleView } from './shared/SubModuleView';
+import { PayrollCalendarView } from './hr/PayrollCalendarView';
+
+const PAYROLL_CALENDAR_VIEWS = new Set([
+  'Attendance & Leave',
+  'Leave Management',
+  'Payroll Management',
+  'Attendance Policy',
+]);
 
 export function HrPayrollManagementCRM({ currentView = 'Employee Dashboard' }: { currentView?: string }) {
+  if (currentView && PAYROLL_CALENDAR_VIEWS.has(currentView)) {
+    return <PayrollCalendarView title={currentView} />;
+  }
   if (currentView && currentView !== 'Employee Dashboard') {
     return <SubModuleView module="HR & Payroll Management" title={currentView} />;
   }

@@ -5,12 +5,29 @@ import {
   emptyTileData,
   getTileByTitle,
   type SetupField,
-  type SetupTileSchema,
+  type SetupSection,
 } from '../../../lib/institutionSetupSchema';
+import { HolidayManager } from './HolidayManager';
+import { AcademicCalendarView } from './AcademicCalendarView';
+import { IdCardTemplatesView } from './IdCardTemplatesView';
+import { ID_CARD_TEMPLATES } from './idCardTypes';
+import type { RecordColumn } from './masterListExcel';
+import { RecordsEditor } from './RecordsEditor';
+import type { CalendarSectionKey } from './calendarTypes';
+
+const CALENDAR_SECTION_MAP: Record<string, CalendarSectionKey> = {
+  'Academic Calendar': 'ACADEMIC',
+  'Event Calendar': 'EVENTS',
+  'Exam Calendar': 'EXAMINATION',
+  'Holiday Calendar': 'HOLIDAYS',
+  'Custom Events': 'CUSTOM',
+};
 
 type TileData = {
   sections: Record<string, Record<string, string>>;
   records?: Record<string, string>[];
+  /** When set (e.g. after Excel upload), these headers drive the Master List table. */
+  recordColumns?: RecordColumn[];
 };
 
 function FieldInput({
@@ -46,6 +63,42 @@ function FieldInput({
           </option>
         ))}
       </select>
+    );
+  }
+
+  if (field.type === 'multiselect') {
+    const selected = value
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const toggle = (opt: string) => {
+      const next = selected.includes(opt) ? selected.filter((s) => s !== opt) : [...selected, opt];
+      onChange(next.join(', '));
+    };
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {(field.options || []).map((opt) => {
+          const checked = selected.includes(opt);
+          return (
+            <label
+              key={opt}
+              className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-sm cursor-pointer transition-colors ${
+                checked
+                  ? 'border-indigo-400 bg-indigo-50/60 text-slate-800'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                checked={checked}
+                onChange={() => toggle(opt)}
+              />
+              <span className="font-medium">{opt}</span>
+            </label>
+          );
+        })}
+      </div>
     );
   }
 
@@ -102,9 +155,32 @@ export function ModuleConfigView({
         const raw = (setup[schema.key] as TileData) || null;
         if (!cancelled) {
           const base = emptyTileData(schema) as TileData;
+          const sections = { ...base.sections, ...(raw?.sections || {}) };
+          for (const section of schema.sections) {
+            if (!section.dynamicList) continue;
+            const vals = { ...(sections[section.title] || {}) };
+            const key = section.dynamicList.storageKey;
+            const current = vals[key];
+            const empty = !current || current === '[]';
+            if (empty && (vals.admissionRequired || vals.staffRequired)) {
+              vals[key] = JSON.stringify(
+                parseDynamicListItems(undefined, vals),
+              );
+              delete vals.admissionRequired;
+              delete vals.staffRequired;
+            } else if (!vals[key]) {
+              vals[key] = '[]';
+            }
+            sections[section.title] = vals;
+          }
           setData({
-            sections: { ...base.sections, ...(raw?.sections || {}) },
+            sections,
             records: schema.hasRecords ? raw?.records || [] : undefined,
+            recordColumns: schema.hasRecords
+              ? raw?.recordColumns?.length
+                ? raw.recordColumns
+                : schema.recordColumns
+              : undefined,
           });
         }
       } catch (e) {
@@ -144,10 +220,15 @@ export function ModuleConfigView({
     }));
   };
 
+  const activeColumns: RecordColumn[] =
+    data.recordColumns && data.recordColumns.length > 0
+      ? data.recordColumns
+      : schema.recordColumns || [];
+
   const addRecord = () => {
-    if (!schema.recordColumns) return;
+    if (!activeColumns.length) return;
     const blank: Record<string, string> = {};
-    for (const col of schema.recordColumns) blank[col.key] = '';
+    for (const col of activeColumns) blank[col.key] = '';
     setData((prev) => ({ ...prev, records: [...(prev.records || []), blank] }));
   };
 
@@ -166,12 +247,34 @@ export function ModuleConfigView({
     }));
   };
 
+  const replaceMasterList = (nextColumns: RecordColumn[], nextRecords: Record<string, string>[]) => {
+    setData((prev) => ({
+      ...prev,
+      records: nextRecords,
+      recordColumns: nextColumns,
+    }));
+    setMessage(
+      `Master list updated from Excel (${nextColumns.length} columns, ${nextRecords.length} rows). Click Save Configuration to keep these changes.`,
+    );
+    setError('');
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setError('');
     setMessage('');
     try {
-      await updateInstitutionTile(schema.key, data as unknown as Record<string, unknown>);
+      let payload: Record<string, unknown> = data as unknown as Record<string, unknown>;
+      // Preserve calendar events managed by AcademicCalendarView (not in form state)
+      if (schema.key === 'calendarSetup') {
+        const { setup } = await fetchInstitutionSetup();
+        const existing = (setup.calendarSetup || {}) as { events?: unknown[]; sections?: unknown };
+        payload = {
+          sections: data.sections,
+          events: Array.isArray(existing.events) ? existing.events : [],
+        };
+      }
+      await updateInstitutionTile(schema.key, payload);
       setMessage('Configuration saved to database.');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
@@ -250,7 +353,7 @@ export function ModuleConfigView({
           {loading ? (
             <p className="text-sm text-slate-500">Loading configuration...</p>
           ) : (
-            <div className="max-w-4xl space-y-4">
+            <div className="max-w-6xl space-y-4">
               {error && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
               {message && (
                 <p className="text-sm text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-2">{message}</p>
@@ -259,10 +362,37 @@ export function ModuleConfigView({
               {activeSection === '__records__' && schema.hasRecords ? (
                 <RecordsEditor
                   schema={schema}
+                  columns={activeColumns}
                   records={data.records || []}
                   onAdd={addRecord}
                   onChange={updateRecord}
                   onRemove={removeRecord}
+                  onReplaceMasterList={replaceMasterList}
+                />
+              ) : currentSection && CALENDAR_SECTION_MAP[currentSection.title] ? (
+                <AcademicCalendarView
+                  section={CALENDAR_SECTION_MAP[currentSection.title]}
+                  title={currentSection.title}
+                />
+              ) : currentSection?.title === 'Holidays' ? (
+                <HolidayManager
+                  title={currentSection.title}
+                  description="Upload Excel holiday list or add rows manually. This list is shared with HR & Payroll calendar for working-day calculation."
+                />
+              ) : currentSection?.title === 'ID Card Templates' ? (
+                <IdCardTemplatesView
+                  selectedTemplate={
+                    data.sections[currentSection.title]?.studentTemplate || ID_CARD_TEMPLATES[0].name
+                  }
+                  onSelectTemplate={(name) => setField(currentSection.title, 'studentTemplate', name)}
+                />
+              ) : currentSection?.dynamicList ? (
+                <DynamicListEditor
+                  sectionTitle={currentSection.title}
+                  description={currentSection.description}
+                  config={currentSection.dynamicList}
+                  sectionValues={data.sections[currentSection.title] || {}}
+                  onChange={(storageKey, json) => setField(currentSection.title, storageKey, json)}
                 />
               ) : (
                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
@@ -274,7 +404,11 @@ export function ModuleConfigView({
                     {currentSection.fields.map((field) => (
                       <div
                         key={field.key}
-                        className={field.type === 'textarea' ? 'md:col-span-2 space-y-1.5' : 'space-y-1.5'}
+                        className={
+                          field.type === 'textarea' || field.type === 'multiselect'
+                            ? 'md:col-span-2 space-y-1.5'
+                            : 'space-y-1.5'
+                        }
                       >
                         <label className="block text-xs font-bold text-slate-700">
                           {field.label}
@@ -299,77 +433,141 @@ export function ModuleConfigView({
   );
 }
 
-function RecordsEditor({
-  schema,
-  records,
-  onAdd,
+function parseDynamicListItems(
+  raw: string | undefined,
+  legacy?: Record<string, string>,
+): Record<string, string>[] {
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed.map((row) => {
+          if (row && typeof row === 'object') {
+            const out: Record<string, string> = {};
+            for (const [k, v] of Object.entries(row as Record<string, unknown>)) {
+              out[k] = v == null ? '' : String(v);
+            }
+            return out;
+          }
+          return {};
+        });
+      }
+    } catch {
+      /* fall through to legacy */
+    }
+  }
+  const items: Record<string, string>[] = [];
+  if (legacy?.admissionRequired) {
+    for (const name of legacy.admissionRequired.split(',').map((s) => s.trim()).filter(Boolean)) {
+      items.push({ name, requiredFor: 'Admission', mandatory: 'Yes' });
+    }
+  }
+  if (legacy?.staffRequired) {
+    for (const name of legacy.staffRequired.split(',').map((s) => s.trim()).filter(Boolean)) {
+      items.push({ name, requiredFor: 'Staff', mandatory: 'Yes' });
+    }
+  }
+  return items;
+}
+
+function DynamicListEditor({
+  sectionTitle,
+  description,
+  config,
+  sectionValues,
   onChange,
-  onRemove,
 }: {
-  schema: SetupTileSchema;
-  records: Record<string, string>[];
-  onAdd: () => void;
-  onChange: (index: number, key: string, value: string) => void;
-  onRemove: (index: number) => void;
+  sectionTitle: string;
+  description?: string;
+  config: NonNullable<SetupSection['dynamicList']>;
+  sectionValues: Record<string, string>;
+  onChange: (storageKey: string, json: string) => void;
 }) {
+  const items = parseDynamicListItems(sectionValues[config.storageKey], sectionValues);
+
+  const commit = (next: Record<string, string>[]) => {
+    onChange(config.storageKey, JSON.stringify(next));
+  };
+
+  const addItem = () => {
+    const blank: Record<string, string> = {};
+    for (const field of config.fields) blank[field.key] = '';
+    commit([...items, blank]);
+  };
+
+  const updateItem = (index: number, key: string, value: string) => {
+    const next = items.map((row, i) => (i === index ? { ...row, [key]: value } : row));
+    commit(next);
+  };
+
+  const removeItem = (index: number) => {
+    commit(items.filter((_, i) => i !== index));
+  };
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-4">
         <div>
-          <h2 className="text-base font-bold text-slate-800">Records / Master List</h2>
-          <p className="text-xs text-slate-500 mt-1">
-            Manage list data for this module. These rows are also filled by Express Setup Excel upload.
-          </p>
+          <h2 className="text-base font-bold text-slate-800">{sectionTitle}</h2>
+          {description && <p className="text-xs text-slate-500 mt-1">{description}</p>}
         </div>
         <button
           type="button"
-          onClick={onAdd}
-          className="px-3 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 rounded-lg text-xs font-bold flex items-center gap-1"
+          onClick={addItem}
+          className="px-3 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 rounded-lg text-xs font-bold flex items-center gap-1 shrink-0"
         >
-          <Plus size={14} /> Add Row
+          <Plus size={14} /> {config.addLabel}
         </button>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs">
-          <thead className="bg-slate-50 text-slate-500 border-b border-slate-100">
-            <tr>
-              {(schema.recordColumns || []).map((col) => (
-                <th key={col.key} className="px-3 py-2 font-semibold whitespace-nowrap">
-                  {col.label}
-                </th>
+
+      {items.length === 0 ? (
+        <p className="text-sm text-slate-400 text-center py-8 border border-dashed border-slate-200 rounded-lg">
+          No documents yet. Click “{config.addLabel}” to add one.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {items.map((row, index) => (
+            <div
+              key={index}
+              className="border border-slate-200 rounded-lg p-4 grid grid-cols-1 md:grid-cols-2 gap-3 relative"
+            >
+              <div className="md:col-span-2 flex items-center justify-between gap-2">
+                <p className="text-xs font-bold text-slate-500">
+                  {config.itemLabel || 'Item'} {index + 1}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => removeItem(index)}
+                  className="text-red-500 hover:text-red-700 p-1"
+                  title="Remove"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+              {config.fields.map((field) => (
+                <div
+                  key={field.key}
+                  className={
+                    field.type === 'textarea' || field.type === 'multiselect'
+                      ? 'md:col-span-2 space-y-1.5'
+                      : 'space-y-1.5'
+                  }
+                >
+                  <label className="block text-xs font-bold text-slate-700">
+                    {field.label}
+                    {field.required ? <span className="text-red-500"> *</span> : null}
+                  </label>
+                  <FieldInput
+                    field={field}
+                    value={row[field.key] || ''}
+                    onChange={(v) => updateItem(index, field.key, v)}
+                  />
+                </div>
               ))}
-              <th className="px-3 py-2 font-semibold">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {records.length === 0 && (
-              <tr>
-                <td colSpan={(schema.recordColumns?.length || 0) + 1} className="px-3 py-6 text-center text-slate-400">
-                  No records yet. Add a row or import via Express Setup Engine.
-                </td>
-              </tr>
-            )}
-            {records.map((row, i) => (
-              <tr key={i} className="border-b border-slate-50">
-                {(schema.recordColumns || []).map((col) => (
-                  <td key={col.key} className="px-2 py-2">
-                    <input
-                      className="w-full min-w-[120px] border border-slate-200 rounded px-2 py-1.5"
-                      value={row[col.key] || ''}
-                      onChange={(e) => onChange(i, col.key, e.target.value)}
-                    />
-                  </td>
-                ))}
-                <td className="px-2 py-2">
-                  <button type="button" onClick={() => onRemove(i)} className="text-red-500 hover:text-red-700 p-1">
-                    <Trash2 size={14} />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

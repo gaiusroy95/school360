@@ -30,7 +30,42 @@ model Institution {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  setup InstitutionSetup?
+  setup    InstitutionSetup?
+  holidays Holiday[]
+}
+
+enum HolidayType {
+  NATIONAL
+  RESTRICTED
+  OPTIONAL
+  INSTITUTIONAL
+  OTHER
+}
+
+enum HolidayAudience {
+  ALL
+  STAFF
+  STUDENTS
+}
+
+/// Shared holiday master — used by Institution Setup + HR/Payroll calendar
+model Holiday {
+  id            String          @id @default(cuid())
+  institutionId String
+  institution   Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  date        DateTime        @db.Date
+  name        String
+  type        HolidayType     @default(NATIONAL)
+  applicableTo HolidayAudience @default(ALL)
+  isPaid      Boolean         @default(true)
+  notes       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([institutionId, date, name])
+  @@index([institutionId, date])
 }
 
 model InstitutionSetup {
