@@ -315,13 +315,20 @@ export function ModuleConfigView({
                   onChange={(key, value) => setField(currentSection.title, key, value)}
                 />
               ) : currentSection?.dynamicList ? (
-                <DynamicListEditor
-                  sectionTitle={currentSection.title}
-                  description={currentSection.description}
-                  config={currentSection.dynamicList}
-                  sectionValues={data.sections[currentSection.title] || {}}
-                  onChange={(storageKey, json) => setField(currentSection.title, storageKey, json)}
-                />
+                <>
+                  {schema.key === 'documentSetup' &&
+                    (currentSection.title === 'Application Form Documents' ||
+                      currentSection.title === 'Required Documents') && (
+                      <DocumentSetupWorkflowNote sectionTitle={currentSection.title} />
+                    )}
+                  <DynamicListEditor
+                    sectionTitle={currentSection.title}
+                    description={currentSection.description}
+                    config={currentSection.dynamicList}
+                    sectionValues={data.sections[currentSection.title] || {}}
+                    onChange={(storageKey, json) => setField(currentSection.title, storageKey, json)}
+                  />
+                </>
               ) : (
                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
                   <h2 className="text-base font-bold text-slate-800 mb-1">{currentSection.title}</h2>
@@ -359,6 +366,29 @@ export function ModuleConfigView({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function DocumentSetupWorkflowNote({ sectionTitle }: { sectionTitle: string }) {
+  return (
+    <div className="mb-4 p-4 bg-sky-50 border border-sky-100 rounded-xl text-sm text-sky-900">
+      <p className="font-semibold">How document upload works</p>
+      <ol className="mt-2 space-y-1.5 text-xs text-sky-800 list-decimal list-inside">
+        <li>
+          On <span className="font-semibold">{sectionTitle}</span>, click{' '}
+          <span className="font-semibold">Add Document Type</span> and enter the document name (e.g.
+          Transfer Certificate).
+        </li>
+        <li>
+          Click <span className="font-semibold">Save Configuration</span> at the top of this page.
+        </li>
+        <li>
+          Go to <span className="font-semibold">Admission CRM → Applications</span>, open a student
+          application, and use <span className="font-semibold">Upload</span> in the Required Documents
+          panel to attach the actual file.
+        </li>
+      </ol>
     </div>
   );
 }
@@ -454,7 +484,8 @@ function DynamicListEditor({
 
       {items.length === 0 ? (
         <p className="text-sm text-slate-400 text-center py-8 border border-dashed border-slate-200 rounded-lg">
-          No {config.itemLabel?.toLowerCase() || 'items'} yet. Click “{config.addLabel}” to add one.
+          No {config.itemLabel?.toLowerCase() || 'items'} yet. Click &ldquo;{config.addLabel}&rdquo; to
+          define a document type, then save configuration.
         </p>
       ) : (
         <div className="space-y-3">

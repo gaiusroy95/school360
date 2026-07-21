@@ -539,7 +539,7 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
     key: 'documentSetup',
     title: 'Document Setup',
     sheetName: '09 Document Setup',
-    desc: 'Upload and manage important documents',
+    desc: 'Configure document types and templates — student file uploads happen in Admission CRM → Applications',
     sections: [
       {
         id: 'documentCategories',
@@ -558,6 +558,8 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
       {
         id: 'documentTemplates',
         title: 'Document Templates',
+        description:
+          'Reference notes for blank forms (e.g. TC format). Printable template file upload can be added here later; student uploads use Admission CRM → Applications.',
         fields: [
           { key: 'templateNotes', label: 'Template Notes', type: 'textarea' },
         ],
@@ -566,11 +568,11 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         id: 'applicationFormDocuments',
         title: 'Application Form Documents',
         description:
-          'Add documents that counselors can upload on the Admission CRM application form. Save configuration after adding.',
+          'Define which document types appear on the Admission CRM application form. This does not upload files — counselors upload PDFs/images per student under Admission CRM → Applications.',
         fields: [],
         dynamicList: {
           storageKey: 'applicationDocuments',
-          addLabel: 'Add Document',
+          addLabel: 'Add Document Type',
           itemLabel: 'Document',
           fields: [
             {
@@ -610,11 +612,12 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
       {
         id: 'requiredDocuments',
         title: 'Required Documents',
-        description: 'Add documents required for admission, staff, and other processes.',
+        description:
+          'Define required document types for admission, staff, and other processes. Used as fallback when Application Form Documents is empty.',
         fields: [],
         dynamicList: {
           storageKey: 'documents',
-          addLabel: 'Add Document',
+          addLabel: 'Add Document Type',
           itemLabel: 'Document',
           fields: [
             {
