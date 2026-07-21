@@ -32,7 +32,7 @@ export function RecordsEditor({
     setImportMessage('');
     try {
       const buffer = await file.arrayBuffer();
-      const parsed = parseMasterListWorkbook(buffer);
+      const parsed = parseMasterListWorkbook(buffer, columns.length ? columns : schema.recordColumns);
       if (!parsed.columns.length) {
         throw new Error('No columns found in Excel. Row 1 must contain headers.');
       }

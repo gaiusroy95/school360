@@ -27,7 +27,7 @@ const DEFAULT_SCHOOL: IdCardSchool = {
 
 function templateIdFromName(name: string): IdCardTemplateId {
   const found = ID_CARD_TEMPLATES.find((t) => t.name === name);
-  return found?.id || 'saiJyoti';
+  return found?.id || 'stAnthony';
 }
 
 function schoolFromSetup(setup: Record<string, unknown> | null): IdCardSchool {
@@ -44,6 +44,7 @@ function schoolFromSetup(setup: Record<string, unknown> | null): IdCardSchool {
   const name = profile.institutionName || profile.shortName || DEFAULT_SCHOOL.name;
   const addr = [address.addressLine1, address.city, address.state].filter(Boolean).join(', ') || DEFAULT_SCHOOL.address;
   const phone = address.phone || DEFAULT_SCHOOL.phone;
+  const website = address.website || '';
   const sessionLabel =
     sessionInfo.sessionName || sessionInfo.currentSession || sessionInfo.academicYear || DEFAULT_SCHOOL.session;
 
@@ -53,6 +54,7 @@ function schoolFromSetup(setup: Record<string, unknown> | null): IdCardSchool {
     phone,
     session: sessionLabel,
     logoUrl: basic?.sections?.['Logo & Branding']?.logoUrl || undefined,
+    website: website || undefined,
   };
 }
 
@@ -166,7 +168,7 @@ export function IdCardTemplatesView({ selectedTemplate, onSelectTemplate }: Prop
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 mb-5">
           {ID_CARD_TEMPLATES.map((tpl) => {
             const active = templateId === tpl.id;
             return (
@@ -266,5 +268,7 @@ function buildPlaceholderStudents(className: string): IdCardStudent[] {
     aadhaar: '0000000000',
     course: base,
     batch: '2025-26',
+    bloodGroup: 'O+',
+    designation: 'Student',
   }));
 }

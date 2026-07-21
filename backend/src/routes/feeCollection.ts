@@ -152,8 +152,21 @@ feeCollectionRouter.get(
 
     const schedule = findFeeSchedule(ctx.schedules, className, sectionName);
     if (!schedule) {
+      const available = ctx.schedules
+        .filter((s) => s.heads.length > 0)
+        .map((s) => `${s.class}${s.section ? `-${s.section}` : ''}`)
+        .join(', ');
       return res.status(404).json({
-        error: `No fee schedule found for ${className} ${sectionName}. Add it in Institution Setup → Fee Group Setup.`,
+        error: available
+          ? `No fee schedule found for class "${className}"${sectionName ? ` section "${sectionName}"` : ''}. Configured: ${available}. Add a row in Institution Setup → Fee Group Setup → Records / Master List.`
+          : `No fee schedule found for class "${className}". Add class-wise fee amounts in Institution Setup → Fee Group Setup → Records / Master List.`,
+      });
+    }
+
+    if (schedule.heads.length === 0) {
+      return res.status(404).json({
+        error: `Fee row exists for ${schedule.class}-${schedule.section} but no fee amounts are set. Enter Admission Fee, Tuition Fee, etc. in Records / Master List and save.`,
+        schedule,
       });
     }
 

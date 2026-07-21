@@ -94,10 +94,18 @@ export async function fetchApplication(id: string) {
   return api<{ application: Application }>(`/api/applications/${id}`);
 }
 
+export type ApplicationFormDocument = {
+  name: string;
+  description: string;
+  mandatory: boolean;
+  acceptedFormats: string;
+};
+
 export async function fetchApplicationMeta() {
   return api<{
     statuses: string[];
     documentTypes: string[];
+    applicationDocuments: ApplicationFormDocument[];
     comparisonFields: { key: string; label: string }[];
   }>('/api/applications/meta');
 }

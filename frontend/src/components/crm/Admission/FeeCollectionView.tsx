@@ -159,6 +159,7 @@ export function FeeCollectionView() {
   const [tab, setTab] = useState<'collect' | 'history'>('collect');
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [scheduleHeads, setScheduleHeads] = useState<FeeHead[]>([]);
+  const [scheduleHint, setScheduleHint] = useState('');
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [paymentMode, setPaymentMode] = useState('Cash');
   const [remarks, setRemarks] = useState('');
@@ -205,23 +206,29 @@ export function FeeCollectionView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadScheduleForStudent = useCallback(async (student: FeeStudent) => {
-    try {
-      const res = await fetchFeeSchedule(student.className, student.sectionName);
-      setScheduleHeads(res.schedule.heads);
-      setSelectedKeys(new Set(res.schedule.heads.map((h) => h.key)));
-      setErrorMsg(null);
-    } catch (err) {
-      setScheduleHeads([]);
-      setSelectedKeys(new Set());
-      setErrorMsg(err instanceof Error ? err.message : 'Failed to load fee schedule');
-    }
-  }, []);
+  const loadScheduleForStudent = useCallback(
+    async (student: FeeStudent) => {
+      try {
+        const res = await fetchFeeSchedule(student.className, student.sectionName);
+        setScheduleHeads(res.schedule.heads);
+        setSelectedKeys(new Set(res.schedule.heads.map((h) => h.key)));
+        setScheduleHint('');
+        setErrorMsg(null);
+      } catch (err) {
+        setScheduleHeads([]);
+        setSelectedKeys(new Set());
+        const message = err instanceof Error ? err.message : 'Failed to load fee schedule';
+        setScheduleHint(message);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!selectedStudent) {
       setScheduleHeads([]);
       setSelectedKeys(new Set());
+      setScheduleHint('');
       return;
     }
     void loadScheduleForStudent(selectedStudent);
@@ -435,9 +442,36 @@ export function FeeCollectionView() {
                   )}
                 </div>
                 {scheduleHeads.length === 0 ? (
-                  <p className="text-sm text-slate-500 py-4 text-center border border-dashed border-slate-200 rounded-lg">
-                    No fee heads for this class/section. Configure in Institution Setup.
-                  </p>
+                  <div className="text-sm text-slate-500 py-4 px-3 text-center border border-dashed border-slate-200 rounded-lg space-y-2">
+                    <p>
+                      No fee heads for{' '}
+                      <span className="font-semibold text-slate-700">
+                        {selectedStudent?.className}
+                        {selectedStudent?.sectionName ? ` — ${selectedStudent.sectionName}` : ''}
+                      </span>
+                      .
+                    </p>
+                    {scheduleHint ? (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
+                        {scheduleHint}
+                      </p>
+                    ) : (
+                      <p className="text-xs">
+                        Add class-wise fee amounts in{' '}
+                        <span className="font-semibold">Institution Setup → Fee Group Setup → Records / Master List</span>,
+                        then save configuration.
+                      </p>
+                    )}
+                    {meta && meta.schedules.length > 0 && (
+                      <p className="text-[10px] text-slate-400">
+                        Configured classes:{' '}
+                        {meta.schedules
+                          .filter((s) => s.heads.length > 0)
+                          .map((s) => `${s.class}${s.section ? `-${s.section}` : ''}`)
+                          .join(', ') || 'rows exist but fee amounts are empty'}
+                      </p>
+                    )}
+                  </div>
                 ) : (
                   <div className="space-y-2 max-h-48 overflow-y-auto border border-slate-100 rounded-lg p-2">
                     {scheduleHeads.map((head) => (

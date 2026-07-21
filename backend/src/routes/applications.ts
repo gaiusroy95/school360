@@ -12,6 +12,10 @@ import { getDefaultInstitutionId } from '../lib/institution.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireApprover } from '../middleware/roles.js';
 import { ensureAdmissionRecordForApprovedApp } from '../lib/admissionRecords.js';
+import {
+  isKnownDocumentType,
+  parseApplicationFormDocuments,
+} from '../lib/applicationDocuments.js';
 
 export const applicationsRouter = Router();
 applicationsRouter.use(requireAuth);
@@ -147,12 +151,18 @@ function serializeDocument(d: {
   uploadedAt: Date;
   uploadedBy: string;
 }) {
+  const extracted = (d.extractedFields || {}) as Record<string, string>;
+  const customLabel = extracted.documentLabel?.trim();
+  const typeLabel =
+    d.type === ApplicationDocumentType.OTHER && customLabel
+      ? customLabel
+      : DOC_TYPE_DB_TO_UI[d.type];
   return {
     id: d.id,
-    type: DOC_TYPE_DB_TO_UI[d.type],
+    type: typeLabel,
     fileName: d.fileName,
     mimeType: d.mimeType,
-    extractedFields: (d.extractedFields || {}) as Record<string, string>,
+    extractedFields: extracted,
     uploadedAt: d.uploadedAt.toISOString(),
     uploadedBy: d.uploadedBy,
   };
@@ -275,9 +285,16 @@ const documentBodySchema = z.object({
 });
 
 applicationsRouter.get('/meta', async (_req, res) => {
+  const institutionId = await getDefaultInstitutionId();
+  const institution = await prisma.institution.findUnique({
+    where: { id: institutionId },
+    include: { setup: true },
+  });
+  const applicationDocuments = parseApplicationFormDocuments(institution?.setup?.documentSetup);
   return res.json({
     statuses: Object.values(STATUS_DB_TO_UI),
-    documentTypes: Object.values(DOC_TYPE_DB_TO_UI),
+    documentTypes: applicationDocuments.map((d) => d.name),
+    applicationDocuments,
     comparisonFields: COMPARISON_FIELDS.map((f) => ({ key: f.key, label: f.label })),
   });
 });
@@ -547,7 +564,12 @@ applicationsRouter.post('/:id/documents', async (req, res) => {
       fileName: data.fileName,
       mimeType: data.mimeType || 'application/octet-stream',
       fileData: raw,
-      extractedFields: data.extractedFields || {},
+      extractedFields: {
+        ...(data.extractedFields || {}),
+        ...(!isKnownDocumentType(data.type) && toDocType(data.type) === ApplicationDocumentType.OTHER
+          ? { documentLabel: data.type.trim() }
+          : {}),
+      },
       uploadedBy: req.user?.email || 'Counselor',
     },
   });

@@ -1,3 +1,5 @@
+import { DEFAULT_RECIPIENT_ROLES, NOTIFICATION_MEDIUMS, NOTIFICATION_TRIGGER_EVENTS, RECIPIENT_ROLE_OPTIONS } from './notificationTriggerEvents';
+
 export type FieldType =
   | 'text'
   | 'textarea'
@@ -8,6 +10,7 @@ export type FieldType =
   | 'date'
   | 'select'
   | 'multiselect'
+  | 'eventMultiselect'
   | 'checkbox'
   | 'password';
 
@@ -19,6 +22,7 @@ export type SetupField = {
   placeholder?: string;
   options?: string[];
   help?: string;
+  defaultValue?: string;
 };
 
 export type SetupSection = {
@@ -559,6 +563,51 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         ],
       },
       {
+        id: 'applicationFormDocuments',
+        title: 'Application Form Documents',
+        description:
+          'Add documents that counselors can upload on the Admission CRM application form. Save configuration after adding.',
+        fields: [],
+        dynamicList: {
+          storageKey: 'applicationDocuments',
+          addLabel: 'Add Document',
+          itemLabel: 'Document',
+          fields: [
+            {
+              key: 'name',
+              label: 'Document Name',
+              type: 'text',
+              required: true,
+              placeholder: 'Transfer Certificate',
+            },
+            {
+              key: 'description',
+              label: 'Description',
+              type: 'text',
+              placeholder: 'Previous school transfer certificate',
+            },
+            {
+              key: 'mandatory',
+              label: 'Mandatory',
+              type: 'select',
+              options: ['Yes', 'No'],
+            },
+            {
+              key: 'acceptedFormats',
+              label: 'Accepted Formats',
+              type: 'text',
+              placeholder: 'PDF, JPG, PNG',
+            },
+            {
+              key: 'active',
+              label: 'Show on Application Form',
+              type: 'select',
+              options: ['Yes', 'No'],
+            },
+          ],
+        },
+      },
+      {
         id: 'requiredDocuments',
         title: 'Required Documents',
         description: 'Add documents required for admission, staff, and other processes.',
@@ -615,13 +664,29 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
             key: 'studentTemplate',
             label: 'Student ID Template',
             type: 'select',
-            options: ['Sai Jyoti Style', 'Adarsh Model Style', 'Classic University Style'],
+            options: [
+              "St. Anthony's College Style",
+              'Sai Jyoti Style',
+              'Adarsh Model Style',
+              'Classic University Style',
+              'Emerald Crest Style',
+              'Modern Minimal Style',
+              'Royal Maroon Style',
+            ],
           },
           {
             key: 'staffTemplate',
             label: 'Staff ID Template',
             type: 'select',
-            options: ['Sai Jyoti Style', 'Adarsh Model Style', 'Classic University Style'],
+            options: [
+              "St. Anthony's College Style",
+              'Sai Jyoti Style',
+              'Adarsh Model Style',
+              'Classic University Style',
+              'Emerald Crest Style',
+              'Modern Minimal Style',
+              'Royal Maroon Style',
+            ],
           },
         ],
       },
@@ -665,6 +730,13 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
     sheetName: '11 Calendar Setup',
     desc: 'Manage institution events and calendars',
     sections: [
+      {
+        id: 'comprehensiveCalendar',
+        title: 'Comprehensive View',
+        description:
+          'Unified calendar syncing Academic, Events, Exams, Holidays, and Custom — publish to Staff, Student, and Parent apps.',
+        fields: [],
+      },
       {
         id: 'academicCalendar',
         title: 'Academic Calendar',
@@ -751,7 +823,13 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         title: 'Email Notifications',
         fields: [
           { key: 'emailEnabled', label: 'Enable Email Notifications', type: 'select', options: ['Yes', 'No'] },
-          { key: 'emailEvents', label: 'Trigger Events', type: 'textarea', placeholder: 'Fee Due, Attendance Alert, Result Published' },
+          {
+            key: 'emailEvents',
+            label: 'Trigger Events',
+            type: 'eventMultiselect',
+            options: [...NOTIFICATION_TRIGGER_EVENTS],
+            help: 'Select one or more system events that send email notifications to customers.',
+          },
         ],
       },
       {
@@ -759,7 +837,13 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         title: 'SMS Notifications',
         fields: [
           { key: 'smsEnabled', label: 'Enable SMS Notifications', type: 'select', options: ['Yes', 'No'] },
-          { key: 'smsEvents', label: 'Trigger Events', type: 'textarea' },
+          {
+            key: 'smsEvents',
+            label: 'Trigger Events',
+            type: 'eventMultiselect',
+            options: [...NOTIFICATION_TRIGGER_EVENTS],
+            help: 'Select one or more system events that send SMS notifications to customers.',
+          },
         ],
       },
       {
@@ -767,20 +851,105 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         title: 'Push Notifications',
         fields: [
           { key: 'pushEnabled', label: 'Enable Push Notifications', type: 'select', options: ['Yes', 'No'] },
+          {
+            key: 'pushEvents',
+            label: 'Trigger Events',
+            type: 'eventMultiselect',
+            options: [...NOTIFICATION_TRIGGER_EVENTS],
+            help: 'Select one or more system events that send push notifications to customers.',
+          },
         ],
       },
       {
         id: 'notificationTemplates',
         title: 'Notification Templates',
-        fields: [
-          { key: 'defaultTemplates', label: 'Default Templates Notes', type: 'textarea' },
-        ],
+        description:
+          'Create and manage message templates for WhatsApp, SMS, Email, Push, and Voice. Each template can be linked to one or more trigger events.',
+        fields: [],
+        dynamicList: {
+          storageKey: 'templates',
+          addLabel: 'Add Template',
+          itemLabel: 'Template',
+          fields: [
+            {
+              key: 'templateName',
+              label: 'Template Name',
+              type: 'text',
+              required: true,
+              placeholder: 'Fee Due Reminder',
+            },
+            {
+              key: 'medium',
+              label: 'Medium',
+              type: 'select',
+              required: true,
+              options: [...NOTIFICATION_MEDIUMS],
+              defaultValue: 'Email',
+            },
+            {
+              key: 'triggerEvents',
+              label: 'Trigger Events',
+              type: 'eventMultiselect',
+              options: [...NOTIFICATION_TRIGGER_EVENTS],
+              help: 'Send this template when any of these events occur.',
+            },
+            {
+              key: 'subject',
+              label: 'Subject / Title',
+              type: 'text',
+              placeholder: 'Fee reminder for {{studentName}}',
+              help: 'Used for Email and Push notifications.',
+            },
+            {
+              key: 'messageBody',
+              label: 'Message Body',
+              type: 'textarea',
+              placeholder:
+                'Dear {{parentName}}, this is a reminder that fee of ₹{{amount}} is due on {{dueDate}}. — {{institutionName}}',
+              help: 'Use placeholders like {{studentName}}, {{parentName}}, {{amount}}, {{dueDate}}.',
+            },
+            {
+              key: 'active',
+              label: 'Active',
+              type: 'select',
+              options: ['Yes', 'No'],
+              defaultValue: 'Yes',
+            },
+          ],
+        },
       },
       {
         id: 'notificationPreferences',
         title: 'Notification Preferences',
         fields: [
-          { key: 'recipientRoles', label: 'Default Recipient Roles', type: 'text', placeholder: 'Parent, Student, Admin' },
+          {
+            key: 'preferenceEvents',
+            label: 'Trigger Events',
+            type: 'eventMultiselect',
+            options: [...NOTIFICATION_TRIGGER_EVENTS],
+            help: 'Select default trigger events for all notification channels.',
+          },
+          {
+            key: 'recipientRoles',
+            label: 'Default Recipient Roles',
+            type: 'multiselect',
+            options: [...RECIPIENT_ROLE_OPTIONS],
+            defaultValue: DEFAULT_RECIPIENT_ROLES,
+            help: 'Parent, Student, and Admin are selected by default.',
+          },
+          {
+            key: 'testRecipient',
+            label: 'Test Recipient (Phone / Email)',
+            type: 'text',
+            placeholder: '+91 9876543210 or parent@email.com',
+          },
+          {
+            key: 'testMedium',
+            label: 'Test Medium',
+            type: 'select',
+            options: [...NOTIFICATION_MEDIUMS],
+            defaultValue: 'SMS',
+          },
         ],
       },
     ],
@@ -1034,7 +1203,7 @@ export function emptyTileData(tile: SetupTileSchema): Record<string, unknown> {
   for (const section of tile.sections) {
     const values: Record<string, string> = {};
     for (const field of section.fields) {
-      values[field.key] = '';
+      values[field.key] = field.defaultValue ?? '';
     }
     if (section.dynamicList) {
       values[section.dynamicList.storageKey] = '[]';

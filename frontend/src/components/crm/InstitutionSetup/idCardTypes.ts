@@ -12,6 +12,8 @@ export type IdCardStudent = {
   photoUrl?: string;
   course?: string;
   batch?: string;
+  bloodGroup?: string;
+  designation?: string;
 };
 
 export type IdCardSchool = {
@@ -20,15 +22,28 @@ export type IdCardSchool = {
   phone: string;
   session: string;
   logoUrl?: string;
+  website?: string;
 };
 
-export type IdCardTemplateId = 'saiJyoti' | 'adarsh' | 'oxford';
+export type IdCardTemplateId =
+  | 'saiJyoti'
+  | 'adarsh'
+  | 'oxford'
+  | 'stAnthony'
+  | 'emeraldCrest'
+  | 'modernMinimal'
+  | 'royalMaroon';
 
 export const ID_CARD_TEMPLATES: {
   id: IdCardTemplateId;
   name: string;
   description: string;
 }[] = [
+  {
+    id: 'stAnthony',
+    name: "St. Anthony's College Style",
+    description: 'Yellow header, navy curves, photo frame and contact footer',
+  },
   {
     id: 'saiJyoti',
     name: 'Sai Jyoti Style',
@@ -43,6 +58,21 @@ export const ID_CARD_TEMPLATES: {
     id: 'oxford',
     name: 'Classic University Style',
     description: 'Teal header, clean fields, dual signature footer',
+  },
+  {
+    id: 'emeraldCrest',
+    name: 'Emerald Crest Style',
+    description: 'Green crest header with gold border and formal fields',
+  },
+  {
+    id: 'modernMinimal',
+    name: 'Modern Minimal Style',
+    description: 'Black and white layout with bold typography',
+  },
+  {
+    id: 'royalMaroon',
+    name: 'Royal Maroon Style',
+    description: 'Maroon and cream design with ribbon class badge',
   },
 ];
 
@@ -61,6 +91,8 @@ export const DEMO_ID_CARD_STUDENTS: IdCardStudent[] = [
     aadhaar: '1234-5678-9012',
     course: 'Primary',
     batch: '2025-26',
+    bloodGroup: 'B+',
+    designation: 'Student',
   },
   {
     id: '2',
@@ -75,6 +107,8 @@ export const DEMO_ID_CARD_STUDENTS: IdCardStudent[] = [
     aadhaar: '2345-6789-0123',
     course: 'Primary',
     batch: '2025-26',
+    bloodGroup: 'B+',
+    designation: 'Student',
   },
   {
     id: '3',
@@ -89,6 +123,8 @@ export const DEMO_ID_CARD_STUDENTS: IdCardStudent[] = [
     aadhaar: '1234567890',
     course: 'Secondary',
     batch: '2025-26',
+    bloodGroup: 'A+',
+    designation: 'Student',
   },
   {
     id: '4',
@@ -103,6 +139,8 @@ export const DEMO_ID_CARD_STUDENTS: IdCardStudent[] = [
     aadhaar: '9876543210',
     course: 'Secondary',
     batch: '2025-26',
+    bloodGroup: 'O+',
+    designation: 'Student',
   },
   {
     id: '5',
@@ -117,6 +155,8 @@ export const DEMO_ID_CARD_STUDENTS: IdCardStudent[] = [
     aadhaar: '1122334455',
     course: 'MBBS Prep',
     batch: 'MHD-21',
+    bloodGroup: 'AB+',
+    designation: 'Student',
   },
   {
     id: '6',
@@ -131,6 +171,8 @@ export const DEMO_ID_CARD_STUDENTS: IdCardStudent[] = [
     aadhaar: '5566778899',
     course: 'Primary',
     batch: '2025-26',
+    bloodGroup: 'B+',
+    designation: 'Student',
   },
 ];
 

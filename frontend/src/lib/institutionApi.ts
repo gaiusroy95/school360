@@ -27,6 +27,20 @@ export async function applyExpressSetup(
   });
 }
 
+export async function sendTestNotification(payload: {
+  recipient: string;
+  medium: string;
+  message?: string;
+}) {
+  return api<{ message: string; medium: string; recipient: string }>(
+    '/api/institution/notifications/test',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
 /** Map UI tile title → API tile key */
 export const TILE_KEY_BY_TITLE: Record<string, string> = {
   'Basic Information': 'basicInformation',

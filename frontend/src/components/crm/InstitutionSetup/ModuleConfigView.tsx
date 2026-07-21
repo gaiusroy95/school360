@@ -9,7 +9,10 @@ import {
 } from '../../../lib/institutionSetupSchema';
 import { HolidayManager } from './HolidayManager';
 import { AcademicCalendarView } from './AcademicCalendarView';
+import { ComprehensiveCalendarView } from './ComprehensiveCalendarView';
 import { IdCardTemplatesView } from './IdCardTemplatesView';
+import { NotificationPreferencesView } from './NotificationPreferencesView';
+import { SetupFieldInput } from './SetupFieldInput';
 import { ID_CARD_TEMPLATES } from './idCardTypes';
 import type { RecordColumn } from './masterListExcel';
 import { RecordsEditor } from './RecordsEditor';
@@ -29,102 +32,6 @@ type TileData = {
   /** When set (e.g. after Excel upload), these headers drive the Master List table. */
   recordColumns?: RecordColumn[];
 };
-
-function FieldInput({
-  field,
-  value,
-  onChange,
-}: {
-  field: SetupField;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  const base =
-    'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white';
-
-  if (field.type === 'textarea') {
-    return (
-      <textarea
-        className={`${base} min-h-[88px]`}
-        value={value}
-        placeholder={field.placeholder}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    );
-  }
-
-  if (field.type === 'select') {
-    return (
-      <select className={base} value={value} onChange={(e) => onChange(e.target.value)}>
-        <option value="">Select...</option>
-        {(field.options || []).map((opt) => (
-          <option key={opt} value={opt}>
-            {opt}
-          </option>
-        ))}
-      </select>
-    );
-  }
-
-  if (field.type === 'multiselect') {
-    const selected = value
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    const toggle = (opt: string) => {
-      const next = selected.includes(opt) ? selected.filter((s) => s !== opt) : [...selected, opt];
-      onChange(next.join(', '));
-    };
-    return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {(field.options || []).map((opt) => {
-          const checked = selected.includes(opt);
-          return (
-            <label
-              key={opt}
-              className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-sm cursor-pointer transition-colors ${
-                checked
-                  ? 'border-indigo-400 bg-indigo-50/60 text-slate-800'
-                  : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
-              }`}
-            >
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                checked={checked}
-                onChange={() => toggle(opt)}
-              />
-              <span className="font-medium">{opt}</span>
-            </label>
-          );
-        })}
-      </div>
-    );
-  }
-
-  if (field.type === 'checkbox') {
-    return (
-      <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-        <input
-          type="checkbox"
-          checked={value === 'Yes' || value === 'true'}
-          onChange={(e) => onChange(e.target.checked ? 'Yes' : 'No')}
-        />
-        Enabled
-      </label>
-    );
-  }
-
-  return (
-    <input
-      type={field.type === 'password' ? 'password' : field.type}
-      className={base}
-      value={value}
-      placeholder={field.placeholder}
-      onChange={(e) => onChange(e.target.value)}
-    />
-  );
-}
 
 export function ModuleConfigView({
   module,
@@ -157,19 +64,25 @@ export function ModuleConfigView({
           const base = emptyTileData(schema) as TileData;
           const sections = { ...base.sections, ...(raw?.sections || {}) };
           for (const section of schema.sections) {
-            if (!section.dynamicList) continue;
             const vals = { ...(sections[section.title] || {}) };
-            const key = section.dynamicList.storageKey;
-            const current = vals[key];
-            const empty = !current || current === '[]';
-            if (empty && (vals.admissionRequired || vals.staffRequired)) {
-              vals[key] = JSON.stringify(
-                parseDynamicListItems(undefined, vals),
-              );
-              delete vals.admissionRequired;
-              delete vals.staffRequired;
-            } else if (!vals[key]) {
-              vals[key] = '[]';
+            for (const field of section.fields) {
+              if (!vals[field.key] && field.defaultValue) {
+                vals[field.key] = field.defaultValue;
+              }
+            }
+            if (section.dynamicList) {
+              const key = section.dynamicList.storageKey;
+              const current = vals[key];
+              const empty = !current || current === '[]';
+              if (empty && (vals.admissionRequired || vals.staffRequired)) {
+                vals[key] = JSON.stringify(
+                  parseDynamicListItems(undefined, vals),
+                );
+                delete vals.admissionRequired;
+                delete vals.staffRequired;
+              } else if (!vals[key]) {
+                vals[key] = '[]';
+              }
             }
             sections[section.title] = vals;
           }
@@ -268,10 +181,17 @@ export function ModuleConfigView({
       // Preserve calendar events managed by AcademicCalendarView (not in form state)
       if (schema.key === 'calendarSetup') {
         const { setup } = await fetchInstitutionSetup();
-        const existing = (setup.calendarSetup || {}) as { events?: unknown[]; sections?: unknown };
+        const existing = (setup.calendarSetup || {}) as {
+          events?: unknown[];
+          sections?: unknown;
+          publish?: unknown;
+          publishedEvents?: unknown;
+        };
         payload = {
           sections: data.sections,
           events: Array.isArray(existing.events) ? existing.events : [],
+          publish: existing.publish,
+          publishedEvents: existing.publishedEvents,
         };
       }
       await updateInstitutionTile(schema.key, payload);
@@ -369,6 +289,8 @@ export function ModuleConfigView({
                   onRemove={removeRecord}
                   onReplaceMasterList={replaceMasterList}
                 />
+              ) : currentSection?.title === 'Comprehensive View' ? (
+                <ComprehensiveCalendarView />
               ) : currentSection && CALENDAR_SECTION_MAP[currentSection.title] ? (
                 <AcademicCalendarView
                   section={CALENDAR_SECTION_MAP[currentSection.title]}
@@ -385,6 +307,12 @@ export function ModuleConfigView({
                     data.sections[currentSection.title]?.studentTemplate || ID_CARD_TEMPLATES[0].name
                   }
                   onSelectTemplate={(name) => setField(currentSection.title, 'studentTemplate', name)}
+                />
+              ) : currentSection?.title === 'Notification Preferences' ? (
+                <NotificationPreferencesView
+                  fields={currentSection.fields}
+                  values={data.sections[currentSection.title] || {}}
+                  onChange={(key, value) => setField(currentSection.title, key, value)}
                 />
               ) : currentSection?.dynamicList ? (
                 <DynamicListEditor
@@ -405,7 +333,9 @@ export function ModuleConfigView({
                       <div
                         key={field.key}
                         className={
-                          field.type === 'textarea' || field.type === 'multiselect'
+                          field.type === 'textarea' ||
+                          field.type === 'multiselect' ||
+                          field.type === 'eventMultiselect'
                             ? 'md:col-span-2 space-y-1.5'
                             : 'space-y-1.5'
                         }
@@ -414,7 +344,7 @@ export function ModuleConfigView({
                           {field.label}
                           {field.required ? <span className="text-red-500"> *</span> : null}
                         </label>
-                        <FieldInput
+                        <SetupFieldInput
                           field={field}
                           value={data.sections[currentSection.title]?.[field.key] || ''}
                           onChange={(v) => setField(currentSection.title, field.key, v)}
@@ -491,7 +421,9 @@ function DynamicListEditor({
 
   const addItem = () => {
     const blank: Record<string, string> = {};
-    for (const field of config.fields) blank[field.key] = '';
+    for (const field of config.fields) {
+      blank[field.key] = field.defaultValue ?? '';
+    }
     commit([...items, blank]);
   };
 
@@ -522,7 +454,7 @@ function DynamicListEditor({
 
       {items.length === 0 ? (
         <p className="text-sm text-slate-400 text-center py-8 border border-dashed border-slate-200 rounded-lg">
-          No documents yet. Click “{config.addLabel}” to add one.
+          No {config.itemLabel?.toLowerCase() || 'items'} yet. Click “{config.addLabel}” to add one.
         </p>
       ) : (
         <div className="space-y-3">
@@ -532,9 +464,21 @@ function DynamicListEditor({
               className="border border-slate-200 rounded-lg p-4 grid grid-cols-1 md:grid-cols-2 gap-3 relative"
             >
               <div className="md:col-span-2 flex items-center justify-between gap-2">
-                <p className="text-xs font-bold text-slate-500">
-                  {config.itemLabel || 'Item'} {index + 1}
-                </p>
+                <div className="flex items-center gap-2 flex-wrap min-w-0">
+                  <p className="text-xs font-bold text-slate-800 truncate">
+                    {row.templateName || `${config.itemLabel || 'Item'} ${index + 1}`}
+                  </p>
+                  {row.medium && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-semibold shrink-0">
+                      {row.medium}
+                    </span>
+                  )}
+                  {row.active === 'No' && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-semibold shrink-0">
+                      Inactive
+                    </span>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={() => removeItem(index)}
@@ -548,7 +492,9 @@ function DynamicListEditor({
                 <div
                   key={field.key}
                   className={
-                    field.type === 'textarea' || field.type === 'multiselect'
+                    field.type === 'textarea' ||
+                    field.type === 'multiselect' ||
+                    field.type === 'eventMultiselect'
                       ? 'md:col-span-2 space-y-1.5'
                       : 'space-y-1.5'
                   }
@@ -557,11 +503,12 @@ function DynamicListEditor({
                     {field.label}
                     {field.required ? <span className="text-red-500"> *</span> : null}
                   </label>
-                  <FieldInput
+                  <SetupFieldInput
                     field={field}
                     value={row[field.key] || ''}
                     onChange={(v) => updateItem(index, field.key, v)}
                   />
+                  {field.help && <p className="text-[10px] text-slate-400">{field.help}</p>}
                 </div>
               ))}
             </div>

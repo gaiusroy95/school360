@@ -26,6 +26,7 @@ import {
   validatePdfFile,
   type Application,
   type ApplicationDocument,
+  type ApplicationFormDocument,
 } from '../../../lib/applicationServices';
 
 function formatDate(iso: string): string {
@@ -58,6 +59,7 @@ export function ApplicationsView() {
     'Previous Marksheet',
     'Address Proof',
   ]);
+  const [applicationDocuments, setApplicationDocuments] = useState<ApplicationFormDocument[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -262,12 +264,13 @@ export function ApplicationsView() {
     }
   };
 
-  const handleUploadClick = () => {
+  const handleUploadClick = (docType?: string) => {
     if (!selectedId) {
       showError('Select an application from the list first, or create one from Enquiries.');
       return;
     }
     if (submitting) return;
+    if (docType) setUploadType(docType);
     fileInputRef.current?.click();
   };
 
@@ -404,7 +407,11 @@ export function ApplicationsView() {
 
   useEffect(() => {
     void fetchApplicationMeta()
-      .then((m) => setDocumentTypes(m.documentTypes))
+      .then((m) => {
+        setDocumentTypes(m.documentTypes);
+        setApplicationDocuments(m.applicationDocuments);
+        if (m.documentTypes[0]) setUploadType(m.documentTypes[0]);
+      })
       .catch(() => undefined);
   }, []);
 
@@ -440,7 +447,7 @@ export function ApplicationsView() {
         </div>
         <button
           type="button"
-          onClick={handleUploadClick}
+          onClick={() => handleUploadClick()}
           disabled={submitting}
           className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
@@ -653,7 +660,7 @@ export function ApplicationsView() {
                         <p className="mb-3">Upload a document to begin verification</p>
                         <button
                           type="button"
-                          onClick={handleUploadClick}
+                          onClick={() => handleUploadClick()}
                           disabled={submitting}
                           className="px-3 py-1.5 bg-indigo-600 text-white rounded text-xs font-medium hover:bg-indigo-700 disabled:opacity-50"
                         >
@@ -703,6 +710,80 @@ export function ApplicationsView() {
                       <FormInput label="Address" value={formDraft.address} onChange={(v) => setFormDraft((p) => ({ ...p, address: v }))} />
                     </div>
                   )}
+
+                  <div className="mb-4 p-3 border border-slate-200 rounded-lg bg-white space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-bold text-slate-800">Required Documents</p>
+                      <span className="text-[10px] text-slate-400">From Institution Setup</span>
+                    </div>
+                    <div className="space-y-2">
+                      {(applicationDocuments.length ? applicationDocuments : documentTypes.map((name) => ({
+                        name,
+                        description: '',
+                        mandatory: false,
+                        acceptedFormats: 'PDF, JPG, PNG',
+                      }))).map((docConfig) => {
+                        const uploaded = selected?.documents.find((d) => d.type === docConfig.name);
+                        const isFinalized =
+                          selected?.status === 'Approved' || selected?.status === 'Rejected';
+                        return (
+                          <div
+                            key={docConfig.name}
+                            className={`flex items-start justify-between gap-2 p-2 rounded-lg border ${
+                              uploaded
+                                ? 'border-emerald-200 bg-emerald-50/50'
+                                : 'border-slate-100 bg-slate-50'
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <p className="text-xs font-semibold text-slate-800">{docConfig.name}</p>
+                                {docConfig.mandatory && (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
+                                    Mandatory
+                                  </span>
+                                )}
+                                {uploaded && (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
+                                    Uploaded
+                                  </span>
+                                )}
+                              </div>
+                              {docConfig.description && (
+                                <p className="text-[10px] text-slate-500 mt-0.5">{docConfig.description}</p>
+                              )}
+                              <p className="text-[9px] text-slate-400 mt-0.5">
+                                Formats: {docConfig.acceptedFormats || 'PDF, JPG, PNG'}
+                              </p>
+                              {uploaded && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setUploadType(docConfig.name);
+                                    setSelectedDocId(uploaded.id);
+                                    setDocFields({ ...uploaded.extractedFields });
+                                  }}
+                                  className="text-[10px] text-indigo-600 font-semibold mt-1 hover:underline"
+                                >
+                                  View: {uploaded.fileName}
+                                </button>
+                              )}
+                            </div>
+                            {!isFinalized && (
+                              <button
+                                type="button"
+                                onClick={() => handleUploadClick(docConfig.name)}
+                                disabled={submitting}
+                                className="shrink-0 px-2 py-1 text-[10px] font-semibold bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
+                              >
+                                {uploaded ? 'Replace' : 'Upload'}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
 
                   <h4 className="text-sm font-bold text-slate-800 mb-4 flex items-center justify-between">
                     Document vs Application Form

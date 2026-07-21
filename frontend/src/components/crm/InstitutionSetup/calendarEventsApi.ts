@@ -1,4 +1,5 @@
 import { fetchInstitutionSetup, updateInstitutionTile } from '../../../lib/institutionApi';
+import { api } from '../../../lib/api';
 import { createHoliday, deleteHoliday, fetchHolidays, type Holiday } from '../../../lib/holidayApi';
 import {
   newEventId,
@@ -9,6 +10,17 @@ import {
 type CalendarSetupTile = {
   sections?: Record<string, Record<string, string>>;
   events?: CalendarEventItem[];
+  publish?: CalendarPublishInfo;
+  publishedEvents?: CalendarEventItem[];
+};
+
+export type CalendarPublishInfo = {
+  staffApp: string;
+  studentApp: string;
+  parentApp: string;
+  publishedAt: string;
+  publishedBy: string;
+  year: number;
 };
 
 async function loadTile(): Promise<CalendarSetupTile> {
@@ -17,14 +29,19 @@ async function loadTile(): Promise<CalendarSetupTile> {
   return {
     sections: raw.sections || {},
     events: Array.isArray(raw.events) ? raw.events.filter((e) => !e.fromHolidayMaster) : [],
+    publish: raw.publish,
+    publishedEvents: raw.publishedEvents,
   };
 }
 
 async function saveEvents(events: CalendarEventItem[], sections: Record<string, Record<string, string>>) {
+  const tile = await loadTile();
   const clean = events.filter((e) => !e.fromHolidayMaster).map(({ holidayId: _h, fromHolidayMaster: _f, ...rest }) => rest);
   await updateInstitutionTile('calendarSetup', {
     sections,
     events: clean,
+    publish: tile.publish,
+    publishedEvents: tile.publishedEvents,
   });
 }
 
@@ -113,3 +130,25 @@ export const SECTION_CATEGORY_OPTIONS: CalendarCategory[] = [
   'MEETING',
   'CUSTOM',
 ];
+
+export async function fetchComprehensiveCalendar(year?: number): Promise<{
+  year: number;
+  events: CalendarEventItem[];
+  publish: CalendarPublishInfo | null;
+  publishedEventCount: number;
+}> {
+  const q = year ? `?year=${year}` : '';
+  return api(`/api/institution/calendar${q}`);
+}
+
+export async function publishComprehensiveCalendar(input: {
+  staffApp: boolean;
+  studentApp: boolean;
+  parentApp: boolean;
+  year?: number;
+}): Promise<{ message: string; publish: CalendarPublishInfo; eventCount: number }> {
+  return api('/api/institution/calendar/publish', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}

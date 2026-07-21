@@ -65,39 +65,117 @@ function normalizeClassKey(value: string): string {
     .trim()
     .toLowerCase()
     .replace(/^class\s+/i, '')
+    .replace(/^std\.?\s*/i, '')
     .replace(/\s+/g, ' ');
+}
+
+function extractClassNumber(value: string): string | null {
+  const n = normalizeClassKey(value);
+  const match = n.match(/\b(\d{1,2})\b/);
+  if (!match) return null;
+  const num = match[1].replace(/^0+/, '');
+  return num || '0';
 }
 
 function classesMatch(a: string, b: string): boolean {
   if (!a.trim() || !b.trim()) return false;
   const na = normalizeClassKey(a);
   const nb = normalizeClassKey(b);
-  return na === nb || na.includes(nb) || nb.includes(na);
+  if (na === nb) return true;
+  const numA = extractClassNumber(a);
+  const numB = extractClassNumber(b);
+  if (numA && numB && numA === numB) return true;
+  return na.includes(nb) || nb.includes(na);
+}
+
+function normalizeFieldKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+const FEE_META_KEYS = new Set([
+  'class',
+  'classname',
+  'section',
+  'sectionname',
+  'frequency',
+  'refundable',
+  'academicyear',
+  'year',
+]);
+
+const FEE_HEAD_KEY_ALIASES: Record<string, string> = (() => {
+  const map: Record<string, string> = {};
+  for (const key of FEE_HEAD_KEYS) {
+    map[normalizeFieldKey(key)] = key;
+    map[normalizeFieldKey(FEE_HEAD_LABELS[key])] = key;
+  }
+  return map;
+})();
+
+function resolveFeeHeadKey(rawKey: string): string | null {
+  const norm = normalizeFieldKey(rawKey);
+  if (!norm || FEE_META_KEYS.has(norm)) return null;
+  return FEE_HEAD_KEY_ALIASES[norm] || null;
+}
+
+function extractClassSection(row: Record<string, string>) {
+  return {
+    class: (row.class || row.className || row.Class || '').trim(),
+    section: (row.section || row.sectionName || row.Section || 'A').trim() || 'A',
+  };
+}
+
+function extractFeeHeadsFromRow(
+  row: Record<string, string>,
+  recordColumns?: Array<{ key: string; label: string }>,
+): FeeHead[] {
+  const heads: FeeHead[] = [];
+  const seen = new Set<string>();
+
+  const tryAdd = (rawKey: string, amountRaw: unknown) => {
+    const canonical = resolveFeeHeadKey(rawKey);
+    if (!canonical || seen.has(canonical)) return;
+    const amount = parseAmount(amountRaw);
+    if (amount > 0) {
+      seen.add(canonical);
+      heads.push({ key: canonical, label: FEE_HEAD_LABELS[canonical], amount });
+    }
+  };
+
+  for (const [key, value] of Object.entries(row)) {
+    tryAdd(key, value);
+  }
+
+  if (recordColumns) {
+    for (const col of recordColumns) {
+      tryAdd(col.label, row[col.key]);
+    }
+  }
+
+  return heads;
 }
 
 export function parseFeeSchedulesFromSetup(feeGroupSetup: unknown): FeeSchedule[] {
   const tile = (feeGroupSetup || {}) as {
     records?: Array<Record<string, string>>;
+    recordColumns?: Array<{ key: string; label: string }>;
   };
   const records = tile.records || [];
-  return records.map((row) => {
-    const heads: FeeHead[] = [];
-    for (const key of FEE_HEAD_KEYS) {
-      const amount = parseAmount(row[key]);
-      if (amount > 0) {
-        heads.push({ key, label: FEE_HEAD_LABELS[key], amount });
-      }
-    }
-    const total = heads.reduce((s, h) => s + h.amount, 0);
-    return {
-      class: (row.class || row.className || '').trim(),
-      section: (row.section || row.sectionName || 'A').trim() || 'A',
-      frequency: row.frequency || 'One-time',
-      refundable: row.refundable || 'No',
-      heads,
-      total,
-    };
-  });
+  return records
+    .map((row) => {
+      const { class: className, section } = extractClassSection(row);
+      const heads = extractFeeHeadsFromRow(row, tile.recordColumns);
+      const total = heads.reduce((s, h) => s + h.amount, 0);
+      return {
+        class: className,
+        section,
+        frequency: row.frequency || 'One-time',
+        refundable: row.refundable || 'No',
+        heads,
+        total,
+      };
+    })
+    .filter((s) => s.class);
 }
 
 export function findFeeSchedule(
@@ -105,15 +183,28 @@ export function findFeeSchedule(
   className: string,
   sectionName: string,
 ): FeeSchedule | null {
-  const exact = schedules.find(
-    (s) => classesMatch(className, s.class) && s.section.toLowerCase() === sectionName.toLowerCase(),
-  );
-  if (exact) return exact;
+  if (!schedules.length || !className.trim()) return null;
 
-  const classOnly = schedules.find((s) => classesMatch(className, s.class));
-  if (classOnly) return classOnly;
+  const sec = (sectionName || '').trim().toLowerCase();
+  const classMatches = schedules.filter((s) => classesMatch(className, s.class));
+  if (classMatches.length === 0) return null;
 
-  return schedules[0] || null;
+  const withAmounts = classMatches.filter((s) => s.heads.length > 0);
+
+  if (sec) {
+    const exactWithAmounts = withAmounts.find((s) => s.section.toLowerCase() === sec);
+    if (exactWithAmounts) return exactWithAmounts;
+
+    const exactAny = classMatches.find((s) => s.section.toLowerCase() === sec);
+    if (exactAny) return exactAny;
+  }
+
+  if (withAmounts.length > 0) {
+    const sectionA = withAmounts.find((s) => s.section.toLowerCase() === 'a');
+    return sectionA || withAmounts[0];
+  }
+
+  return classMatches[0] || null;
 }
 
 export type InstitutionReceiptProfile = {
@@ -191,7 +282,7 @@ export async function loadFeeCollectionContext(institutionId: string) {
   return {
     institutionProfile,
     schedules,
-    feeConfigured: schedules.length > 0,
+    feeConfigured: schedules.some((s) => s.heads.length > 0),
     currency: institutionProfile.currency,
   };
 }

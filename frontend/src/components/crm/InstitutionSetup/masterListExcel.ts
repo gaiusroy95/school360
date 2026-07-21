@@ -89,7 +89,10 @@ export function downloadMasterListTemplate(
  * Excel row 1 → table headers; remaining rows → data.
  * Structure follows the spreadsheet exactly (not hardcoded schema columns).
  */
-export function parseMasterListWorkbook(file: ArrayBuffer | Uint8Array): ParsedMasterList {
+export function parseMasterListWorkbook(
+  file: ArrayBuffer | Uint8Array,
+  knownColumns?: RecordColumn[],
+): ParsedMasterList {
   const bytes = file instanceof Uint8Array ? file : new Uint8Array(file);
   const wb = XLSX.read(bytes, { type: 'array', cellDates: true });
 
@@ -135,7 +138,10 @@ export function parseMasterListWorkbook(file: ArrayBuffer | Uint8Array): ParsedM
   const columns: RecordColumn[] = [];
   for (let i = 0; i <= lastHeaderIdx; i++) {
     const label = cellToText(headerRow[i]) || `Column ${i + 1}`;
-    columns.push({ key: labelToKey(label, usedKeys), label });
+    const norm = normalizeHeader(label);
+    const known = knownColumns?.find((c) => normalizeHeader(c.label) === norm);
+    const key = known?.key || labelToKey(label, usedKeys);
+    columns.push({ key, label: known?.label || label });
   }
 
   const rows: Record<string, string>[] = [];
