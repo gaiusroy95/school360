@@ -46,33 +46,33 @@ export const ID_CARD_TEMPLATES: {
   },
   {
     id: 'saiJyoti',
-    name: 'Sai Jyoti Style',
-    description: 'Red geometric frame with photo and icon details',
+    name: 'Mount Convent Style',
+    description: 'Landscape blue header, pink photo glow, principal signature',
   },
   {
     id: 'adarsh',
-    name: 'Adarsh Model Style',
-    description: 'Blue wave layout with class ribbon and principal sign',
+    name: 'Professional Staff Style',
+    description: 'Blue geometric header, role ribbon, department fields',
   },
   {
     id: 'oxford',
-    name: 'Classic University Style',
-    description: 'Teal header, clean fields, dual signature footer',
+    name: 'Bright Future Style',
+    description: 'Teal background, circular photo, white info card with QR',
   },
   {
     id: 'emeraldCrest',
-    name: 'Emerald Crest Style',
-    description: 'Green crest header with gold border and formal fields',
+    name: 'Air Force International Style',
+    description: 'Navy vertical stripe, identity card layout, bold fields',
   },
   {
     id: 'modernMinimal',
-    name: 'Modern Minimal Style',
-    description: 'Black and white layout with bold typography',
+    name: 'School Inc Style',
+    description: 'Curved navy arch, centered photo, course and barcode',
   },
   {
     id: 'royalMaroon',
-    name: 'Royal Maroon Style',
-    description: 'Maroon and cream design with ribbon class badge',
+    name: 'Greenwood Primary Style',
+    description: 'Blue-orange diagonal accents, shield banner, QR code',
   },
 ];
 

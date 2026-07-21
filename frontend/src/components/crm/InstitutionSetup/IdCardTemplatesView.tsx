@@ -26,6 +26,15 @@ const DEFAULT_SCHOOL: IdCardSchool = {
 };
 
 function templateIdFromName(name: string): IdCardTemplateId {
+  const legacyMap: Record<string, IdCardTemplateId> = {
+    'Sai Jyoti Style': 'saiJyoti',
+    'Adarsh Model Style': 'adarsh',
+    'Classic University Style': 'oxford',
+    'Emerald Crest Style': 'emeraldCrest',
+    'Modern Minimal Style': 'modernMinimal',
+    'Royal Maroon Style': 'royalMaroon',
+  };
+  if (legacyMap[name]) return legacyMap[name];
   const found = ID_CARD_TEMPLATES.find((t) => t.name === name);
   return found?.id || 'stAnthony';
 }
@@ -168,9 +177,10 @@ export function IdCardTemplatesView({ selectedTemplate, onSelectTemplate }: Prop
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 mb-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-5">
           {ID_CARD_TEMPLATES.map((tpl) => {
             const active = templateId === tpl.id;
+            const isLandscape = tpl.id === 'saiJyoti';
             return (
               <button
                 key={tpl.id}
@@ -178,14 +188,18 @@ export function IdCardTemplatesView({ selectedTemplate, onSelectTemplate }: Prop
                 onClick={() => onSelectTemplate(tpl.name)}
                 className={`text-left rounded-xl border-2 p-3 transition-colors ${
                   active ? 'border-indigo-500 bg-indigo-50/50' : 'border-slate-200 hover:border-slate-300'
-                }`}
+                } ${isLandscape ? 'sm:col-span-2 lg:col-span-2' : ''}`}
               >
-                <div className="flex justify-center mb-2 overflow-hidden rounded-lg bg-slate-50 py-2">
+                <div
+                  className={`flex justify-center mb-2 overflow-hidden rounded-lg bg-slate-50 py-2 ${
+                    isLandscape ? 'min-h-[140px]' : ''
+                  }`}
+                >
                   <IdCardByTemplate
                     templateId={tpl.id}
                     student={previewStudent}
                     school={school}
-                    scale={0.42}
+                    scale={isLandscape ? 0.38 : 0.42}
                   />
                 </div>
                 <p className="text-xs font-bold text-slate-800">{tpl.name}</p>
