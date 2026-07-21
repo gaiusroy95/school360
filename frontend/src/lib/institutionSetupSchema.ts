@@ -475,6 +475,12 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         title: 'Fee Group Master',
         fields: [
           { key: 'defaultCurrency', label: 'Currency', type: 'text', placeholder: 'INR', required: true },
+          {
+            key: 'receiptFooter',
+            label: 'Receipt Footer Note',
+            type: 'textarea',
+            placeholder: 'Thank you for your payment. This receipt is valid for admission fee collection.',
+          },
         ],
       },
       {

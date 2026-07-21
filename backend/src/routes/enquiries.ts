@@ -86,6 +86,92 @@ async function nextEnquiryCode(institutionId: string) {
   return `ENQ${String(89000 + n).padStart(5, '0')}`;
 }
 
+function parseDueDateTime(dateStr: string, timeStr?: string | null): Date | null {
+  const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return parseOptionalDate(dateStr);
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  const d = Number(m[3]);
+  if (timeStr && /^\d{1,2}:\d{2}/.test(timeStr)) {
+    const [h, min] = timeStr.split(':').map(Number);
+    return new Date(y, mo, d, h, min, 0, 0);
+  }
+  return new Date(y, mo, d, 0, 0, 0, 0);
+}
+
+type FollowUpModeKey =
+  | 'PHONE'
+  | 'CAMPUS_VISIT'
+  | 'VIDEO_CALL'
+  | 'EMAIL'
+  | 'IN_PERSON_COUNSELLING';
+
+const FOLLOW_UP_MODE_UI_TO_DB: Record<string, FollowUpModeKey> = {
+  Phone: 'PHONE',
+  'Campus Visit': 'CAMPUS_VISIT',
+  'Video Call': 'VIDEO_CALL',
+  Email: 'EMAIL',
+  'In-person Counselling': 'IN_PERSON_COUNSELLING',
+  PHONE: 'PHONE',
+  CAMPUS_VISIT: 'CAMPUS_VISIT',
+  VIDEO_CALL: 'VIDEO_CALL',
+  EMAIL: 'EMAIL',
+  IN_PERSON_COUNSELLING: 'IN_PERSON_COUNSELLING',
+};
+
+const FOLLOW_UP_MODE_DB_TO_UI: Record<FollowUpModeKey, string> = {
+  PHONE: 'Phone',
+  CAMPUS_VISIT: 'Campus Visit',
+  VIDEO_CALL: 'Video Call',
+  EMAIL: 'Email',
+  IN_PERSON_COUNSELLING: 'In-person Counselling',
+};
+
+function toFollowUpMode(value?: string | null): FollowUpModeKey {
+  if (!value) return 'PHONE';
+  const key = String(value).trim();
+  return FOLLOW_UP_MODE_UI_TO_DB[key] || 'PHONE';
+}
+
+function serializeTask(t: {
+  id: string;
+  enquiryId: string;
+  title: string;
+  mode?: FollowUpModeKey | string | null;
+  subject?: string | null;
+  discussionNotes?: string | null;
+  assignedTo: string;
+  dueDate: Date;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+  enquiry: { enquiryId: string; enquirerName: string };
+}) {
+  const modeKey = (t.mode || 'PHONE') as FollowUpModeKey;
+  const modeUi = FOLLOW_UP_MODE_DB_TO_UI[modeKey] || 'Phone';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const dueTime = `${pad(t.dueDate.getHours())}:${pad(t.dueDate.getMinutes())}`;
+  const hasTime = t.dueDate.getHours() !== 0 || t.dueDate.getMinutes() !== 0;
+  return {
+    id: t.id,
+    enquiryId: t.enquiry.enquiryId,
+    enquiryDbId: t.enquiryId,
+    enquiryName: t.enquiry.enquirerName,
+    title: t.title,
+    mode: modeUi,
+    modeKey,
+    subject: t.subject || '',
+    discussionNotes: t.discussionNotes || '',
+    assignedTo: t.assignedTo,
+    dueDate: t.dueDate.toISOString().slice(0, 10),
+    dueTime: hasTime ? dueTime : '',
+    scheduledAt: t.dueDate.toISOString(),
+    status: t.status,
+    createdAt: t.createdAt.toISOString(),
+    updatedAt: t.updatedAt.toISOString(),
+  };
+}
+
 async function logActivity(
   enquiryId: string,
   type: EnquiryActivityType,
@@ -300,26 +386,136 @@ enquiriesRouter.get('/activities', async (req, res) => {
 enquiriesRouter.get('/tasks', async (req, res) => {
   const institutionId = await getDefaultInstitutionId();
   const status = req.query.status ? String(req.query.status) : undefined;
+  const mode = req.query.mode ? String(req.query.mode) : undefined;
   const tasks = await prisma.followUpTask.findMany({
     where: {
       enquiry: { institutionId },
       ...(status ? { status } : {}),
+      ...(mode ? { mode: toFollowUpMode(mode) } : {}),
     },
     include: { enquiry: { select: { enquiryId: true, enquirerName: true } } },
     orderBy: { dueDate: 'asc' },
   });
   return res.json({
-    tasks: tasks.map((t) => ({
-      id: t.id,
-      enquiryId: t.enquiry.enquiryId,
-      enquiryDbId: t.enquiryId,
-      enquiryName: t.enquiry.enquirerName,
-      title: t.title,
-      assignedTo: t.assignedTo,
-      dueDate: t.dueDate.toISOString().slice(0, 10),
-      status: t.status,
-    })),
+    tasks: tasks.map(serializeTask),
   });
+});
+
+enquiriesRouter.get('/tasks/meta', async (_req, res) => {
+  const institutionId = await getDefaultInstitutionId();
+  const enquiries = await prisma.enquiry.findMany({
+    where: { institutionId },
+    select: { id: true, enquiryId: true, enquirerName: true, assignedTo: true, classInterested: true },
+    orderBy: { enquirerName: 'asc' },
+  });
+  const assignees = await prisma.enquiry.findMany({
+    where: { institutionId, assignedTo: { not: '' } },
+    select: { assignedTo: true },
+    distinct: ['assignedTo'],
+    orderBy: { assignedTo: 'asc' },
+  });
+  return res.json({
+    modes: Object.values(FOLLOW_UP_MODE_DB_TO_UI),
+    modeKeys: Object.keys(FOLLOW_UP_MODE_DB_TO_UI),
+    enquiries: enquiries.map((e) => ({
+      id: e.id,
+      enquiryId: e.enquiryId,
+      enquirerName: e.enquirerName,
+      assignedTo: e.assignedTo,
+      classInterested: e.classInterested,
+    })),
+    counselors: assignees.map((a) => a.assignedTo).filter(Boolean),
+  });
+});
+
+enquiriesRouter.patch('/tasks/:taskId', async (req, res) => {
+  const institutionId = await getDefaultInstitutionId();
+  const schema = z.object({
+    title: z.string().min(1).optional(),
+    mode: z.string().optional(),
+    subject: z.string().optional(),
+    discussionNotes: z.string().optional().nullable(),
+    dueDate: z.string().optional(),
+    dueTime: z.string().optional().nullable(),
+    assignedTo: z.string().optional(),
+    status: z.enum(['Pending', 'Completed']).optional(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const existing = await prisma.followUpTask.findFirst({
+    where: { id: req.params.taskId, enquiry: { institutionId } },
+    include: { enquiry: { select: { enquiryId: true, enquirerName: true } } },
+  });
+  if (!existing) return res.status(404).json({ error: 'Task not found' });
+
+  let dueDate = existing.dueDate;
+  if (parsed.data.dueDate) {
+    const next = parseDueDateTime(parsed.data.dueDate, parsed.data.dueTime);
+    if (!next) return res.status(400).json({ error: 'Invalid dueDate' });
+    dueDate = next;
+  } else if (parsed.data.dueTime) {
+    const dateStr = existing.dueDate.toISOString().slice(0, 10);
+    const next = parseDueDateTime(dateStr, parsed.data.dueTime);
+    if (next) dueDate = next;
+  }
+
+  const task = await prisma.followUpTask.update({
+    where: { id: existing.id },
+    data: {
+      ...(parsed.data.title !== undefined ? { title: parsed.data.title } : {}),
+      ...(parsed.data.mode !== undefined ? { mode: toFollowUpMode(parsed.data.mode) } : {}),
+      ...(parsed.data.subject !== undefined ? { subject: parsed.data.subject } : {}),
+      ...(parsed.data.discussionNotes !== undefined
+        ? { discussionNotes: parsed.data.discussionNotes || null }
+        : {}),
+      ...(parsed.data.assignedTo !== undefined ? { assignedTo: parsed.data.assignedTo } : {}),
+      ...(parsed.data.status !== undefined ? { status: parsed.data.status } : {}),
+      dueDate,
+    } as Prisma.FollowUpTaskUncheckedUpdateInput,
+    include: { enquiry: { select: { enquiryId: true, enquirerName: true } } },
+  });
+
+  if (parsed.data.status === 'Completed' && existing.status !== 'Completed') {
+    await logActivity(
+      existing.enquiryId,
+      EnquiryActivityType.SYSTEM,
+      `Follow-up completed: ${task.title}`,
+      task.assignedTo || 'Admin',
+    );
+  } else if (
+    parsed.data.title ||
+    parsed.data.mode ||
+    parsed.data.subject ||
+    parsed.data.dueDate ||
+    parsed.data.assignedTo
+  ) {
+    await logActivity(
+      existing.enquiryId,
+      EnquiryActivityType.SYSTEM,
+      `Follow-up updated: ${task.title}`,
+      task.assignedTo || 'Admin',
+    );
+  }
+
+  if (task.status === 'Pending') {
+    await prisma.enquiry.update({
+      where: { id: existing.enquiryId },
+      data: { nextFollowUp: dueDate },
+    });
+  }
+
+  return res.json({ task: serializeTask(task) });
+});
+
+enquiriesRouter.delete('/tasks/:taskId', async (req, res) => {
+  const institutionId = await getDefaultInstitutionId();
+  const existing = await prisma.followUpTask.findFirst({
+    where: { id: req.params.taskId, enquiry: { institutionId } },
+  });
+  if (!existing) return res.status(404).json({ error: 'Task not found' });
+  await prisma.followUpTask.delete({ where: { id: existing.id } });
+  return res.json({ ok: true });
 });
 
 enquiriesRouter.post('/', async (req, res) => {
@@ -564,8 +760,12 @@ enquiriesRouter.post('/:id/activities', async (req, res) => {
 
 enquiriesRouter.post('/:id/tasks', async (req, res) => {
   const schema = z.object({
-    title: z.string().min(1),
+    title: z.string().min(1).optional(),
+    mode: z.string().optional(),
+    subject: z.string().optional(),
+    discussionNotes: z.string().optional().nullable(),
     dueDate: z.string().min(4),
+    dueTime: z.string().optional().nullable(),
     assignedTo: z.string().optional(),
   });
   const parsed = schema.safeParse(req.body);
@@ -574,38 +774,45 @@ enquiriesRouter.post('/:id/tasks', async (req, res) => {
   const existing = await prisma.enquiry.findUnique({ where: { id: req.params.id } });
   if (!existing) return res.status(404).json({ error: 'Enquiry not found' });
 
-  const dueDate = parseOptionalDate(parsed.data.dueDate);
+  const dueDate = parseDueDateTime(parsed.data.dueDate, parsed.data.dueTime);
   if (!dueDate) return res.status(400).json({ error: 'Invalid dueDate' });
+
+  const mode = toFollowUpMode(parsed.data.mode);
+  const subject = (parsed.data.subject || '').trim();
+  const modeLabel = FOLLOW_UP_MODE_DB_TO_UI[mode];
+  const title =
+    (parsed.data.title || '').trim() ||
+    (subject ? `${modeLabel}: ${subject}` : `${modeLabel} follow-up`);
 
   const task = await prisma.followUpTask.create({
     data: {
       enquiryId: existing.id,
-      title: parsed.data.title,
+      title,
+      mode,
+      subject,
+      discussionNotes: parsed.data.discussionNotes || null,
       dueDate,
       assignedTo: parsed.data.assignedTo || existing.assignedTo || '',
-    },
+    } as Prisma.FollowUpTaskUncheckedCreateInput,
+    include: { enquiry: { select: { enquiryId: true, enquirerName: true } } },
   });
 
   await logActivity(
     existing.id,
     EnquiryActivityType.SYSTEM,
-    `Follow-up scheduled: ${task.title}`,
+    `Follow-up scheduled (${modeLabel}): ${task.title}`,
     task.assignedTo || 'Admin',
   );
 
   await prisma.enquiry.update({
     where: { id: existing.id },
-    data: { nextFollowUp: dueDate },
+    data: {
+      nextFollowUp: dueDate,
+      status: existing.status === EnquiryStatus.NEW ? EnquiryStatus.FOLLOW_UP : existing.status,
+    },
   });
 
   return res.status(201).json({
-    task: {
-      id: task.id,
-      enquiryId: existing.enquiryId,
-      title: task.title,
-      assignedTo: task.assignedTo,
-      dueDate: task.dueDate.toISOString().slice(0, 10),
-      status: task.status,
-    },
+    task: serializeTask(task),
   });
 });

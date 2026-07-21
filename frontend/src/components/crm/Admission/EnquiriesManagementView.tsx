@@ -20,6 +20,7 @@ import {
   type EnquiryMeta,
   type EnquiryInput,
 } from '../../../lib/admissionServices';
+import { createApplicationFromEnquiry } from '../../../lib/applicationServices';
 import { downloadEnquiryTemplate, parseEnquiryWorkbook } from '../../../lib/enquiryExcel';
 import { useAuth } from '../../../contexts/AuthContext';
 import { viewKeyToPath } from '../../../lib/urlRoutes';
@@ -496,10 +497,24 @@ export function EnquiriesManagementView() {
     try {
       switch (quickModal) {
         case 'followUp': {
-          const title = String(formData.get('title') || 'Follow up');
+          const title = String(formData.get('title') || '').trim();
           const dueDate = String(formData.get('dueDate') || '');
+          const dueTime = String(formData.get('dueTime') || '').trim();
+          const mode = String(formData.get('mode') || 'Phone');
+          const subject = String(formData.get('subject') || '').trim();
+          const discussionNotes = String(formData.get('discussionNotes') || '').trim();
+          const assignedTo = String(formData.get('assignedTo') || performer).trim();
           if (!dueDate) throw new Error('Due date is required');
-          await addFollowUpTask(enquiryDbId, { title, dueDate, assignedTo: performer });
+          if (!subject && !title) throw new Error('Subject or title is required');
+          await addFollowUpTask(enquiryDbId, {
+            title: title || undefined,
+            dueDate,
+            dueTime: dueTime || undefined,
+            mode,
+            subject,
+            discussionNotes: discussionNotes || undefined,
+            assignedTo,
+          });
           showSuccess('Follow-up task scheduled');
           break;
         }
@@ -542,15 +557,20 @@ export function EnquiriesManagementView() {
         }
         case 'createApplication': {
           const notes = String(formData.get('notes') || '').trim();
-          await updateEnquiryStatus(enquiryDbId, 'Follow Up', undefined, performer);
-          await logActivity(enquiryDbId, {
-            type: 'System',
-            description:
-              notes ||
-              `Application created from enquiry ${enq.enquiryId} (${enq.enquirerName})`,
-            performedBy: performer,
+          await createApplicationFromEnquiry(enquiryDbId, {
+            notes,
+            submittedBy: performer,
+            studentName: String(formData.get('studentName') || enq.enquirerName),
+            dateOfBirth: String(formData.get('dateOfBirth') || '') || undefined,
+            fatherName: String(formData.get('fatherName') || '') || undefined,
+            motherName: String(formData.get('motherName') || '') || undefined,
+            placeOfBirth: String(formData.get('placeOfBirth') || '') || undefined,
+            classApplied: String(formData.get('classApplied') || enq.classInterested) || undefined,
+            mobile: String(formData.get('mobile') || enq.mobile) || undefined,
+            email: String(formData.get('email') || enq.email) || undefined,
+            address: String(formData.get('address') || '') || undefined,
           });
-          showSuccess(`Application started for ${enq.enquirerName}. Opening Applications…`);
+          showSuccess(`Application created for ${enq.enquirerName}. Opening Applications…`);
           setQuickModal(null);
           await refreshAll();
           // Navigate to Admission CRM → Applications
@@ -1209,11 +1229,33 @@ export function EnquiriesManagementView() {
           onClose={() => setQuickModal(null)}
         >
           <form onSubmit={handleQuickSubmit} className="space-y-4">
-            <EnquirySelect enquiries={enquiries} />
+            <EnquirySelect
+              enquiries={enquiries}
+              defaultEnquiryId={quickModal === 'createApplication' ? selectedEnquiry?.id : undefined}
+            />
             {quickModal === 'followUp' && (
               <>
-                <Field label="Task Title *" name="title" required placeholder="Follow up call" />
-                <Field label="Due Date *" name="dueDate" type="date" required />
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Counseling Mode</label>
+                  <select name="mode" defaultValue="Phone" className="w-full p-2 border border-slate-300 rounded-lg text-sm">
+                    <option value="Phone">Phone</option>
+                    <option value="Campus Visit">Campus Visit</option>
+                    <option value="Video Call">Video Call</option>
+                    <option value="Email">Email</option>
+                    <option value="In-person Counselling">In-person Counselling</option>
+                  </select>
+                </div>
+                <Field label="Subject *" name="subject" required placeholder="Fee structure, campus tour..." />
+                <Field label="Task Title (optional)" name="title" placeholder="Auto-generated if empty" />
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Due Date *" name="dueDate" type="date" required />
+                  <Field label="Time" name="dueTime" type="time" />
+                </div>
+                <Field label="Assign Counselor" name="assignedTo" defaultValue={performer} />
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Discussion Notes</label>
+                  <textarea name="discussionNotes" rows={2} className="w-full p-2 border border-slate-300 rounded-lg text-sm" placeholder="Notes from conversation..." />
+                </div>
               </>
             )}
             {(quickModal === 'logMeeting' || quickModal === 'addNote') && (
@@ -1248,9 +1290,24 @@ export function EnquiriesManagementView() {
             {quickModal === 'createApplication' && (
               <>
                 <p className="text-sm text-slate-600">
-                  Select an enquiry to start an application. Status moves to <strong>Follow Up</strong>, then you open Applications.
+                  Complete the application form. Fields are pre-filled from the enquiry where possible.
                 </p>
-                <Field label="Application Notes" name="notes" placeholder="Optional notes for the application" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <Field label="Student Name *" name="studentName" required defaultValue={selectedEnquiry?.enquirerName} />
+                  <Field label="Date of Birth" name="dateOfBirth" type="date" />
+                  <Field label="Father's Name" name="fatherName" />
+                  <Field label="Mother's Name" name="motherName" />
+                  <Field label="Place of Birth" name="placeOfBirth" />
+                  <Field label="Class Applied" name="classApplied" defaultValue={selectedEnquiry?.classInterested} />
+                  <Field label="Mobile" name="mobile" defaultValue={selectedEnquiry?.mobile} />
+                  <Field label="Email" name="email" type="email" defaultValue={selectedEnquiry?.email} />
+                </div>
+                <div className="mt-3">
+                  <Field label="Address" name="address" />
+                </div>
+                <div className="mt-3">
+                  <Field label="Application Notes" name="notes" placeholder="Optional notes for the application" />
+                </div>
               </>
             )}
             <ModalActions onCancel={() => setQuickModal(null)} submitting={submitting} submitLabel="Confirm" />
@@ -1452,11 +1509,16 @@ function ModalActions({
   );
 }
 
-function EnquirySelect({ enquiries }: { enquiries: Enquiry[] }) {
+function EnquirySelect({ enquiries, defaultEnquiryId }: { enquiries: Enquiry[]; defaultEnquiryId?: string }) {
   return (
     <div>
       <label className="block text-xs font-semibold text-slate-700 mb-1">Select Enquiry *</label>
-      <select name="enquiryDbId" required className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+      <select
+        name="enquiryDbId"
+        required
+        defaultValue={defaultEnquiryId || ''}
+        className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+      >
         <option value="">Choose enquiry...</option>
         {enquiries.map((e) => (
           <option key={e.id || e.enquiryId} value={e.id || ''}>

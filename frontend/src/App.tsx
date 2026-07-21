@@ -28,10 +28,16 @@ import { Plus, GraduationCap } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { parseViewKey } from './lib/navigation';
 import { pathToViewKey, viewKeyToPath } from './lib/urlRoutes';
+import { EntranceExamPortal } from './components/entrance/EntranceExamPortal';
+
+function isEntranceExamPath(pathname: string) {
+  return pathname === '/entrance-exam' || pathname.startsWith('/entrance-exam/');
+}
 
 export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [currentView, setCurrentView] = useState(() => pathToViewKey(window.location.pathname));
+  const [isEntranceExam] = useState(() => isEntranceExamPath(window.location.pathname));
   const { user, login, loading } = useAuth();
   const { module, page } = parseViewKey(currentView);
   const [email, setEmail] = useState('admin@360schoolerp.com');
@@ -51,6 +57,10 @@ export default function App() {
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
+
+  if (isEntranceExam) {
+    return <EntranceExamPortal />;
+  }
 
   if (loading) {
     return <div className="flex h-screen items-center justify-center bg-slate-50"><p>Loading...</p></div>;

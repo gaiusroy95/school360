@@ -29,16 +29,44 @@ export interface Activity {
   performedBy: string;
 }
 
+export type FollowUpMode =
+  | 'Phone'
+  | 'Email'
+  | 'Video Call'
+  | 'Campus Visit'
+  | 'In-person Counselling';
+
 export interface FollowUpTask {
   id?: string;
   enquiryId: string;
   enquiryDbId?: string;
   enquiryName?: string;
   title: string;
+  mode?: FollowUpMode | string;
+  modeKey?: string;
+  subject?: string;
+  discussionNotes?: string;
   assignedTo: string;
   dueDate: string;
+  dueTime?: string;
+  scheduledAt?: string;
   status: 'Pending' | 'Completed' | string;
+  createdAt?: string;
+  updatedAt?: string;
 }
+
+export type FollowUpTaskMeta = {
+  modes: FollowUpMode[];
+  modeKeys: string[];
+  enquiries: Array<{
+    id: string;
+    enquiryId: string;
+    enquirerName: string;
+    assignedTo: string;
+    classInterested: string;
+  }>;
+  counselors: string[];
+};
 
 export type EnquiryInput = {
   enquirerName: string;
@@ -106,9 +134,35 @@ export async function fetchEnquiryActivities(limit = 50) {
   return api<{ activities: Activity[] }>(`/api/enquiries/activities?limit=${limit}`);
 }
 
-export async function fetchFollowUpTasks(status?: string) {
-  const qs = status ? `?status=${encodeURIComponent(status)}` : '';
-  return api<{ tasks: FollowUpTask[] }>(`/api/enquiries/tasks${qs}`);
+export async function fetchFollowUpTasks(status?: string, mode?: string) {
+  const q = new URLSearchParams();
+  if (status) q.set('status', status);
+  if (mode) q.set('mode', mode);
+  const qs = q.toString();
+  return api<{ tasks: FollowUpTask[] }>(`/api/enquiries/tasks${qs ? `?${qs}` : ''}`);
+}
+
+export async function fetchFollowUpTaskMeta() {
+  return api<FollowUpTaskMeta>('/api/enquiries/tasks/meta');
+}
+
+export async function updateFollowUpTask(
+  taskId: string,
+  payload: Partial<{
+    title: string;
+    mode: string;
+    subject: string;
+    discussionNotes: string | null;
+    dueDate: string;
+    dueTime: string | null;
+    assignedTo: string;
+    status: 'Pending' | 'Completed';
+  }>,
+) {
+  return api<{ task: FollowUpTask }>(`/api/enquiries/tasks/${taskId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function addEnquiry(enquiryData: Partial<Enquiry> | EnquiryInput) {
@@ -157,7 +211,15 @@ export async function logActivity(
 
 export async function addFollowUpTask(
   enquiryDbId: string,
-  taskData: { title: string; dueDate: string; assignedTo?: string },
+  taskData: {
+    title?: string;
+    dueDate: string;
+    dueTime?: string;
+    mode?: string;
+    subject?: string;
+    discussionNotes?: string;
+    assignedTo?: string;
+  },
 ) {
   return api<{ task: FollowUpTask }>(`/api/enquiries/${enquiryDbId}/tasks`, {
     method: 'POST',

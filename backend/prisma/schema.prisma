@@ -33,6 +33,13 @@ model Institution {
   setup     InstitutionSetup?
   holidays  Holiday[]
   enquiries Enquiry[]
+  applications Application[]
+  admissionTests AdmissionTest[]
+  admissionTestSettings AdmissionTestSettings?
+  seatCapacities SeatCapacity[]
+  seatAllocations SeatAllocation[]
+  admissionRecords AdmissionRecord[]
+  feeReceipts FeeReceipt[]
 }
 
 enum EnquiryStatus {
@@ -72,12 +79,19 @@ model Enquiry {
   assignedTo      String   @default("")
   nextFollowUp    DateTime?
   notes           String?
+  lastContactedAt DateTime?
+  lastSentiment   String?
+  lastEngagement  String?
+  lastRiskFactor  String?
+  lastRiskDetails String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  activities EnquiryActivity[]
-  tasks      FollowUpTask[]
+  activities     EnquiryActivity[]
+  tasks          FollowUpTask[]
+  applications   Application[]
+  counselingLogs CounselingLog[]
 
   @@unique([institutionId, enquiryId])
   @@index([institutionId, status])
@@ -102,6 +116,9 @@ model FollowUpTask {
   enquiryId  String
   enquiry    Enquiry  @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
   title      String
+  mode       FollowUpMode @default(PHONE)
+  subject    String   @default("")
+  discussionNotes String?
   assignedTo String   @default("")
   dueDate    DateTime
   status     String   @default("Pending") // Pending | Completed
@@ -110,6 +127,114 @@ model FollowUpTask {
 
   @@index([enquiryId, dueDate])
   @@index([dueDate, status])
+  @@index([mode, status])
+}
+
+enum FollowUpMode {
+  PHONE
+  CAMPUS_VISIT
+  VIDEO_CALL
+  EMAIL
+  IN_PERSON_COUNSELLING
+}
+
+/// Immutable counseling session log (manual counselor assessment)
+model CounselingLog {
+  id              String   @id @default(cuid())
+  enquiryId       String
+  enquiry         Enquiry  @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  interactionType String
+  sentiment       String
+  engagement      String
+  riskFactor      String
+  riskDetails     String?
+  remarks         String
+  actionIntent    String
+  nextFollowUp    DateTime?
+  counselorName   String   @default("")
+  createdAt       DateTime @default(now())
+
+  @@index([enquiryId, createdAt])
+  @@map("counseling_logs")
+}
+
+enum ApplicationStatus {
+  PENDING_VERIFICATION
+  VERIFIED
+  APPROVED
+  REJECTED
+}
+
+enum ApplicationDocumentType {
+  BIRTH_CERTIFICATE
+  PREVIOUS_MARKSHEET
+  ADDRESS_PROOF
+  OTHER
+}
+
+/// Admission application submitted by counselor from an enquiry
+model Application {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  enquiryId     String?
+  enquiry       Enquiry? @relation(fields: [enquiryId], references: [id], onDelete: SetNull)
+
+  applicationId String
+  submittedAt   DateTime @default(now())
+  submittedBy   String   @default("")
+
+  studentName   String
+  dateOfBirth   DateTime? @db.Date
+  fatherName    String   @default("")
+  motherName    String   @default("")
+  placeOfBirth  String   @default("")
+  classApplied  String   @default("")
+  mobile        String   @default("")
+  email         String   @default("")
+  address       String   @default("")
+
+  entranceTestScore Float?
+  entranceTestMax   Float?  @default(100)
+
+  status            ApplicationStatus @default(PENDING_VERIFICATION)
+  reviewedBy        String?
+  reviewedAt        DateTime?
+  approvalRemarks   String?
+  rejectionRemarks  String?
+  notes             String?
+
+  documents ApplicationDocument[]
+  entranceCredentials EntranceExamCredential[]
+  seatAllocation SeatAllocation?
+  admissionRecord AdmissionRecord?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([institutionId, applicationId])
+  @@index([institutionId, status])
+  @@index([institutionId, submittedAt])
+  @@index([enquiryId])
+}
+
+model ApplicationDocument {
+  id            String   @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  type            ApplicationDocumentType
+  fileName        String
+  mimeType        String   @default("application/pdf")
+  /// Base64 payload (no data: prefix) — suitable for MVP document preview
+  fileData        String   @db.Text
+  /// Values recorded from the uploaded document for verification
+  extractedFields Json     @default("{}")
+
+  uploadedAt DateTime @default(now())
+  uploadedBy String   @default("")
+
+  @@index([applicationId, type])
 }
 
 enum HolidayType {
@@ -176,4 +301,253 @@ model InstitutionSetup {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+enum AdmissionTestStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum AdmissionTestSource {
+  PDF
+  OCR
+  SYLLABUS
+  MANUAL
+}
+
+enum TestQuestionType {
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+  SHORT_ANSWER
+}
+
+enum TestDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+/// Admission entrance test (Phase 1: draft builder from PDF + AI)
+model AdmissionTest {
+  id              String              @id @default(cuid())
+  institutionId   String
+  institution     Institution         @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  title           String
+  status          AdmissionTestStatus @default(DRAFT)
+  source          AdmissionTestSource @default(PDF)
+  durationMinutes Int                 @default(60)
+  numQuestions    Int                 @default(50)
+  questionType    String              @default("Multiple Choice")
+  difficulty      String              @default("Medium")
+  sourceFilesMeta Json                @default("[]")
+  createdBy       String              @default("")
+  passMarksPercent  Int?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  questions       TestQuestion[]
+  publication     TestPublication?
+
+  @@index([institutionId, status])
+  @@index([institutionId, createdAt])
+}
+
+model TestQuestion {
+  id            String           @id @default(cuid())
+  testId        String
+  test          AdmissionTest    @relation(fields: [testId], references: [id], onDelete: Cascade)
+  sortOrder     Int
+  type          TestQuestionType
+  difficulty    TestDifficulty
+  questionText  String
+  options       Json?
+  correctAnswer String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([testId, sortOrder])
+}
+
+enum PublicationDestination {
+  ENTRANCE_EXAM_PORTAL
+}
+
+enum PublicationVisibility {
+  WEB
+  APP
+  BOTH
+}
+
+model TestPublication {
+  id              String                 @id @default(cuid())
+  testId          String                 @unique
+  test            AdmissionTest          @relation(fields: [testId], references: [id], onDelete: Cascade)
+  institutionId   String
+  destination     PublicationDestination @default(ENTRANCE_EXAM_PORTAL)
+  scheduledAt     DateTime
+  durationMinutes Int
+  visibleOn       PublicationVisibility  @default(BOTH)
+  publishedAt     DateTime               @default(now())
+  publishedBy     String                 @default("")
+  credentials     EntranceExamCredential[]
+
+  @@index([institutionId, scheduledAt])
+}
+
+model EntranceExamCredential {
+  id            String   @id @default(cuid())
+  publicationId String
+  publication   TestPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  tokenNumber   String   @unique
+  pinHash       String
+  pinPlain      String   @default("") // shown once to staff; cleared optional in prod
+  deliveredAt   DateTime?
+  expiresAt     DateTime?
+  createdAt     DateTime @default(now())
+  attempt       EntranceExamAttempt?
+
+  @@unique([publicationId, applicationId])
+  @@index([tokenNumber])
+}
+
+model EntranceExamAttempt {
+  id           String   @id @default(cuid())
+  credentialId String   @unique
+  credential   EntranceExamCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  startedAt    DateTime @default(now())
+  submittedAt  DateTime?
+  answers      Json     @default("{}")
+  score        Float?
+  maxScore     Float?
+  percentScore Float?
+  passed       Boolean?
+  resultBreakdown Json?
+  createdAt    DateTime @default(now())
+}
+
+/// Institution-wide admission test defaults (pass marks, etc.)
+model AdmissionTestSettings {
+  id               String      @id @default(cuid())
+  institutionId    String      @unique
+  institution      Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  passMarksPercent Int         @default(40)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+}
+
+enum SeatAllocationStatus {
+  ALLOCATED
+  WAITLISTED
+}
+
+/// Configurable seats per class & section for admission intake
+model SeatCapacity {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  className     String
+  sectionName   String
+  totalSeats    Int
+  academicYear  String      @default("2025-26")
+  sortOrder     Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  allocations   SeatAllocation[]
+
+  @@unique([institutionId, academicYear, className, sectionName])
+  @@index([institutionId, academicYear])
+  @@index([institutionId, className])
+}
+
+/// Seat assigned (or waitlisted) from entrance-test merit ranking
+model SeatAllocation {
+  id              String               @id @default(cuid())
+  institutionId   String
+  institution     Institution          @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  applicationId   String               @unique
+  application     Application          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  capacityId      String?
+  capacity        SeatCapacity?        @relation(fields: [capacityId], references: [id], onDelete: SetNull)
+  className       String
+  sectionName     String               @default("")
+  meritRank       Int
+  classMeritRank  Int
+  entranceScore   Float
+  status          SeatAllocationStatus
+  academicYear    String               @default("2025-26")
+  allocatedAt     DateTime             @default(now())
+  allocatedBy     String               @default("SYSTEM")
+  notes           String               @default("")
+
+  @@index([institutionId, academicYear, status])
+  @@index([institutionId, className, sectionName])
+  @@index([capacityId])
+}
+
+enum AdmissionRecordStatus {
+  PENDING_CONFIRMATION
+  CONFIRMED
+}
+
+/// Final admission record — created when principal approves; confirmed on Admissions module
+model AdmissionRecord {
+  id                  String                @id @default(cuid())
+  institutionId       String
+  institution         Institution           @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  applicationId       String                @unique
+  application         Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  admissionNumber     String?
+  className           String
+  sectionName         String                @default("")
+  academicYear        String                @default("2025-26")
+  status              AdmissionRecordStatus @default(PENDING_CONFIRMATION)
+  principalApprovedBy String                @default("")
+  principalApprovedAt DateTime?
+  confirmedAt         DateTime?
+  confirmedBy         String                @default("")
+  notes               String                @default("")
+  feeReceipts         FeeReceipt[]
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  @@unique([institutionId, admissionNumber])
+  @@index([institutionId, academicYear, status])
+  @@index([institutionId, className, sectionName])
+}
+
+enum FeePaymentMode {
+  CASH
+  UPI
+  CARD
+  CHEQUE
+  BANK_TRANSFER
+}
+
+/// Admission fee collection receipt (configured via Institution Setup → Fee Group)
+model FeeReceipt {
+  id                  String           @id @default(cuid())
+  institutionId       String
+  institution         Institution      @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  admissionRecordId   String?
+  admissionRecord     AdmissionRecord?   @relation(fields: [admissionRecordId], references: [id], onDelete: SetNull)
+  receiptNumber       String
+  studentName         String
+  admissionNumber     String             @default("")
+  className           String
+  sectionName         String             @default("")
+  academicYear        String             @default("2025-26")
+  paymentMode         FeePaymentMode
+  amountPaid          Float
+  feeBreakdown        Json
+  remarks             String             @default("")
+  collectedBy         String             @default("")
+  collectedAt         DateTime           @default(now())
+  institutionSnapshot Json               @default("{}")
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@unique([institutionId, receiptNumber])
+  @@index([institutionId, collectedAt])
+  @@index([admissionRecordId])
 }

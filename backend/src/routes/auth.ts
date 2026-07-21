@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth, signToken } from '../middleware/auth.js';
+import { asyncHandler } from '../lib/asyncHandler.js';
 
 export const authRouter = Router();
 
@@ -12,7 +13,7 @@ const credentialsSchema = z.object({
   displayName: z.string().min(2).optional(),
 });
 
-authRouter.post('/register', async (req, res) => {
+authRouter.post('/register', asyncHandler(async (req, res) => {
   const parsed = credentialsSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
@@ -39,9 +40,9 @@ authRouter.post('/register', async (req, res) => {
     token,
     user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role },
   });
-});
+}));
 
-authRouter.post('/login', async (req, res) => {
+authRouter.post('/login', asyncHandler(async (req, res) => {
   const parsed = credentialsSchema.pick({ email: true, password: true }).safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
@@ -63,13 +64,13 @@ authRouter.post('/login', async (req, res) => {
     token,
     user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role },
   });
-});
+}));
 
-authRouter.get('/me', requireAuth, async (req, res) => {
+authRouter.get('/me', requireAuth, asyncHandler(async (req, res) => {
   const user = await prisma.user.findUnique({
     where: { id: req.user!.userId },
     select: { id: true, email: true, displayName: true, role: true, createdAt: true },
   });
   if (!user) return res.status(404).json({ error: 'User not found' });
   return res.json({ user });
-});
+}));
