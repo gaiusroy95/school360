@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
 }
 
 enum UserRole {
@@ -46,6 +47,15 @@ model Institution {
   studentBulkImports StudentBulkImport[]
   studentReports StudentReport[]
   studentAnalyticsRecords StudentAnalyticsRecord[]
+  parentCategories ParentCategory[]
+  parentCategoryAssignments ParentCategoryAssignment[]
+  parentEngagementEvents ParentEngagementEvent[]
+  parentCommunications ParentCommunication[]
+  parentFeedbacks ParentFeedback[]
+  parentMeetings ParentMeeting[]
+  parentConsentTemplates ParentConsentTemplate[]
+  parentConsentResponses ParentConsentResponse[]
+  parentAppSessions ParentAppSession[]
 }
 
 enum EnquiryStatus {
@@ -854,4 +864,254 @@ model StudentAnalyticsRecord {
   @@index([institutionId, status])
   @@index([institutionId, computedAt])
   @@index([institutionId, className, sectionName])
+}
+
+// ─── Parent Management CRM ───────────────────────────────────────────────────
+
+enum ParentRelationship {
+  FATHER
+  MOTHER
+  GUARDIAN
+}
+
+enum ParentCategoryStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ParentEngagementStatus {
+  PLANNED
+  COMPLETED
+  MISSED
+  CANCELLED
+}
+
+enum ParentCommunicationChannel {
+  SMS
+  EMAIL
+  APP
+  CALL
+  NOTICE
+  WHATSAPP
+}
+
+enum ParentCommunicationStatus {
+  PLANNED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum ParentCommunicationDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum ParentMeetingStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  MISSED
+}
+
+enum ParentConsentTemplateStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+enum ParentConsentResponseStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model ParentCategory {
+  id            String               @id @default(cuid())
+  institutionId String
+  institution   Institution          @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  name          String
+  description   String               @default("")
+  categoryGroup String               @default("General")
+  colorCode     String               @default("#6366f1")
+  status        ParentCategoryStatus @default(ACTIVE)
+  displayOrder  Int                  @default(0)
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  assignments   ParentCategoryAssignment[]
+
+  @@unique([institutionId, name])
+  @@index([institutionId, status])
+}
+
+model ParentCategoryAssignment {
+  id            String             @id @default(cuid())
+  institutionId String
+  institution   Institution        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  parentKey     String
+  studentId     String
+  relationship  ParentRelationship
+  categoryId    String
+  category      ParentCategory     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@unique([parentKey, categoryId])
+  @@index([institutionId, parentKey])
+  @@index([studentId])
+}
+
+model ParentEngagementEvent {
+  id                   String                 @id @default(cuid())
+  institutionId        String
+  institution          Institution            @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId             String
+  studentId            String
+  parentRelationship   ParentRelationship
+  title                String
+  description          String                 @default("")
+  engagementType       String                 @default("General")
+  plannedAt            DateTime
+  completedAt          DateTime?
+  outcome              String                 @default("")
+  studentFeedbackNotes String                 @default("")
+  status               ParentEngagementStatus @default(PLANNED)
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, plannedAt])
+  @@index([institutionId, studentId])
+  @@index([institutionId, status])
+}
+
+model ParentCommunication {
+  id                 String                    @id @default(cuid())
+  institutionId      String
+  institution        Institution               @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId           String
+  studentId          String
+  parentRelationship ParentRelationship
+  channel            ParentCommunicationChannel
+  direction          ParentCommunicationDirection @default(OUTBOUND)
+  subject            String                    @default("")
+  body               String                    @default("")
+  plannedAt          DateTime?
+  sentAt             DateTime?
+  readAt             DateTime?
+  responseTimeMinutes Int?
+  status             ParentCommunicationStatus @default(PLANNED)
+  isImportant        Boolean                   @default(false)
+  category           String                    @default("general")
+  academicData       Json                      @default("{}")
+  teacherFeedback    String                    @default("")
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, sentAt])
+  @@index([institutionId, studentId])
+  @@index([institutionId, status])
+  @@index([institutionId, direction])
+}
+
+model ParentFeedback {
+  id                 String             @id @default(cuid())
+  institutionId      String
+  institution        Institution        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId           String
+  studentId          String
+  parentRelationship ParentRelationship
+  parentName         String             @default("")
+  rating             Int                @default(0)
+  category           String             @default("General")
+  message            String             @default("")
+  submittedAt        DateTime           @default(now())
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, submittedAt])
+  @@index([institutionId, studentId])
+}
+
+model ParentMeeting {
+  id              String              @id @default(cuid())
+  institutionId   String
+  institution     Institution         @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId        String
+  studentId       String
+  className       String              @default("")
+  sectionName     String              @default("")
+  studentName     String              @default("")
+  fatherName      String              @default("")
+  scheduledAt     DateTime
+  conductedAt     DateTime?
+  discussionNotes String              @default("")
+  photoUrls       Json                @default("[]")
+  attendees       String              @default("")
+  status          ParentMeetingStatus @default(SCHEDULED)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, scheduledAt])
+  @@index([institutionId, className, sectionName])
+  @@index([institutionId, studentId])
+}
+
+model ParentConsentTemplate {
+  id            String                      @id @default(cuid())
+  institutionId String
+  institution   Institution                 @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId      String
+  title         String
+  description   String                      @default("")
+  category      String                      @default("General")
+  formFields    Json                        @default("[]")
+  academicYear  String                      @default("2025-26")
+  validUntil    DateTime?
+  status        ParentConsentTemplateStatus @default(DRAFT)
+  createdAt     DateTime                    @default(now())
+  updatedAt     DateTime                    @updatedAt
+
+  responses     ParentConsentResponse[]
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, status])
+}
+
+model ParentConsentResponse {
+  id                 String                      @id @default(cuid())
+  institutionId      String
+  institution        Institution                 @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  templateId         String
+  template           ParentConsentTemplate       @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  studentId          String
+  parentRelationship ParentRelationship          @default(FATHER)
+  status             ParentConsentResponseStatus @default(PENDING)
+  sharedAt           DateTime                    @default(now())
+  remarks            String                      @default("")
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+
+  @@unique([templateId, studentId, parentRelationship])
+  @@index([institutionId, status])
+  @@index([studentId])
+}
+
+model ParentAppSession {
+  id              String   @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  parentKey       String
+  studentId       String
+  loginAt         DateTime @default(now())
+  durationMinutes Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  @@index([institutionId, parentKey])
+  @@index([institutionId, loginAt])
 }

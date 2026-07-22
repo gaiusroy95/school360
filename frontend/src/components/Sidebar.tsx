@@ -21,7 +21,7 @@ const menuItems = [
   { 
     icon: Users, 
     label: 'Parent Management',
-    subItems: ['Parents List', 'Add New Parent', 'Parent Profiles', 'Communication Log', 'Parent Categories', 'Parent Feedback', 'Parent Meetings (PTM)', 'Consent Management']
+    subItems: ['Parents List', 'Parents Engagement', 'Parent Profiles', 'Communication Log', 'Parent Categories', 'Parent Feedback', 'Parent Meetings (PTM)', 'Consent Management']
   },
   { 
     icon: BookOpen, 

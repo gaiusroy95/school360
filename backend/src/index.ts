@@ -19,6 +19,13 @@ import { studentCategoriesRouter } from './routes/studentCategories.js';
 import { studentBulkImportsRouter } from './routes/studentBulkImports.js';
 import { studentReportsRouter } from './routes/studentReports.js';
 import { studentAnalyticsRouter } from './routes/studentAnalytics.js';
+import { parentsRouter } from './routes/parents.js';
+import { parentEngagementsRouter } from './routes/parentEngagements.js';
+import { parentCommunicationsRouter } from './routes/parentCommunications.js';
+import { parentFeedbackRouter } from './routes/parentFeedback.js';
+import { parentMeetingsRouter } from './routes/parentMeetings.js';
+import { parentConsentsRouter } from './routes/parentConsents.js';
+import { parentCategoriesRouter } from './routes/parentCategories.js';
 import { connectDatabase } from './lib/prisma.js';
 
 const app = express();
@@ -65,6 +72,13 @@ app.use('/api/student-categories', studentCategoriesRouter);
 app.use('/api/student-bulk-imports', studentBulkImportsRouter);
 app.use('/api/student-reports', studentReportsRouter);
 app.use('/api/student-analytics', studentAnalyticsRouter);
+app.use('/api/parents', parentsRouter);
+app.use('/api/parent-engagements', parentEngagementsRouter);
+app.use('/api/parent-communications', parentCommunicationsRouter);
+app.use('/api/parent-feedback', parentFeedbackRouter);
+app.use('/api/parent-meetings', parentMeetingsRouter);
+app.use('/api/parent-consents', parentConsentsRouter);
+app.use('/api/parent-categories', parentCategoriesRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
