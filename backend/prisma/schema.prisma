@@ -40,6 +40,12 @@ model Institution {
   seatAllocations SeatAllocation[]
   admissionRecords AdmissionRecord[]
   feeReceipts FeeReceipt[]
+  students Student[]
+  studentCategories StudentCategory[]
+  studentCategoryAssignments StudentCategoryAssignment[]
+  studentBulkImports StudentBulkImport[]
+  studentReports StudentReport[]
+  studentAnalyticsRecords StudentAnalyticsRecord[]
 }
 
 enum EnquiryStatus {
@@ -508,12 +514,85 @@ model AdmissionRecord {
   confirmedBy         String                @default("")
   notes               String                @default("")
   feeReceipts         FeeReceipt[]
+  student             Student?
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
 
   @@unique([institutionId, admissionNumber])
   @@index([institutionId, academicYear, status])
   @@index([institutionId, className, sectionName])
+}
+
+enum StudentStatus {
+  ACTIVE
+  INACTIVE
+  PASSOUT
+  TRANSFERRED
+}
+
+enum StudentGender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+/// Enrolled student roster — promoted from confirmed admissions or added manually
+model Student {
+  id                String         @id @default(cuid())
+  institutionId     String
+  institution       Institution    @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  admissionRecordId String?        @unique
+  admissionRecord   AdmissionRecord? @relation(fields: [admissionRecordId], references: [id], onDelete: SetNull)
+
+  admissionNumber   String
+  rollNumber        String         @default("")
+  rfidTag           String         @default("")
+
+  firstName         String
+  lastName          String         @default("")
+  dateOfBirth       DateTime?      @db.Date
+  gender            StudentGender  @default(OTHER)
+  bloodGroup        String         @default("")
+  aadhaarNumber     String         @default("")
+  religion          String         @default("")
+  nationality       String         @default("Indian")
+  category          String         @default("General")
+  placeOfBirth      String         @default("")
+  address           String         @default("")
+  mobile            String         @default("")
+  email             String         @default("")
+  photoUrl          String         @default("")
+
+  className         String
+  sectionName       String         @default("")
+  academicYear      String         @default("2025-26")
+  house             String         @default("")
+
+  fatherName        String         @default("")
+  fatherMobile      String         @default("")
+  motherName        String         @default("")
+  motherMobile      String         @default("")
+
+  status            StudentStatus  @default(ACTIVE)
+  enrolledAt        DateTime       @default(now())
+  leftAt            DateTime?
+  leftReason        String         @default("")
+
+  documents         Json           @default("{}")
+  customFields      Json           @default("{}")
+  entranceScore     Float?
+
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  categoryAssignments StudentCategoryAssignment[]
+  analyticsRecords StudentAnalyticsRecord[]
+
+  @@unique([institutionId, admissionNumber])
+  @@index([institutionId, academicYear, status])
+  @@index([institutionId, className, sectionName])
+  @@index([institutionId, gender])
+  @@index([institutionId, category])
 }
 
 enum FeePaymentMode {
@@ -550,4 +629,229 @@ model FeeReceipt {
   @@unique([institutionId, receiptNumber])
   @@index([institutionId, collectedAt])
   @@index([admissionRecordId])
+}
+
+enum StudentCategoryGroup {
+  ADMISSION
+  TALENT
+  ATTENDANCE
+  GOVERNMENT_RESERVATION
+}
+
+enum CategoryType {
+  GOVERNMENT
+  INTERNAL
+}
+
+enum StudentCategoryStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum CategoryAssignmentStatus {
+  ACTIVE
+  PENDING
+  DRAFT
+  DUE
+  OPEN
+  COMPLETED
+  APPROVED
+  PAID
+}
+
+/// Master category definitions (Admission, Talent, Attendance, Govt Reservation)
+model StudentCategory {
+  id            String                @id @default(cuid())
+  institutionId String
+  institution   Institution           @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  categoryGroup StudentCategoryGroup
+  name          String
+  shortCode     String
+  categoryType  CategoryType          @default(INTERNAL)
+  description   String                @default("")
+  status        StudentCategoryStatus @default(ACTIVE)
+  displayOrder  Int                   @default(0)
+  colorCode     String                @default("#6366f1")
+  icon          String                @default("")
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  assignments   StudentCategoryAssignment[]
+
+  @@unique([institutionId, categoryGroup, shortCode])
+  @@index([institutionId, categoryGroup, status])
+}
+
+/// Links students to categories
+model StudentCategoryAssignment {
+  id            String                   @id @default(cuid())
+  institutionId String
+  institution   Institution              @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       Student                  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  categoryId    String
+  category      StudentCategory          @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  recordId      String
+  details       String                   @default("")
+  status        CategoryAssignmentStatus @default(ACTIVE)
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+
+  @@unique([studentId, categoryId])
+  @@unique([institutionId, recordId])
+  @@index([institutionId, status])
+  @@index([categoryId])
+}
+
+enum BulkImportStatus {
+  DRAFT
+  PENDING
+  OPEN
+  ACTIVE
+  COMPLETED
+  APPROVED
+  PAID
+  DUE
+}
+
+enum BulkImportRowStatus {
+  PENDING
+  SUCCESS
+  UPDATED
+  ERROR
+  SKIPPED
+}
+
+/// Bulk student import batch (one row per import job in UI)
+model StudentBulkImport {
+  id             String           @id @default(cuid())
+  institutionId  String
+  institution    Institution      @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId       String
+  fileName       String           @default("")
+  className      String           @default("")
+  sectionName    String           @default("")
+  academicYear   String           @default("2025-26")
+  status         BulkImportStatus @default(PENDING)
+  totalRows      Int              @default(0)
+  createdCount   Int              @default(0)
+  updatedCount   Int              @default(0)
+  errorCount     Int              @default(0)
+  details        String           @default("")
+  updateExisting Boolean          @default(true)
+  errors         Json             @default("[]")
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  rows           StudentBulkImportRow[]
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, status])
+  @@index([institutionId, createdAt])
+  @@index([institutionId, className, sectionName])
+}
+
+/// Individual rows within a bulk import batch
+model StudentBulkImportRow {
+  id              String              @id @default(cuid())
+  batchId         String
+  batch           StudentBulkImport   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  rowNumber       Int
+  studentName     String              @default("")
+  className       String              @default("")
+  sectionName     String              @default("")
+  admissionNumber String              @default("")
+  mobile          String              @default("")
+  status          BulkImportRowStatus @default(PENDING)
+  message         String              @default("")
+  studentId       String?
+  rawData         Json                @default("{}")
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([batchId])
+  @@index([batchId, status])
+}
+
+enum StudentReportType {
+  ACTIVE_INACTIVE
+  CLASS_TOPPERS
+  ABSENT_CLASS
+  ID_CARD
+  RFID_BIOMETRIC
+  CUSTOM
+}
+
+enum StudentReportStatus {
+  DRAFT
+  PENDING
+  OPEN
+  ACTIVE
+  COMPLETED
+  APPROVED
+  PAID
+  DUE
+}
+
+/// Generated student report instance (one row in Reports table)
+model StudentReport {
+  id            String              @id @default(cuid())
+  institutionId String
+  institution   Institution         @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId      String
+  reportType    StudentReportType
+  name          String
+  period        String              @default("")
+  className     String              @default("")
+  sectionName   String              @default("")
+  academicYear  String              @default("2025-26")
+  status        StudentReportStatus @default(COMPLETED)
+  config        Json                @default("{}")
+  data          Json                @default("{}")
+  generatedAt   DateTime            @default(now())
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, reportType])
+  @@index([institutionId, status])
+  @@index([institutionId, generatedAt])
+  @@index([institutionId, className, sectionName])
+}
+
+enum StudentAnalyticsStatus {
+  DRAFT
+  PENDING
+  OPEN
+  ACTIVE
+  COMPLETED
+  APPROVED
+  PAID
+  DUE
+}
+
+/// Per-student analytics snapshot (one row in Student Analytics table)
+model StudentAnalyticsRecord {
+  id            String                 @id @default(cuid())
+  institutionId String
+  institution   Institution            @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       Student                @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  recordId      String
+  name          String
+  className     String                 @default("")
+  sectionName   String                 @default("")
+  academicYear  String                 @default("2025-26")
+  status        StudentAnalyticsStatus @default(ACTIVE)
+  scores        Json                   @default("{}")
+  riskFlags     Json                   @default("{}")
+  computedAt    DateTime               @default(now())
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@unique([studentId, academicYear])
+  @@index([institutionId, status])
+  @@index([institutionId, computedAt])
+  @@index([institutionId, className, sectionName])
 }

@@ -20,6 +20,17 @@ export function normalizeIndiaMobile(raw: string): string {
   return v.startsWith('+') ? v : `+91${digits || v}`;
 }
 
+export const INDIA_MOBILE_REGEX = /^\+91\d{10}$/;
+
+export function isIndiaMobileEmpty(value: string): boolean {
+  const v = normalizeIndiaMobile(value);
+  return v === '+91' || v === '';
+}
+
+export function isValidIndiaMobile(value: string): boolean {
+  return INDIA_MOBILE_REGEX.test(normalizeIndiaMobile(value));
+}
+
 export function enquiryInputFromForm(
   formData: FormData,
   defaults: { status?: EnquiryStatus; performer?: string },

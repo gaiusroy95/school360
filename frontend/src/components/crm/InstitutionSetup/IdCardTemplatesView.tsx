@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
-import html2canvas from 'html2canvas';
+import { captureElementToCanvas } from '../../../lib/html2canvasCapture';
 import { jsPDF } from 'jspdf';
 import { fetchInstitutionSetup } from '../../../lib/institutionApi';
 import { IdCardByTemplate } from './IdCardFaces';
@@ -138,12 +138,7 @@ export function IdCardTemplatesView({ selectedTemplate, onSelectTemplate }: Prop
       const cardH = (pageH - margin * 2 - gap) / 2;
 
       for (let i = 0; i < nodes.length; i++) {
-        const canvas = await html2canvas(nodes[i], {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-        });
+        const canvas = await captureElementToCanvas(nodes[i], { scale: 2 });
         const img = canvas.toDataURL('image/png');
         const col = i % 2;
         const row = Math.floor(i / 2) % 2;

@@ -207,8 +207,16 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
       {
         id: 'classTeacherAssign',
         title: 'Class Teacher Assign',
+        description: 'Assign a class teacher to each class–section. Data is stored in the master list.',
         fields: [
-          { key: 'requireClassTeacher', label: 'Require Class Teacher', type: 'select', options: ['Yes', 'No'] },
+          { key: 'requireClassTeacher', label: 'Require Class Teacher', type: 'select', options: ['Yes', 'No'], defaultValue: 'Yes' },
+          {
+            key: 'teacherPool',
+            label: 'Teaching Staff Directory',
+            type: 'textarea',
+            placeholder: 'Mrs. Sharma | Mathematics | 9876543210 | sharma@school.edu\nMr. Verma | Science | 9876543211',
+            help: 'One staff per line: Name | Department | Phone | Email (phone and email optional). Used in the teacher dropdown below.',
+          },
         ],
       },
       {

@@ -12,6 +12,7 @@ import {
   serializeAdmissionRecord,
   syncAdmissionRecordsForInstitution,
 } from '../lib/admissionRecords.js';
+import { createStudentFromAdmissionRecord } from '../lib/students.js';
 
 export const admissionsRouter = Router();
 admissionsRouter.use(requireAuth);
@@ -259,6 +260,8 @@ admissionsRouter.post(
     const seat = await prisma.seatAllocation.findUnique({
       where: { applicationId: updated.applicationId },
     });
+
+    await createStudentFromAdmissionRecord(updated.id, institutionId);
 
     return res.json({
       admission: serializeAdmissionRecord(updated, seat),

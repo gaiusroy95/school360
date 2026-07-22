@@ -171,7 +171,7 @@ export default function App() {
 
             const routes: Record<string, ReactNode> = {
               'Admission CRM': <AdmissionCRM currentView={page} />,
-              'Student Management': <StudentManagementCRM currentView={page} />,
+              'Student Management': <StudentManagementCRM currentView={page} onNavigate={setCurrentView} />,
               'Parent Management': <ParentManagementCRM currentView={page} />,
               'Academic Management': <AcademicManagementCRM currentView={page} />,
               'Attendance Management': <AttendanceManagementCRM currentView={page} />,

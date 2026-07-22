@@ -10,6 +10,8 @@ import {
 import { HolidayManager } from './HolidayManager';
 import { AcademicCalendarView } from './AcademicCalendarView';
 import { ComprehensiveCalendarView } from './ComprehensiveCalendarView';
+import { ClassTeacherAssignView } from './ClassTeacherAssignView';
+import { normalizeClassSectionRecords } from './classSectionRecords';
 import { IdCardTemplatesView } from './IdCardTemplatesView';
 import { NotificationPreferencesView } from './NotificationPreferencesView';
 import { SetupFieldInput } from './SetupFieldInput';
@@ -88,7 +90,14 @@ export function ModuleConfigView({
           }
           setData({
             sections,
-            records: schema.hasRecords ? raw?.records || [] : undefined,
+            records: schema.hasRecords
+              ? schema.key === 'classesSections'
+                ? normalizeClassSectionRecords(
+                    raw?.records || [],
+                    raw?.recordColumns?.length ? raw.recordColumns : schema.recordColumns,
+                  )
+                : raw?.records || []
+              : undefined,
             recordColumns: schema.hasRecords
               ? raw?.recordColumns?.length
                 ? raw.recordColumns
@@ -193,6 +202,12 @@ export function ModuleConfigView({
           publish: existing.publish,
           publishedEvents: existing.publishedEvents,
         };
+      } else if (schema.key === 'classesSections') {
+        payload = {
+          sections: data.sections,
+          records: normalizeClassSectionRecords(data.records || [], activeColumns),
+          recordColumns: activeColumns,
+        };
       }
       await updateInstitutionTile(schema.key, payload);
       setMessage('Configuration saved to database.');
@@ -288,6 +303,21 @@ export function ModuleConfigView({
                   onChange={updateRecord}
                   onRemove={removeRecord}
                   onReplaceMasterList={replaceMasterList}
+                />
+              ) : currentSection?.title === 'Class Teacher Assign' && schema.key === 'classesSections' ? (
+                <ClassTeacherAssignView
+                  fields={currentSection.fields}
+                  values={data.sections[currentSection.title] || {}}
+                  onChange={(key, value) => setField(currentSection.title, key, value)}
+                  records={data.records || []}
+                  columns={activeColumns}
+                  onReplaceRecord={(index, row) => {
+                    setData((prev) => {
+                      const records = [...(prev.records || [])];
+                      records[index] = row;
+                      return { ...prev, records };
+                    });
+                  }}
                 />
               ) : currentSection?.title === 'Comprehensive View' ? (
                 <ComprehensiveCalendarView />

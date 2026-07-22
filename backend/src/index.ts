@@ -14,6 +14,11 @@ import { seatAllocationRouter } from './routes/seatAllocation.js';
 import { admissionsRouter } from './routes/admissions.js';
 import { feeCollectionRouter } from './routes/feeCollection.js';
 import { admissionReportsRouter } from './routes/admissionReports.js';
+import { studentsRouter } from './routes/students.js';
+import { studentCategoriesRouter } from './routes/studentCategories.js';
+import { studentBulkImportsRouter } from './routes/studentBulkImports.js';
+import { studentReportsRouter } from './routes/studentReports.js';
+import { studentAnalyticsRouter } from './routes/studentAnalytics.js';
 import { connectDatabase } from './lib/prisma.js';
 
 const app = express();
@@ -55,6 +60,11 @@ app.use('/api/seat-allocation', seatAllocationRouter);
 app.use('/api/admissions', admissionsRouter);
 app.use('/api/fee-collection', feeCollectionRouter);
 app.use('/api/admission-reports', admissionReportsRouter);
+app.use('/api/students', studentsRouter);
+app.use('/api/student-categories', studentCategoriesRouter);
+app.use('/api/student-bulk-imports', studentBulkImportsRouter);
+app.use('/api/student-reports', studentReportsRouter);
+app.use('/api/student-analytics', studentAnalyticsRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
