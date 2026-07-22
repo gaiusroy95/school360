@@ -5,11 +5,21 @@ import { prisma } from '../lib/prisma.js';
 import { getDefaultInstitutionId } from '../lib/institution.js';
 import { requireAuth } from '../middleware/auth.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
-import { getMeetingDashboard, nextMeetingRecordId, serializeMeeting } from '../lib/parentMeetings.js';
-import { studentFullNameLocal } from '../lib/parentSeedHelpers.js';
+import {
+  bulkScheduleParentMeetings,
+  createSingleParentMeeting,
+  getMeetingDashboard,
+  serializeMeeting,
+} from '../lib/parentMeetings.js';
 
 export const parentMeetingsRouter = Router();
 parentMeetingsRouter.use(requireAuth);
+
+const notifySchema = z.object({
+  notifyParents: z.boolean().optional(),
+  notifyStaff: z.boolean().optional(),
+  notifyStudents: z.boolean().optional(),
+});
 
 parentMeetingsRouter.get(
   '/meta',
@@ -27,6 +37,7 @@ parentMeetingsRouter.get(
     const className = typeof req.query.className === 'string' ? req.query.className : undefined;
     const sectionName = typeof req.query.sectionName === 'string' ? req.query.sectionName : undefined;
     const studentId = typeof req.query.studentId === 'string' ? req.query.studentId : undefined;
+    const batchId = typeof req.query.batchId === 'string' ? req.query.batchId : undefined;
     const status = typeof req.query.status === 'string' ? req.query.status.toUpperCase() : undefined;
 
     const rows = await prisma.parentMeeting.findMany({
@@ -35,14 +46,48 @@ parentMeetingsRouter.get(
         ...(className ? { className } : {}),
         ...(sectionName ? { sectionName } : {}),
         ...(studentId ? { studentId } : {}),
+        ...(batchId ? { batchId } : {}),
         ...(status && Object.values(ParentMeetingStatus).includes(status as ParentMeetingStatus)
           ? { status: status as ParentMeetingStatus }
           : {}),
       },
       orderBy: { scheduledAt: 'desc' },
-      take: 500,
+      take: 1000,
     });
     return res.json({ records: rows.map(serializeMeeting) });
+  }),
+);
+
+parentMeetingsRouter.post(
+  '/bulk-schedule',
+  asyncHandler(async (req, res) => {
+    const schema = z.object({
+      className: z.string().min(1),
+      sectionName: z.string().optional(),
+      scheduledAt: z.string(),
+      meetingTitle: z.string().optional(),
+      venue: z.string().optional(),
+      discussionNotes: z.string().optional(),
+      notifyParents: z.boolean().optional(),
+      notifyStaff: z.boolean().optional(),
+      notifyStudents: z.boolean().optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const institutionId = await getDefaultInstitutionId();
+    const result = await bulkScheduleParentMeetings(institutionId, {
+      className: parsed.data.className,
+      sectionName: parsed.data.sectionName,
+      scheduledAt: new Date(parsed.data.scheduledAt),
+      meetingTitle: parsed.data.meetingTitle,
+      venue: parsed.data.venue,
+      discussionNotes: parsed.data.discussionNotes,
+      notifyParents: parsed.data.notifyParents,
+      notifyStaff: parsed.data.notifyStaff,
+      notifyStudents: parsed.data.notifyStudents,
+    });
+    return res.status(201).json(result);
   }),
 );
 
@@ -64,37 +109,34 @@ parentMeetingsRouter.post(
     const schema = z.object({
       studentId: z.string(),
       scheduledAt: z.string(),
+      meetingTitle: z.string().optional(),
+      venue: z.string().optional(),
       discussionNotes: z.string().optional(),
       attendees: z.string().optional(),
       status: z.enum(['SCHEDULED', 'COMPLETED', 'CANCELLED', 'MISSED']).optional(),
       conductedAt: z.string().optional(),
+      notifyParents: z.boolean().optional(),
+      notifyStaff: z.boolean().optional(),
+      notifyStudents: z.boolean().optional(),
     });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
     const institutionId = await getDefaultInstitutionId();
-    const student = await prisma.student.findFirst({ where: { institutionId, id: parsed.data.studentId } });
-    if (!student) return res.status(404).json({ error: 'Student not found' });
-
-    const recordId = await nextMeetingRecordId(institutionId);
-    const row = await prisma.parentMeeting.create({
-      data: {
-        institutionId,
-        recordId,
-        studentId: student.id,
-        className: student.className,
-        sectionName: student.sectionName,
-        studentName: studentFullNameLocal(student),
-        fatherName: student.fatherName,
-        scheduledAt: new Date(parsed.data.scheduledAt),
-        conductedAt: parsed.data.conductedAt ? new Date(parsed.data.conductedAt) : null,
-        discussionNotes: parsed.data.discussionNotes || '',
-        attendees: parsed.data.attendees || student.fatherName,
-        status: (parsed.data.status as ParentMeetingStatus) || 'SCHEDULED',
-        photoUrls: [],
-      },
+    const result = await createSingleParentMeeting(institutionId, {
+      studentId: parsed.data.studentId,
+      scheduledAt: new Date(parsed.data.scheduledAt),
+      meetingTitle: parsed.data.meetingTitle,
+      venue: parsed.data.venue,
+      discussionNotes: parsed.data.discussionNotes,
+      attendees: parsed.data.attendees,
+      status: (parsed.data.status as ParentMeetingStatus) || 'SCHEDULED',
+      conductedAt: parsed.data.conductedAt ? new Date(parsed.data.conductedAt) : null,
+      notifyParents: parsed.data.notifyParents,
+      notifyStaff: parsed.data.notifyStaff,
+      notifyStudents: parsed.data.notifyStudents,
     });
-    return res.status(201).json({ record: serializeMeeting(row) });
+    return res.status(201).json(result);
   }),
 );
 

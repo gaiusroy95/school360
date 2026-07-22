@@ -975,6 +975,7 @@ model ParentEngagementEvent {
   engagementType       String                 @default("General")
   plannedAt            DateTime
   completedAt          DateTime?
+  actionsTaken         String                 @default("")
   outcome              String                 @default("")
   studentFeedbackNotes String                 @default("")
   status               ParentEngagementStatus @default(PLANNED)
@@ -1025,6 +1026,8 @@ model ParentFeedback {
   studentId          String
   parentRelationship ParentRelationship
   parentName         String             @default("")
+  parentMobile       String             @default("")
+  source             String             @default("MOBILE")
   rating             Int                @default(0)
   category           String             @default("General")
   message            String             @default("")
@@ -1047,6 +1050,9 @@ model ParentMeeting {
   sectionName     String              @default("")
   studentName     String              @default("")
   fatherName      String              @default("")
+  meetingTitle    String              @default("Parent Teacher Meeting")
+  venue           String              @default("")
+  batchId         String              @default("")
   scheduledAt     DateTime
   conductedAt     DateTime?
   discussionNotes String              @default("")

@@ -1,21 +1,70 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Phone, Mail, Calendar, CreditCard, MessageSquare } from 'lucide-react';
-import { fetchParentDetail, getParentProfileKey, type ParentDetail } from '../../../lib/parentServices';
-import { fetchParents } from '../../../lib/parentServices';
+import { Phone, Mail, Calendar, CreditCard, MessageSquare, Search, User } from 'lucide-react';
+import {
+  fetchParentDetail, fetchParents, getParentProfileKey,
+  type ParentDetail, type ParentListItem,
+} from '../../../lib/parentServices';
+import { fetchStudents, fetchStudentsMeta } from '../../../lib/studentServices';
 import { ParentLoading, ParentPageHeader, ParentPageShell, pm } from './ParentManagementUi';
 
 export function ParentProfilesView() {
   const [parentKey, setParentKey] = useState(getParentProfileKey() || '');
   const [detail, setDetail] = useState<ParentDetail | null>(null);
-  const [parents, setParents] = useState<{ parentKey: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<ParentListItem[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  const [classOptions, setClassOptions] = useState<string[]>([]);
+  const [sectionOptions, setSectionOptions] = useState<string[]>([]);
+  const [childClass, setChildClass] = useState('');
+  const [childSection, setChildSection] = useState('');
+  const [childStudents, setChildStudents] = useState<{ id: string; fullName: string; classGroup: string }[]>([]);
+  const [selectedChildId, setSelectedChildId] = useState('');
+
   useEffect(() => {
+    void fetchStudentsMeta().then((r) => setClassOptions(r.filters.classes));
+    const stored = getParentProfileKey();
+    if (stored) {
+      setParentKey(stored);
+      return;
+    }
     void fetchParents().then((r) => {
-      setParents(r.parents.map((p) => ({ parentKey: p.parentKey, name: p.name })));
-      if (!parentKey && r.parents[0]) setParentKey(r.parents[0].parentKey);
+      if (r.parents[0]) setParentKey(r.parents[0].parentKey);
     });
   }, []);
+
+  useEffect(() => {
+    if (!childClass) {
+      setSectionOptions([]);
+      setChildSection('');
+      setChildStudents([]);
+      setSelectedChildId('');
+      return;
+    }
+    void fetchStudentsMeta().then((r) => {
+      setSectionOptions(r.filters.sectionsByClass[childClass] || []);
+      setChildSection('');
+      setSelectedChildId('');
+    });
+  }, [childClass]);
+
+  useEffect(() => {
+    if (!childClass) return;
+    void fetchStudents({
+      className: childClass,
+      sectionName: childSection || undefined,
+      viewAll: true,
+      pageSize: 500,
+    }).then((r) => {
+      setChildStudents(r.students.map((s) => ({
+        id: s.id,
+        fullName: s.fullName,
+        classGroup: s.classSection || `${s.className}-${s.sectionName}`,
+      })));
+    });
+  }, [childClass, childSection]);
 
   const loadDetail = useCallback(async () => {
     if (!parentKey) return;
@@ -29,6 +78,37 @@ export function ParentProfilesView() {
 
   useEffect(() => { void loadDetail(); }, [loadDetail]);
 
+  const selectParent = (key: string) => {
+    setParentKey(key);
+    setSearchResults([]);
+  };
+
+  const searchParents = async () => {
+    if (!searchQuery.trim()) return;
+    setSearching(true);
+    try {
+      const res = await fetchParents({ q: searchQuery.trim() });
+      setSearchResults(res.parents);
+      if (res.parents.length === 1) selectParent(res.parents[0].parentKey);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const selectChild = async (studentId: string) => {
+    setSelectedChildId(studentId);
+    if (!studentId) return;
+
+    const student = childStudents.find((s) => s.id === studentId);
+    if (!student) return;
+
+    const res = await fetchParents({ q: student.fullName });
+    const match = res.parents.find((p) => p.students.some((s) => s.studentId === studentId));
+    if (match) {
+      selectParent(match.parentKey);
+    }
+  };
+
   if (loading && !detail) return <ParentLoading label="Loading parent profile…" />;
 
   return (
@@ -40,10 +120,79 @@ export function ParentProfilesView() {
       />
 
       <div className={pm.content}>
-        <div className={pm.filterBar}>
-          <select value={parentKey} onChange={(e) => setParentKey(e.target.value)} className={`${pm.select} max-w-md`}>
-            {parents.map((p) => <option key={p.parentKey} value={p.parentKey}>{p.name}</option>)}
-          </select>
+        <div className={`${pm.card} ${pm.cardPad} space-y-4`}>
+          <div className="flex flex-col lg:flex-row gap-3">
+            <div className="flex flex-1 flex-col sm:flex-row gap-2 min-w-0">
+              <input
+                type="text"
+                placeholder="Search parent name or mobile number…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') void searchParents(); }}
+                className={`${pm.input} flex-1`}
+              />
+              <button type="button" onClick={() => void searchParents()} disabled={searching} className={`${pm.btnSecondary} shrink-0`}>
+                <Search size={14} /> {searching ? 'Searching…' : 'Search'}
+              </button>
+            </div>
+
+            <div className="hidden lg:block w-px bg-slate-200 self-stretch" />
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 flex-1 min-w-0">
+              <select value={childClass} onChange={(e) => setChildClass(e.target.value)} className={pm.selectFull}>
+                <option value="">Class</option>
+                {classOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <select
+                value={childSection}
+                onChange={(e) => setChildSection(e.target.value)}
+                disabled={!childClass}
+                className={pm.selectFull}
+              >
+                <option value="">Section</option>
+                {sectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <select
+                value={selectedChildId}
+                onChange={(e) => void selectChild(e.target.value)}
+                disabled={!childClass || childStudents.length === 0}
+                className={pm.selectFull}
+              >
+                <option value="">Child name</option>
+                {childStudents.map((s) => (
+                  <option key={s.id} value={s.id}>{s.fullName}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {searchResults.length > 1 && (
+            <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
+              <p className="w-full text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                <User size={11} /> {searchResults.length} parents found — select one:
+              </p>
+              {searchResults.map((p) => (
+                <button
+                  key={p.parentKey}
+                  type="button"
+                  onClick={() => selectParent(p.parentKey)}
+                  className={`text-left px-3 py-2 rounded-lg border text-xs transition-colors ${parentKey === p.parentKey ? 'border-indigo-400 bg-indigo-50 text-indigo-900' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'}`}
+                >
+                  <span className="font-semibold">{p.name}</span>
+                  <span className="text-slate-500 ml-1.5">· {p.mobile}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {detail && (
+            <div className="flex items-center gap-2 pt-1 border-t border-slate-100 text-xs text-slate-500">
+              <span className="font-semibold text-slate-700">Viewing:</span>
+              <span className={`${pm.badge} ${pm.badgeBlue}`}>{detail.parent.name}</span>
+              <span>{detail.parent.mobile}</span>
+              <span>· {detail.parent.relationship}</span>
+            </div>
+          )}
         </div>
 
         {detail && (

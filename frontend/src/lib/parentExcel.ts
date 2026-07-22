@@ -21,9 +21,12 @@ export function downloadParentsExcel(parents: ParentListItem[], filename = 'Pare
 }
 
 export function downloadParentMeetingsExcel(meetings: MeetingRecord[], filename = 'PTM_Export.xlsx') {
-  const headers = ['Record ID', 'Class', 'Section', 'Student Name', "Father's Name", 'Scheduled', 'Conducted', 'Status', 'Discussion Notes', 'Attendees'];
+  const headers = ['Record ID', 'Batch ID', 'Title', 'Venue', 'Class', 'Section', 'Student Name', "Father's Name", 'Scheduled', 'Conducted', 'Status', 'Discussion Notes', 'Attendees'];
   const rows = meetings.map((m) => [
     m.recordId,
+    m.batchId || '',
+    m.meetingTitle || '',
+    m.venue || '',
     m.className,
     m.sectionName,
     m.studentName,

@@ -10,9 +10,42 @@ import {
   serializeConsentResponse,
   serializeConsentTemplate,
 } from '../lib/parentConsents.js';
+import {
+  DEFAULT_BEHAVIOR_THRESHOLD,
+  DEFAULT_STUDY_THRESHOLD,
+  getImprovementPlanCandidates,
+} from '../lib/improvementPlan.js';
 
 export const parentConsentsRouter = Router();
 parentConsentsRouter.use(requireAuth);
+
+parentConsentsRouter.get(
+  '/improvement-plan/candidates',
+  asyncHandler(async (req, res) => {
+    const schema = z.object({
+      academicYear: z.string().optional(),
+      studyThreshold: z.coerce.number().min(0).max(100).optional(),
+      behaviorThreshold: z.coerce.number().min(0).max(100).optional(),
+    });
+    const parsed = schema.safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const institutionId = await getDefaultInstitutionId();
+    const candidates = await getImprovementPlanCandidates(institutionId, {
+      academicYear: parsed.data.academicYear,
+      studyThreshold: parsed.data.studyThreshold,
+      behaviorThreshold: parsed.data.behaviorThreshold,
+    });
+
+    return res.json({
+      candidates,
+      defaults: {
+        studyThreshold: DEFAULT_STUDY_THRESHOLD,
+        behaviorThreshold: DEFAULT_BEHAVIOR_THRESHOLD,
+      },
+    });
+  }),
+);
 
 parentConsentsRouter.get(
   '/',
@@ -111,5 +144,19 @@ parentConsentsRouter.get(
       orderBy: { sharedAt: 'desc' },
     });
     return res.json({ responses: rows.map(serializeConsentResponse) });
+  }),
+);
+
+parentConsentsRouter.delete(
+  '/:templateId',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const existing = await prisma.parentConsentTemplate.findFirst({
+      where: { institutionId, id: req.params.templateId },
+    });
+    if (!existing) return res.status(404).json({ error: 'Template not found' });
+
+    await prisma.parentConsentTemplate.delete({ where: { id: existing.id } });
+    return res.json({ ok: true, message: 'Consent template deleted.' });
   }),
 );

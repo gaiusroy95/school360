@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Upload, Download, X, Users, ChevronRight, Target, Lightbulb, Search,
 } from 'lucide-react';
@@ -11,7 +11,7 @@ import {
 } from '../../../lib/parentCategoryServices';
 import { downloadParentSegmentsExcel } from '../../../lib/parentCategoriesExcel';
 import {
-  ParentKpiCard, ParentKpiGrid, ParentLoading, ParentPageHeader, ParentPageShell, ParentTableCard, pm,
+  ParentLoading, ParentPageHeader, ParentPageShell, ParentTableCard, pm,
 } from './ParentManagementUi';
 
 type Props = { onNavigate?: (view: string) => void };
@@ -42,6 +42,7 @@ export function ParentCategoriesView({ onNavigate }: Props) {
     activeOpen: number;
     pending: number;
     thisMonth: number;
+    segmented: number;
   } | null>(null);
   const [segments, setSegments] = useState<SegmentDefinition[]>([]);
   const [parents, setParents] = useState<ParentSegmentParent[]>([]);
@@ -56,13 +57,10 @@ export function ParentCategoriesView({ onNavigate }: Props) {
     [onNavigate],
   );
 
-  const load = useCallback(async (segment?: ParentSegmentId | null) => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await fetchParentCategoryAnalytics({
-        segment: segment || undefined,
-        q: search || undefined,
-      });
+      const data = await fetchParentCategoryAnalytics({ q: search || undefined });
       setSummary(data.summary);
       setSegments(data.segments);
       setParents(data.parents);
@@ -73,11 +71,29 @@ export function ParentCategoriesView({ onNavigate }: Props) {
     }
   }, [search]);
 
-  useEffect(() => { void load(selectedSegment); }, [load, selectedSegment]);
+  useEffect(() => { void load(); }, [load]);
+
+  const displayedParents = useMemo(() => {
+    const list = selectedSegment
+      ? parents.filter((p) => p.segmentId === selectedSegment)
+      : parents;
+    return [...list].sort((a, b) => a.childPerformanceScore - b.childPerformanceScore);
+  }, [parents, selectedSegment]);
+
+  const downloadCategoryExcel = (segmentId: ParentSegmentId, label?: string) => {
+    const segment = segments.find((s) => s.id === segmentId);
+    const categoryParents = parents
+      .filter((p) => p.segmentId === segmentId)
+      .sort((a, b) => a.childPerformanceScore - b.childPerformanceScore);
+    const safeName = (label || segment?.name || segmentId).replace(/[^a-z0-9]+/gi, '_');
+    downloadParentSegmentsExcel(segments, categoryParents, `${safeName}.xlsx`);
+    setMessage(`Downloaded ${categoryParents.length} parent(s) — ${segment?.name || segmentId} (lowest child score first).`);
+  };
 
   const handleExport = () => {
-    downloadParentSegmentsExcel(segments, parents);
-    setMessage('Exported segment matrix and parent list to Excel.');
+    const sorted = [...parents].sort((a, b) => a.childPerformanceScore - b.childPerformanceScore);
+    downloadParentSegmentsExcel(segments, sorted);
+    setMessage('Exported full segment matrix and all parents to Excel.');
   };
 
   const handleImport = async (file: File) => {
@@ -86,7 +102,7 @@ export function ParentCategoriesView({ onNavigate }: Props) {
 
   const activeSegment = selectedSegment ? segments.find((s) => s.id === selectedSegment) : null;
 
-  if (loading && !summary) return <ParentLoading label="Computing parent engagement analytics…" />;
+  if (loading && segments.length === 0) return <ParentLoading label="Computing parent engagement analytics…" />;
 
   return (
     <ParentPageShell>
@@ -110,13 +126,41 @@ export function ParentCategoriesView({ onNavigate }: Props) {
       <div className={pm.content}>
         {message && <p className={pm.message}>{message}</p>}
 
-        {summary && (
-          <ParentKpiGrid>
-            <ParentKpiCard label="Total Parent Categories" value={summary.totalParentCategories} />
-            <ParentKpiCard label="Active / Open" value={summary.activeOpen} valueClassName="text-emerald-600" />
-            <ParentKpiCard label="Pending" value={summary.pending} valueClassName="text-amber-600" />
-            <ParentKpiCard label="This Month" value={summary.thisMonth} valueClassName="text-indigo-600" />
-          </ParentKpiGrid>
+        {segments.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 md:gap-4">
+            {segments.map((s) => {
+              const active = selectedSegment === s.id;
+              return (
+                <div
+                  key={s.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelectedSegment(active ? null : s.id)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedSegment(active ? null : s.id); }}
+                  className={`${pm.card} p-4 cursor-pointer transition-all duration-200 border-l-4 ${active ? 'ring-2 ring-offset-1 shadow-md' : 'hover:shadow-md hover:border-slate-300/80'}`}
+                  style={{ borderLeftColor: s.color, ...(active ? { ringColor: s.color } : {}) }}
+                >
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <h3 className="text-sm font-bold text-slate-900 leading-tight">{s.name}</h3>
+                    <button
+                      type="button"
+                      title={`Download ${s.name} Excel`}
+                      onClick={(e) => { e.stopPropagation(); downloadCategoryExcel(s.id); }}
+                      className={`${pm.btnGhost} p-1.5 shrink-0`}
+                    >
+                      <Download size={14} />
+                    </button>
+                  </div>
+                  <p className="text-2xl font-bold tabular-nums" style={{ color: s.color }}>{s.count}</p>
+                  <p className="text-[10px] font-semibold text-slate-500 mt-0.5">{s.percent}% of parents</p>
+                  <p className="text-[10px] text-slate-500 mt-2 leading-snug line-clamp-2">{s.dataProfile}</p>
+                  {active && (
+                    <p className="text-[10px] font-bold text-indigo-600 mt-2">Showing · lowest child score first</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
 
         <div className="relative max-w-md">
@@ -153,7 +197,19 @@ export function ParentCategoriesView({ onNavigate }: Props) {
                     className={`text-white text-xs md:text-sm border-b border-white/15 cursor-pointer transition-all duration-150 ${selectedSegment === s.id ? 'bg-emerald-900/50 ring-1 ring-inset ring-white/25' : 'hover:bg-emerald-700/60'}`}
                     onClick={() => setSelectedSegment(selectedSegment === s.id ? null : s.id)}
                   >
-                    <td className="p-3.5 font-bold border-r border-white/15 align-top">{s.name}</td>
+                    <td className="p-3.5 font-bold border-r border-white/15 align-top">
+                      <div className="flex items-center justify-between gap-2">
+                        <span>{s.name}</span>
+                        <button
+                          type="button"
+                          title={`Download ${s.name}`}
+                          onClick={(e) => { e.stopPropagation(); downloadCategoryExcel(s.id); }}
+                          className="p-1 rounded hover:bg-white/20 transition-colors"
+                        >
+                          <Download size={12} />
+                        </button>
+                      </div>
+                    </td>
                     <td className="p-3.5 border-r border-white/15 align-top font-medium text-white/95">{s.dataProfile}</td>
                     <td className="p-3.5 border-r border-white/15 align-top leading-relaxed text-white/90">{s.reality}</td>
                     <td className="p-3.5 text-center font-bold align-top tabular-nums">
@@ -177,7 +233,16 @@ export function ParentCategoriesView({ onNavigate }: Props) {
                 </h3>
                 <p className="text-sm text-slate-600 mt-1"><span className="font-semibold text-slate-800">Goal:</span> {activeSegment.engagementPlan.goal}</p>
               </div>
-              <button type="button" onClick={() => setSelectedSegment(null)} className={pm.btnGhost}><X size={18} /></button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => downloadCategoryExcel(activeSegment.id)}
+                  className={`${pm.btnSecondary} text-xs py-1.5`}
+                >
+                  <Download size={12} /> Excel
+                </button>
+                <button type="button" onClick={() => setSelectedSegment(null)} className={pm.btnGhost}><X size={18} /></button>
+              </div>
             </div>
             <div className="grid md:grid-cols-2 gap-4">
               <div className="bg-amber-50/80 border border-amber-200/70 rounded-xl p-4">
@@ -201,14 +266,18 @@ export function ParentCategoriesView({ onNavigate }: Props) {
           </div>
         )}
 
-        {(selectedSegment || parents.length > 0) && (
+        {(selectedSegment || displayedParents.length > 0) && (
           <ParentTableCard
-            title={selectedSegment ? `${activeSegment?.name} — ${parents.length} parent(s)` : `All Segmented Parents (${parents.length})`}
-            actions={selectedSegment ? (
-              <button type="button" onClick={() => downloadParentSegmentsExcel(segments, parents, `${selectedSegment}_parents.xlsx`)} className="text-xs font-bold text-emerald-700 flex items-center gap-1 hover:underline">
+            title={selectedSegment ? `${activeSegment?.name} — ${displayedParents.length} parent(s)` : `All Segmented Parents (${displayedParents.length})`}
+            actions={
+              <button
+                type="button"
+                onClick={() => selectedSegment ? downloadCategoryExcel(selectedSegment) : handleExport()}
+                className="text-xs font-bold text-emerald-700 flex items-center gap-1 hover:underline"
+              >
                 <Download size={12} /> Download Excel
               </button>
-            ) : undefined}
+            }
           >
             <table className={pm.table}>
               <thead className={pm.tableHead}>
@@ -216,15 +285,15 @@ export function ParentCategoriesView({ onNavigate }: Props) {
                   <th className={pm.th}>Parent</th>
                   <th className={pm.th}>Segment</th>
                   <th className={pm.th}>PES</th>
-                  <th className={pm.th}>Child Perf.</th>
+                  <th className={pm.th}>Child Perf. ↓</th>
                   <th className={pm.th}>A / R / M / F</th>
                   <th className={pm.th}>Flags</th>
                 </tr>
               </thead>
               <tbody className={pm.tbody}>
-                {parents.length === 0 ? (
+                {displayedParents.length === 0 ? (
                   <tr><td colSpan={6} className="p-10 text-center text-slate-400 text-sm">No parents in this segment</td></tr>
-                ) : parents.map((p) => (
+                ) : displayedParents.map((p) => (
                   <tr key={p.parentKey} className={`${pm.trHover} cursor-pointer`} onClick={() => setSelectedParent(p)}>
                     <td className={pm.td}>
                       <p className="font-semibold text-slate-900">{p.name}</p>

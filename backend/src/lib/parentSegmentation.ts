@@ -236,6 +236,8 @@ export async function getParentCategoryAnalytics(
     ? records.filter((r) => r.segmentId === opts.segment)
     : records;
 
+  const sorted = [...filtered].sort((a, b) => a.childPerformanceScore - b.childPerformanceScore);
+
   const segments = PARENT_SEGMENTS.map((def) => ({
     ...def,
     count: segmentCounts[def.id],
@@ -251,7 +253,7 @@ export async function getParentCategoryAnalytics(
       segmented: records.length,
     },
     segments,
-    parents: filtered.map((r) => ({
+    parents: sorted.map((r) => ({
       parentKey: r.parentKey,
       name: r.name,
       relationship: r.relationship,
@@ -270,6 +272,6 @@ export async function getParentCategoryAnalytics(
       flags: r.flags,
       pesComponents: r.pesComponents,
     })),
-    total: filtered.length,
+    total: sorted.length,
   };
 }

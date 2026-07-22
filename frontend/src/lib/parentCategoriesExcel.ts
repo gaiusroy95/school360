@@ -13,10 +13,11 @@ export function downloadParentSegmentsExcel(
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([matrixHeaders, ...matrixRows]), 'Segment Matrix');
 
   const parentHeaders = [
-    'Parent Name', 'Segment', 'PES Score', 'Child Performance', 'Relationship', 'Mobile',
+    'Rank (lowest child perf first)', 'Parent Name', 'Segment', 'PES Score', 'Child Performance', 'Relationship', 'Mobile',
     'Students', 'Status', 'Attendance (A)', 'Read Rate (R)', 'Proactive (M)', 'Feedback (F)', 'Flags',
   ];
-  const parentRows = parents.map((p) => [
+  const parentRows = parents.map((p, i) => [
+    i + 1,
     p.name,
     p.segmentName,
     p.pesScore,

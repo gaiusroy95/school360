@@ -6,6 +6,8 @@ import { getDefaultInstitutionId } from '../lib/institution.js';
 import { requireAuth } from '../middleware/auth.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import {
+  bulkSendAndRecordCommunications,
+  enrichCommunicationRecords,
   getCommunicationDashboard,
   nextCommunicationRecordId,
   serializeCommunication,
@@ -28,15 +30,20 @@ parentCommunicationsRouter.get(
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
     const q = typeof req.query.q === 'string' ? req.query.q : undefined;
+    const mobile = typeof req.query.mobile === 'string' ? req.query.mobile : undefined;
     const status = typeof req.query.status === 'string' ? req.query.status.toUpperCase() : undefined;
     const category = typeof req.query.category === 'string' ? req.query.category : undefined;
     const studentId = typeof req.query.studentId === 'string' ? req.query.studentId : undefined;
+    const channel = typeof req.query.channel === 'string' ? req.query.channel.toUpperCase() : undefined;
 
     const rows = await prisma.parentCommunication.findMany({
       where: {
         institutionId,
         ...(studentId ? { studentId } : {}),
         ...(category ? { category } : {}),
+        ...(channel && Object.values(ParentCommunicationChannel).includes(channel as ParentCommunicationChannel)
+          ? { channel: channel as ParentCommunicationChannel }
+          : {}),
         ...(status && Object.values(ParentCommunicationStatus).includes(status as ParentCommunicationStatus)
           ? { status: status as ParentCommunicationStatus }
           : {}),
@@ -50,10 +57,28 @@ parentCommunicationsRouter.get(
             }
           : {}),
       },
-      orderBy: { createdAt: 'desc' },
-      take: 500,
+      orderBy: { sentAt: 'desc' },
+      take: 1000,
     });
-    return res.json({ records: rows.map(serializeCommunication) });
+
+    let records = await enrichCommunicationRecords(institutionId, rows);
+    if (mobile) {
+      const needle = mobile.replace(/\D/g, '');
+      records = records.filter((r) => r.parentMobile.replace(/\D/g, '').includes(needle));
+    }
+    if (q) {
+      const lower = q.toLowerCase();
+      records = records.filter(
+        (r) =>
+          r.subject.toLowerCase().includes(lower) ||
+          r.body.toLowerCase().includes(lower) ||
+          r.parentName.toLowerCase().includes(lower) ||
+          r.parentMobile.includes(q) ||
+          r.studentName.toLowerCase().includes(lower),
+      );
+    }
+
+    return res.json({ records });
   }),
 );
 
@@ -65,7 +90,39 @@ parentCommunicationsRouter.get(
       where: { institutionId, id: req.params.id },
     });
     if (!row) return res.status(404).json({ error: 'Not found' });
-    return res.json({ record: serializeCommunication(row) });
+    const [record] = await enrichCommunicationRecords(institutionId, [row]);
+    return res.json({ record });
+  }),
+);
+
+parentCommunicationsRouter.post(
+  '/bulk-send',
+  asyncHandler(async (req, res) => {
+    const schema = z.object({
+      channel: z.enum(['SMS', 'EMAIL', 'APP', 'CALL', 'NOTICE', 'WHATSAPP']),
+      subject: z.string().min(1),
+      body: z.string().min(1),
+      category: z.string().optional(),
+      className: z.string().optional(),
+      sectionName: z.string().optional(),
+      academicYear: z.string().optional(),
+      parentRelationship: z.enum(['FATHER', 'MOTHER', 'GUARDIAN']).optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const institutionId = await getDefaultInstitutionId();
+    const result = await bulkSendAndRecordCommunications(institutionId, {
+      channel: parsed.data.channel as ParentCommunicationChannel,
+      subject: parsed.data.subject,
+      body: parsed.data.body,
+      category: parsed.data.category,
+      className: parsed.data.className,
+      sectionName: parsed.data.sectionName,
+      academicYear: parsed.data.academicYear,
+      parentRelationship: parsed.data.parentRelationship as ParentRelationship | undefined,
+    });
+    return res.status(201).json(result);
   }),
 );
 
@@ -104,16 +161,17 @@ parentCommunicationsRouter.post(
         subject: parsed.data.subject || '',
         body: parsed.data.body || '',
         plannedAt: parsed.data.plannedAt ? new Date(parsed.data.plannedAt) : null,
-        sentAt: parsed.data.sentAt ? new Date(parsed.data.sentAt) : null,
+        sentAt: parsed.data.sentAt ? new Date(parsed.data.sentAt) : new Date(),
         readAt: parsed.data.readAt ? new Date(parsed.data.readAt) : null,
-        status: (parsed.data.status as ParentCommunicationStatus) || 'PLANNED',
+        status: (parsed.data.status as ParentCommunicationStatus) || 'SENT',
         isImportant: parsed.data.isImportant ?? false,
         category: parsed.data.category || 'general',
-        academicData: (parsed.data.academicData || {}) as object,
+        academicData: { ...(parsed.data.academicData || {}), autoRecorded: true } as object,
         teacherFeedback: parsed.data.teacherFeedback || '',
       },
     });
-    return res.status(201).json({ record: serializeCommunication(row) });
+    const [record] = await enrichCommunicationRecords(institutionId, [row]);
+    return res.status(201).json({ record });
   }),
 );
 

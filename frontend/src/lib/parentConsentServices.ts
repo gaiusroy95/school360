@@ -51,3 +51,39 @@ export async function shareConsent(templateId: string, studentIds: string[], par
 export async function fetchConsentResponses(templateId: string) {
   return api<{ responses: ConsentResponse[] }>(`/api/parent-consents/${templateId}/responses`);
 }
+
+export async function deleteConsentTemplate(templateId: string) {
+  return api<{ ok: boolean; message: string }>(`/api/parent-consents/${templateId}`, { method: 'DELETE' });
+}
+
+export type ImprovementPlanCandidate = {
+  studentId: string;
+  fullName: string;
+  classGroup: string;
+  studyScore: number;
+  behaviorScore: number;
+  studyIssue: boolean;
+  behaviorIssue: boolean;
+  flags: ('S' | 'B')[];
+};
+
+export async function fetchImprovementPlanCandidates(params?: {
+  academicYear?: string;
+  studyThreshold?: number;
+  behaviorThreshold?: number;
+}) {
+  const q = new URLSearchParams();
+  if (params?.academicYear) q.set('academicYear', params.academicYear);
+  if (params?.studyThreshold != null) q.set('studyThreshold', String(params.studyThreshold));
+  if (params?.behaviorThreshold != null) q.set('behaviorThreshold', String(params.behaviorThreshold));
+  const qs = q.toString();
+  return api<{
+    candidates: ImprovementPlanCandidate[];
+    defaults: { studyThreshold: number; behaviorThreshold: number };
+  }>(`/api/parent-consents/improvement-plan/candidates${qs ? `?${qs}` : ''}`);
+}
+
+export function isImprovementPlanTemplate(template: Pick<ConsentTemplate, 'category' | 'title'>) {
+  const text = `${template.category} ${template.title}`.toLowerCase();
+  return text.includes('improvement');
+}
