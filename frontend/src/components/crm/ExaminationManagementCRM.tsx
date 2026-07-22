@@ -79,8 +79,12 @@ const quickActions = [
 ];
 
 import { SubModuleView } from './shared/SubModuleView';
+import { ClassTestsMarksEntryView } from './ExaminationManagement/ClassTestsMarksEntryView';
 
 export function ExaminationManagementCRM({ currentView = 'Exam Dashboard' }: { currentView?: string }) {
+  if (currentView === 'Marks Entry') {
+    return <ClassTestsMarksEntryView />;
+  }
   if (currentView && currentView !== 'Exam Dashboard') {
     return <SubModuleView module="Examination Management" title={currentView} />;
   }

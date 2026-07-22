@@ -26,6 +26,8 @@ import { parentFeedbackRouter } from './routes/parentFeedback.js';
 import { parentMeetingsRouter } from './routes/parentMeetings.js';
 import { parentConsentsRouter } from './routes/parentConsents.js';
 import { parentCategoriesRouter } from './routes/parentCategories.js';
+import { academicRouter } from './routes/academic.js';
+import { attendanceRouter } from './routes/attendance.js';
 import { connectDatabase } from './lib/prisma.js';
 
 const app = express();
@@ -79,6 +81,8 @@ app.use('/api/parent-feedback', parentFeedbackRouter);
 app.use('/api/parent-meetings', parentMeetingsRouter);
 app.use('/api/parent-consents', parentConsentsRouter);
 app.use('/api/parent-categories', parentCategoriesRouter);
+app.use('/api/academic', academicRouter);
+app.use('/api/attendance', attendanceRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);

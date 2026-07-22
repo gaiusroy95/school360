@@ -38,7 +38,7 @@ export const MODULE_DEFAULT_PAGE: Record<string, string> = {
   'Admission CRM': 'Enquiries',
   'Student Management': 'Students List',
   'Parent Management': 'Parents List',
-  'Academic Management': 'Class & Sections',
+  'Academic Management': 'Academic Dashboard',
   'Attendance Management': 'Student Attendance',
   'Examination Management': 'Exam Dashboard',
   'Fees & Finance': 'Fee Dashboard',

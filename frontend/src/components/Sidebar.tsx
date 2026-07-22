@@ -26,7 +26,7 @@ const menuItems = [
   { 
     icon: BookOpen, 
     label: 'Academic Management',
-    subItems: ['Class & Sections', 'Curriculum & Syllabus', 'Timetable', 'Lesson Planning', 'Homework', 'Academic Calendar', 'Continuous Evaluation', 'Subject Management', 'Co-Scholastic Activities', 'Teacher Allocation', 'Academic Reports']
+    subItems: ['Academic Dashboard', 'Class & Sections', 'Curriculum & Syllabus', 'Timetable', 'Lesson Planning', 'Homework', 'Academic Calendar', 'Continuous Evaluation', 'Subject Management', 'Co-Scholastic Activities', 'Teacher Allocation', 'Academic Reports']
   },
   { 
     icon: ClipboardCheck, 

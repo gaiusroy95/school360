@@ -56,6 +56,44 @@ model Institution {
   parentConsentTemplates ParentConsentTemplate[]
   parentConsentResponses ParentConsentResponse[]
   parentAppSessions ParentAppSession[]
+  academicClassSections AcademicClassSection[]
+  academicSubjects AcademicSubject[]
+  academicSubjectAllocations AcademicSubjectAllocation[]
+  academicSyllabusChapters AcademicSyllabusChapter[]
+  academicTimetableSlots AcademicTimetableSlot[]
+  academicLessonPlans AcademicLessonPlan[]
+  academicHomework AcademicHomework[]
+  academicCalendarEvents AcademicCalendarEvent[]
+  academicCceRecords AcademicCceRecord[]
+  academicCoScholasticActivities AcademicCoScholasticActivity[]
+  academicTeacherAllocations AcademicTeacherAllocation[]
+  academicCurricula AcademicCurriculum[]
+  studentSubjectElectives StudentSubjectElective[]
+  academicClassTests AcademicClassTest[]
+  academicClassTestScores AcademicClassTestScore[]
+  academicBoardCalendarUploads AcademicBoardCalendarUpload[]
+  academicTeacherDevCycles AcademicTeacherDevCycle[]
+  academicTeacherEvaluations AcademicTeacherEvaluation[]
+  academicCoScholasticPerformances AcademicCoScholasticPerformance[]
+  academicCoScholasticFeedbacks AcademicCoScholasticFeedback[]
+  academicTeacherRosterTasks AcademicTeacherRosterTask[]
+  attendanceSessions AttendanceSession[]
+  studentLeaveApplications StudentLeaveApplication[]
+  teacherAttendanceProfiles TeacherAttendanceProfile[]
+  teacherAttendanceDailyRecords TeacherAttendanceDailyRecord[]
+  teacherLeaveGrants TeacherLeaveGrant[]
+  staffAttendanceProfiles StaffAttendanceProfile[]
+  staffAttendanceDailyRecords StaffAttendanceDailyRecord[]
+  staffLeaveGrants StaffLeaveGrant[]
+  teacherSubstituteAssignments TeacherSubstituteAssignment[]
+  teacherLeaveApplications TeacherLeaveApplication[]
+  staffLeaveApplications StaffLeaveApplication[]
+  studentGatePasses StudentGatePass[]
+  attendanceTimelineConfig AttendanceTimelineConfig?
+  attendanceGeoFences AttendanceGeoFence[]
+  biometricDevices BiometricDevice[]
+  biometricEnrollments BiometricEnrollment[]
+  biometricAttendancePunches BiometricAttendancePunch[]
 }
 
 enum EnquiryStatus {
@@ -597,6 +635,11 @@ model Student {
 
   categoryAssignments StudentCategoryAssignment[]
   analyticsRecords StudentAnalyticsRecord[]
+  classTestScores AcademicClassTestScore[]
+  attendanceRecords AttendanceRecord[]
+  leaveApplications StudentLeaveApplication[]
+  gatePasses StudentGatePass[]
+  biometricEnrollments BiometricEnrollment[]
 
   @@unique([institutionId, admissionNumber])
   @@index([institutionId, academicYear, status])
@@ -1120,4 +1163,1246 @@ model ParentAppSession {
 
   @@index([institutionId, parentKey])
   @@index([institutionId, loginAt])
+}
+
+// ─── Academic Management CRM ───────────────────────────────────────────────
+
+enum AcademicLessonPlanStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+  PENDING
+}
+
+enum AcademicHomeworkStatus {
+  ASSIGNED
+  SUBMITTED
+  PENDING
+  OVERDUE
+}
+
+enum AcademicCceType {
+  UNIT_TEST
+  ASSIGNMENT
+  PROJECT
+  ACTIVITY
+}
+
+enum AcademicEventType {
+  HOLIDAY
+  EXAM
+  PTM
+  ACTIVITY
+  OTHER
+}
+
+enum AcademicWorkloadLevel {
+  FULL
+  MEDIUM
+  LOW
+}
+
+enum AcademicPeriodType {
+  THEORY
+  PRACTICAL
+  LAB
+  SPORTS
+  EVENT
+}
+
+enum BloomsTaxonomyLevel {
+  REMEMBER
+  UNDERSTAND
+  APPLY
+  ANALYZE
+  EVALUATE
+  CREATE
+}
+
+enum ClassTestScoreBucket {
+  EXCELLENT
+  GOOD
+  AVERAGE
+  BELOW
+}
+
+enum AcademicCalendarUploadStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum AcademicCalendarEventSource {
+  MANUAL
+  OCR
+}
+
+enum AcademicTeacherEvalStatus {
+  DRAFT
+  IN_REVIEW
+  COMPLETED
+  PUBLISHED
+}
+
+enum AcademicTeacherPerformanceBand {
+  EXCELLENT
+  GOOD
+  AVERAGE
+  NEEDS_IMPROVEMENT
+}
+
+enum CoScholasticActivityStatus {
+  PLANNED
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum CoScholasticPerformanceBand {
+  EXCELLENT
+  GOOD
+  AVERAGE
+  NEEDS_IMPROVEMENT
+}
+
+enum TeacherRosterTaskType {
+  CLASS_SUBJECT
+  TASK
+  ACTIVITY
+  EVENT
+  PARENT_ENGAGEMENT
+  OTHER
+}
+
+enum TeacherRosterTaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum TeacherRosterPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model AcademicClassSection {
+  id              String   @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId        String
+  academicYear    String   @default("2025-26")
+  className       String
+  sectionName     String
+  capacity        Int      @default(40)
+  room            String   @default("")
+  classTeacher    String   @default("")
+  classTeacherPhone String @default("")
+  classTeacherEmail String @default("")
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@unique([institutionId, academicYear, className, sectionName])
+  @@index([institutionId, academicYear])
+}
+
+model AcademicSubject {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId      String
+  subjectName   String
+  subjectCode   String   @default("")
+  subjectType   String   @default("Core")
+  subjectGroup  String   @default("General")
+  isElective    Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  allocations   AcademicSubjectAllocation[]
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, subjectName])
+}
+
+model AcademicSubjectAllocation {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId      String
+  subjectId     String
+  subject       AcademicSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  academicYear  String   @default("2025-26")
+  className     String
+  sectionName   String
+  teacherName   String   @default("")
+  teacherEmail  String   @default("")
+  teacherPhone  String   @default("")
+  courseStartDate         DateTime?
+  courseCompletionDeadline DateTime?
+  revisionDeadline        DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@unique([institutionId, academicYear, className, sectionName, subjectId])
+  @@index([institutionId, academicYear])
+  @@index([institutionId, teacherName])
+}
+
+model AcademicSyllabusChapter {
+  id                String   @id @default(cuid())
+  institutionId     String
+  institution       Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId          String
+  academicYear      String   @default("2025-26")
+  term              String   @default("Term 1")
+  className         String
+  sectionName       String   @default("")
+  subjectName       String
+  chapterTitle      String
+  unitNumber        Int      @default(1)
+  boardTopicCode    String   @default("")
+  plannedStartDate  DateTime?
+  plannedEndDate    DateTime?
+  revisionDeadline  DateTime?
+  completionPercent Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  lessonPlans       AcademicLessonPlan[]
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, academicYear, className], map: "AcademicSyllabusChapter_inst_year_class_idx")
+  @@index([institutionId, academicYear, className, sectionName, subjectName], map: "AcademicSyllabusChapter_inst_year_class_sec_subj_idx")
+}
+
+model AcademicTimetableSlot {
+  id            String              @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId      String
+  academicYear  String              @default("2025-26")
+  term          String              @default("Term 1")
+  className     String
+  sectionName   String
+  dayOfWeek     Int                 @default(1)
+  period        Int                 @default(1)
+  periodLabel   String              @default("P1")
+  periodType    AcademicPeriodType  @default(THEORY)
+  startTime     String              @default("08:00")
+  endTime       String              @default("08:40")
+  subjectName   String
+  teacherName   String              @default("")
+  room          String              @default("")
+  effectiveFrom DateTime?
+  effectiveTo   DateTime?
+  versionLabel  String              @default("")
+  publishedAt   DateTime?
+  notes         String              @default("")
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, academicYear, className, sectionName], map: "AcademicTimetableSlot_inst_year_class_sec_idx")
+  @@index([institutionId, academicYear, teacherName], map: "AcademicTimetableSlot_inst_year_teacher_idx")
+  @@index([institutionId, publishedAt], map: "AcademicTimetableSlot_inst_published_idx")
+}
+
+model AcademicLessonPlan {
+  id                String                   @id @default(cuid())
+  institutionId     String
+  institution       Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId          String
+  academicYear      String                   @default("2025-26")
+  term              String                   @default("Term 1")
+  className         String
+  sectionName       String
+  subjectName       String
+  department        String                   @default("General")
+  title             String
+  teacherName       String                   @default("")
+  objective         String                   @default("")
+  teachingMethod    String                   @default("")
+  propsUsed         String                   @default("")
+  bloomsLevel       BloomsTaxonomyLevel      @default(UNDERSTAND)
+  resultMeasurement String                   @default("")
+  syllabusChapterId String?
+  syllabusChapter   AcademicSyllabusChapter? @relation(fields: [syllabusChapterId], references: [id], onDelete: SetNull)
+  plannedDate       DateTime?
+  status            AcademicLessonPlanStatus @default(DRAFT)
+  completionPercent Int                      @default(0)
+  sharedAt          DateTime?
+  notes             String                   @default("")
+  resources         Json                     @default("[]")
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+
+  classTests        AcademicClassTest[]
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, academicYear, status])
+  @@index([syllabusChapterId])
+}
+
+model AcademicClassTest {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId      String
+  lessonPlanId  String
+  lessonPlan    AcademicLessonPlan @relation(fields: [lessonPlanId], references: [id], onDelete: Cascade)
+  academicYear  String   @default("2025-26")
+  term          String   @default("Term 1")
+  className     String
+  sectionName   String
+  subjectName   String
+  teacherName   String   @default("")
+  title         String
+  maxMarks      Int      @default(100)
+  conductedDate DateTime?
+  status        String   @default("Scheduled")
+  publishedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  scores        AcademicClassTestScore[]
+
+  @@unique([institutionId, recordId])
+  @@unique([institutionId, lessonPlanId])
+  @@index([institutionId, academicYear, className, sectionName])
+}
+
+model AcademicClassTestScore {
+  id            String              @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  classTestId   String
+  classTest     AcademicClassTest   @relation(fields: [classTestId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  marksObtained Float
+  maxMarks      Int                 @default(100)
+  percentage    Float
+  bucket        ClassTestScoreBucket
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@unique([classTestId, studentId])
+  @@index([institutionId, studentId])
+  @@index([classTestId, bucket])
+}
+
+model AcademicHomework {
+  id              String                 @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId        String
+  academicYear    String                 @default("2025-26")
+  term            String                 @default("Term 1")
+  className       String
+  sectionName     String
+  subjectName     String
+  teacherName     String                 @default("")
+  title           String
+  description     String                 @default("")
+  assignedDate    DateTime               @default(now())
+  dueDate         DateTime?
+  status          AcademicHomeworkStatus @default(ASSIGNED)
+  totalStudents   Int                    @default(0)
+  submittedCount  Int                    @default(0)
+  sharedAt        DateTime?
+  publishedAt     DateTime?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, academicYear, status])
+  @@index([institutionId, assignedDate])
+  @@index([institutionId, className, sectionName, subjectName])
+}
+
+model AcademicCalendarEvent {
+  id              String                      @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId        String
+  academicYear    String                      @default("2025-26")
+  term            String                      @default("Term 1")
+  boardName       String                      @default("")
+  title           String
+  eventType       AcademicEventType           @default(OTHER)
+  eventDate       DateTime
+  endDate         DateTime?
+  description     String                      @default("")
+  eventSource     AcademicCalendarEventSource @default(MANUAL)
+  uploadId        String?
+  upload          AcademicBoardCalendarUpload? @relation(fields: [uploadId], references: [id], onDelete: SetNull)
+  sharedToParents Boolean                     @default(false)
+  publishedAt     DateTime?
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, academicYear, eventDate])
+  @@index([institutionId, boardName, eventDate])
+  @@index([institutionId, publishedAt])
+  @@index([uploadId])
+}
+
+model AcademicBoardCalendarUpload {
+  id            String                       @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId      String
+  boardName     String
+  academicYear  String                       @default("2025-26")
+  fileName      String
+  mimeType      String                       @default("application/pdf")
+  fileSizeBytes Int                          @default(0)
+  ocrRawText    String                       @default("")
+  status        AcademicCalendarUploadStatus @default(PROCESSING)
+  eventCount    Int                          @default(0)
+  publishedAt   DateTime?
+  errorMessage  String                       @default("")
+  previewEvents Json                         @default("[]")
+  createdAt     DateTime                     @default(now())
+  updatedAt     DateTime                     @updatedAt
+
+  events        AcademicCalendarEvent[]
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, boardName, academicYear])
+  @@index([institutionId, status])
+}
+
+model AcademicCceRecord {
+  id            String          @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId      String
+  academicYear  String          @default("2025-26")
+  term          String          @default("Term 1")
+  className     String
+  sectionName   String          @default("")
+  cceType       AcademicCceType
+  title         String
+  subjectName   String          @default("")
+  conductedDate DateTime?
+  maxMarks      Int             @default(100)
+  evaluatedCount Int            @default(0)
+  status        String          @default("Conducted")
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, academicYear, cceType])
+}
+
+model AcademicCoScholasticActivity {
+  id                  String   @id @default(cuid())
+  institutionId       String
+  institution         Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId            String
+  academicYear        String   @default("2025-26")
+  term                String   @default("Term 1")
+  title               String
+  category            String   @default("PHYSICAL_HEALTH")
+  subCategory         String   @default("")
+  activityType        String   @default("")
+  className           String   @default("")
+  sectionName         String   @default("")
+  teacherName         String   @default("")
+  coTeacherName       String   @default("")
+  activityDate        DateTime
+  startDate           DateTime?
+  endDate             DateTime?
+  venue               String   @default("")
+  description         String   @default("")
+  measurementCriteria String   @default("")
+  maxScore            Int      @default(100)
+  status              CoScholasticActivityStatus @default(PLANNED)
+  publishedAt         DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  performances AcademicCoScholasticPerformance[]
+  feedbacks    AcademicCoScholasticFeedback[]
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, academicYear])
+  @@index([institutionId, category])
+  @@index([institutionId, teacherName])
+}
+
+model AcademicCoScholasticPerformance {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId      String
+  activityId    String
+  activity      AcademicCoScholasticActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  studentId     String
+  studentName   String   @default("")
+  className     String   @default("")
+  sectionName   String   @default("")
+  performanceScore Float @default(0)
+  performanceGrade String @default("")
+  performanceBand  CoScholasticPerformanceBand @default(AVERAGE)
+  remarks       String   @default("")
+  recordedBy    String   @default("")
+  recordedAt    DateTime?
+  publishedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@unique([institutionId, activityId, studentId])
+  @@index([institutionId, studentId])
+  @@index([institutionId, activityId])
+}
+
+model AcademicCoScholasticFeedback {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId      String
+  activityId    String
+  activity      AcademicCoScholasticActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  studentId     String
+  parentName    String   @default("")
+  parentRelationship String @default("GUARDIAN")
+  rating        Int      @default(0)
+  message       String   @default("")
+  submittedAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, activityId])
+  @@index([institutionId, studentId])
+}
+
+model AcademicTeacherAllocation {
+  id              String                @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId        String
+  academicYear    String                @default("2025-26")
+  teacherName     String
+  department      String                @default("General")
+  className       String
+  sectionName     String                @default("")
+  subjectName     String
+  periodsPerWeek  Int                   @default(0)
+  workloadLevel   AcademicWorkloadLevel @default(MEDIUM)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, academicYear, teacherName])
+}
+
+model AcademicTeacherRosterTask {
+  id              String   @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId        String
+  academicYear    String   @default("2025-26")
+  term            String   @default("Term 1")
+  teacherName     String
+  department      String   @default("General")
+  taskType        TeacherRosterTaskType
+  title           String
+  description     String   @default("")
+  className       String   @default("")
+  sectionName     String   @default("")
+  subjectName     String   @default("")
+  linkedEntityId  String   @default("")
+  startDate       DateTime?
+  dueDate         DateTime?
+  endDate         DateTime?
+  priority        TeacherRosterPriority @default(MEDIUM)
+  status          TeacherRosterTaskStatus @default(PENDING)
+  feedbackRequired Boolean @default(false)
+  feedbackRecorded Boolean @default(false)
+  feedbackNotes   String   @default("")
+  parentFeedbackRating Int @default(0)
+  assignedBy      String   @default("")
+  completedAt     DateTime?
+  publishedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, academicYear, teacherName])
+  @@index([institutionId, taskType, status])
+  @@index([institutionId, dueDate])
+}
+
+model AcademicCurriculum {
+  id                 String   @id @default(cuid())
+  institutionId      String
+  institution        Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId           String
+  academicYear       String   @default("2025-26")
+  boardName          String   @default("CBSE")
+  boardCode          String   @default("")
+  standardAlignment  String   @default("")
+  termSystem         String   @default("Terms")
+  terms              String   @default("Term 1, Term 2")
+  gradingSystem      String   @default("Percentage")
+  maxMarks           Int      @default(100)
+  passMarks          Int      @default(33)
+  weightageEnabled   Boolean  @default(false)
+  assessmentWeightage Json    @default("{}")
+  complianceNotes    String   @default("")
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@unique([institutionId, academicYear])
+  @@index([institutionId, isActive])
+}
+
+model StudentSubjectElective {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId      String
+  academicYear  String   @default("2025-26")
+  studentId     String
+  subjectId     String
+  className     String
+  sectionName   String   @default("")
+  assignedAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@unique([institutionId, academicYear, studentId, subjectId])
+  @@index([institutionId, academicYear, className, sectionName])
+  @@index([studentId])
+}
+
+model AcademicTeacherDevCycle {
+  id                String   @id @default(cuid())
+  institutionId     String
+  institution       Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId          String
+  academicYear      String   @default("2025-26")
+  cycleNumber       Int
+  title             String
+  startDate         DateTime
+  endDate           DateTime
+  evaluationDueDate DateTime
+  description       String   @default("")
+  publishedAt       DateTime?
+  calendarEventId   String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  evaluations AcademicTeacherEvaluation[]
+
+  @@unique([institutionId, recordId])
+  @@unique([institutionId, academicYear, cycleNumber])
+  @@index([institutionId, academicYear])
+}
+
+model AcademicTeacherEvaluation {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId      String
+  academicYear  String   @default("2025-26")
+  devCycleId    String
+  devCycle      AcademicTeacherDevCycle @relation(fields: [devCycleId], references: [id], onDelete: Cascade)
+  teacherName   String
+  department    String   @default("General")
+  className     String   @default("")
+  sectionName   String   @default("")
+  subjectName   String   @default("")
+
+  taskActionScore        Float @default(0)
+  taskActionNotes        String @default("")
+  taskActionEvidence     String @default("")
+
+  improvementPlanScore   Float @default(0)
+  improvementPlanNotes   String @default("")
+  improvementPlanDetails String @default("")
+
+  parentEngagementScore  Float @default(0)
+  parentEngagementNotes  String @default("")
+  parentEngagementCount  Int   @default(0)
+
+  parentFeedbackScore    Float @default(0)
+  parentFeedbackNotes      String @default("")
+  parentFeedbackCount      Int   @default(0)
+
+  studentFeedbackScore   Float @default(0)
+  studentFeedbackNotes     String @default("")
+  studentFeedbackCount     Int   @default(0)
+
+  overallScore           Float @default(0)
+  performanceBand        AcademicTeacherPerformanceBand @default(AVERAGE)
+
+  status                 AcademicTeacherEvalStatus @default(DRAFT)
+  evaluatedBy            String @default("")
+  evaluatedAt            DateTime?
+  publishedAt            DateTime?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@unique([institutionId, devCycleId, teacherName, className, sectionName, subjectName])
+  @@index([institutionId, academicYear, teacherName])
+  @@index([institutionId, devCycleId])
+}
+
+// ─── Attendance Management ────────────────────────────────────────────────────
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  ON_LEAVE
+  HALF_DAY
+}
+
+enum AttendanceSessionMode {
+  CLASS
+  SUBJECT
+  ACTIVITY
+}
+
+enum LeaveApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model AttendanceSession {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId      String
+  academicYear  String   @default("2025-26")
+  sessionDate   DateTime @db.Date
+  className     String
+  sectionName   String   @default("")
+  subjectName   String   @default("")
+  activityName  String   @default("")
+  mode          AttendanceSessionMode @default(CLASS)
+  markedBy      String   @default("")
+  source        String   @default("MANUAL")
+  notes         String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  records AttendanceRecord[]
+
+  @@unique([institutionId, recordId])
+  @@unique([institutionId, sessionDate, className, sectionName, mode, subjectName, activityName])
+  @@index([institutionId, academicYear, sessionDate])
+}
+
+model AttendanceRecord {
+  id           String   @id @default(cuid())
+  sessionId    String
+  session      AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  status       AttendanceStatus
+  checkInTime  String   @default("")
+  checkOutTime String   @default("")
+  lateMinutes  Int      @default(0)
+  earlyExitMinutes Int  @default(0)
+  absentReason String   @default("")
+  remarks      String   @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([sessionId, studentId])
+  @@index([studentId, status])
+}
+
+model StudentLeaveApplication {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId      String
+  studentId     String
+  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  academicYear  String   @default("2025-26")
+  leaveType     String   @default("GENERAL")
+  fromDate      DateTime @db.Date
+  toDate        DateTime @db.Date
+  reason        String
+  status        LeaveApplicationStatus @default(PENDING)
+  reviewedBy    String   @default("")
+  reviewerRemarks String @default("")
+  source        String   @default("PARENT_APP")
+  reviewedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, academicYear, status])
+  @@index([studentId, fromDate, toDate])
+}
+
+enum TeacherAttendanceStatus {
+  PRESENT
+  PLANNED_LEAVE_ABSENT
+  MEDICAL_LEAVE_ABSENT
+  UNPLANNED_ABSENT
+  UNPLANNED_NOT_INTIMATED
+}
+
+model TeacherAttendanceProfile {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId      String
+  academicYear  String   @default("2025-26")
+  teacherName   String
+  employeeCode  String   @default("")
+  department    String   @default("General")
+  designation   String   @default("Teacher")
+  mobile        String   @default("")
+  email         String   @default("")
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  dailyRecords TeacherAttendanceDailyRecord[]
+  leaveGrants  TeacherLeaveGrant[]
+  absentSubstituteAssignments TeacherSubstituteAssignment[] @relation("AbsentTeacherSubstitute")
+  coverSubstituteAssignments TeacherSubstituteAssignment[] @relation("CoverTeacherSubstitute")
+  leaveApplications TeacherLeaveApplication[]
+  biometricEnrollments BiometricEnrollment[]
+
+  @@unique([institutionId, recordId])
+  @@unique([institutionId, academicYear, teacherName])
+  @@index([institutionId, academicYear, isActive])
+}
+
+model TeacherAttendanceDailyRecord {
+  id               String   @id @default(cuid())
+  institutionId    String
+  institution      Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  teacherProfileId String
+  teacherProfile   TeacherAttendanceProfile @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
+  academicYear     String   @default("2025-26")
+  recordDate       DateTime @db.Date
+  status           TeacherAttendanceStatus
+  teacherRemarks   String   @default("")
+  source           String   @default("MOBILE")
+  checkInTime      String   @default("")
+  checkOutTime     String   @default("")
+  lateMinutes      Int      @default(0)
+  earlyExitMinutes Int      @default(0)
+  markedAt         DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([teacherProfileId, recordDate])
+  @@index([institutionId, academicYear, recordDate])
+  @@index([institutionId, recordDate, status])
+}
+
+model TeacherLeaveGrant {
+  id               String   @id @default(cuid())
+  institutionId    String
+  institution      Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  teacherProfileId String
+  teacherProfile   TeacherAttendanceProfile @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
+  academicYear     String   @default("2025-26")
+  leaveType        String
+  daysGranted      Int
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([teacherProfileId, academicYear, leaveType])
+  @@index([institutionId, academicYear])
+}
+
+enum StaffAttendanceStatus {
+  PRESENT
+  PLANNED_LEAVE_ABSENT
+  MEDICAL_LEAVE_ABSENT
+  UNPLANNED_ABSENT
+  UNPLANNED_NOT_INTIMATED
+}
+
+model StaffAttendanceProfile {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId      String
+  academicYear  String   @default("2025-26")
+  staffName     String
+  employeeCode  String   @default("")
+  department    String   @default("General")
+  designation   String   @default("Staff")
+  mobile        String   @default("")
+  email         String   @default("")
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  dailyRecords StaffAttendanceDailyRecord[]
+  leaveGrants  StaffLeaveGrant[]
+  leaveApplications StaffLeaveApplication[]
+  biometricEnrollments BiometricEnrollment[]
+
+  @@unique([institutionId, recordId])
+  @@unique([institutionId, academicYear, staffName])
+  @@index([institutionId, academicYear, isActive])
+}
+
+model StaffAttendanceDailyRecord {
+  id              String   @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  staffProfileId  String
+  staffProfile    StaffAttendanceProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  academicYear    String   @default("2025-26")
+  recordDate      DateTime @db.Date
+  status          StaffAttendanceStatus
+  staffRemarks    String   @default("")
+  source          String   @default("MOBILE")
+  checkInTime     String   @default("")
+  checkOutTime    String   @default("")
+  lateMinutes     Int      @default(0)
+  earlyExitMinutes Int     @default(0)
+  markedAt        DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([staffProfileId, recordDate])
+  @@index([institutionId, academicYear, recordDate])
+  @@index([institutionId, recordDate, status])
+}
+
+model StaffLeaveGrant {
+  id             String   @id @default(cuid())
+  institutionId  String
+  institution    Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  staffProfileId String
+  staffProfile   StaffAttendanceProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  academicYear   String   @default("2025-26")
+  leaveType      String
+  daysGranted    Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([staffProfileId, academicYear, leaveType])
+  @@index([institutionId, academicYear])
+}
+
+model TeacherLeaveApplication {
+  id                 String   @id @default(cuid())
+  institutionId      String
+  institution        Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId           String
+  teacherProfileId   String
+  teacherProfile     TeacherAttendanceProfile @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
+  academicYear       String   @default("2025-26")
+  leaveType          String   @default("PLANNED")
+  fromDate           DateTime @db.Date
+  toDate             DateTime @db.Date
+  reason             String
+  status             LeaveApplicationStatus @default(PENDING)
+  reviewedBy         String   @default("")
+  reviewerRemarks    String   @default("")
+  source             String   @default("MOBILE")
+  reviewedAt         DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, academicYear, status])
+  @@index([teacherProfileId, fromDate, toDate])
+}
+
+model StaffLeaveApplication {
+  id               String   @id @default(cuid())
+  institutionId    String
+  institution      Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId         String
+  staffProfileId   String
+  staffProfile     StaffAttendanceProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  academicYear     String   @default("2025-26")
+  leaveType        String   @default("PLANNED")
+  fromDate         DateTime @db.Date
+  toDate           DateTime @db.Date
+  reason           String
+  status           LeaveApplicationStatus @default(PENDING)
+  reviewedBy       String   @default("")
+  reviewerRemarks  String   @default("")
+  source           String   @default("MOBILE")
+  reviewedAt       DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, academicYear, status])
+  @@index([staffProfileId, fromDate, toDate])
+}
+
+model TeacherSubstituteAssignment {
+  id                         String   @id @default(cuid())
+  institutionId              String
+  institution                Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId                   String
+  academicYear               String   @default("2025-26")
+  sessionDate                DateTime @db.Date
+  absentTeacherProfileId     String
+  absentTeacherProfile       TeacherAttendanceProfile @relation("AbsentTeacherSubstitute", fields: [absentTeacherProfileId], references: [id], onDelete: Cascade)
+  substituteTeacherProfileId String
+  substituteTeacherProfile   TeacherAttendanceProfile @relation("CoverTeacherSubstitute", fields: [substituteTeacherProfileId], references: [id], onDelete: Cascade)
+  timetableSlotId            String   @default("")
+  className                  String
+  sectionName                String   @default("")
+  subjectName                String
+  period                     Int      @default(1)
+  periodLabel                String   @default("P1")
+  startTime                  String   @default("")
+  endTime                    String   @default("")
+  room                       String   @default("")
+  notificationSentAt         DateTime?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@unique([institutionId, sessionDate, timetableSlotId, absentTeacherProfileId])
+  @@index([institutionId, academicYear, sessionDate])
+}
+
+enum GatePassType {
+  HALF_DAY
+  MID_CLASS
+}
+
+enum GatePassStatus {
+  PENDING
+  AWAITING_PRINCIPAL
+  APPROVED
+  REJECTED
+  ISSUED
+  COMPLETED
+}
+
+model StudentGatePass {
+  id               String         @id @default(cuid())
+  institutionId    String
+  institution      Institution    @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId         String
+  passNumber       String
+  studentId        String
+  student          Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  academicYear     String         @default("2025-26")
+  className        String
+  sectionName      String         @default("")
+  passType         GatePassType
+  reason           String
+  remarks          String         @default("")
+  parentName       String
+  parentMobile     String         @default("")
+  parentRelation   String         @default("Parent")
+  status           GatePassStatus @default(PENDING)
+  createdBy        String         @default("")
+  submittedBy      String         @default("")
+  submittedAt      DateTime?
+  approvedBy       String         @default("")
+  approvedAt       DateTime?
+  rejectedBy       String         @default("")
+  rejectedAt       DateTime?
+  rejectionReason  String         @default("")
+  principalRemarks String         @default("")
+  issuedBy         String         @default("")
+  issuedAt         DateTime?
+  exitTime         String         @default("")
+  completedAt      DateTime?
+  principalNotifiedAt DateTime?
+  source           String         @default("FRONT_DESK")
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@unique([institutionId, passNumber])
+  @@index([institutionId, academicYear, status])
+  @@index([studentId, createdAt])
+}
+
+model AttendanceTimelineConfig {
+  id                     String      @id @default(cuid())
+  institutionId          String      @unique
+  institution            Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  studentSchoolStart     String      @default("08:00")
+  studentLateAfter       String      @default("08:15")
+  studentSchoolEnd       String      @default("15:30")
+  studentEarlyExitBefore String      @default("15:00")
+  teacherSchoolStart     String      @default("08:00")
+  teacherLateAfter       String      @default("08:30")
+  teacherSchoolEnd       String      @default("16:00")
+  teacherEarlyExitBefore String      @default("15:30")
+  staffSchoolStart       String      @default("08:00")
+  staffLateAfter         String      @default("08:30")
+  staffSchoolEnd         String      @default("16:00")
+  staffEarlyExitBefore   String      @default("15:30")
+  updatedBy              String      @default("")
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+}
+
+enum BiometricPersonType {
+  STUDENT
+  TEACHER
+  STAFF
+}
+
+enum BiometricDeviceType {
+  FINGERPRINT
+  FACE_RECOGNITION
+  RFID_READER
+  MOBILE_GEOFENCE
+}
+
+enum BiometricDeviceStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+}
+
+enum BiometricAttendanceEventType {
+  CHECK_IN
+  CHECK_OUT
+}
+
+enum BiometricPunchStatus {
+  ACCEPTED
+  REJECTED_OUTSIDE_FENCE
+  REJECTED_NOT_ENROLLED
+  REJECTED_DEVICE_INACTIVE
+}
+
+model AttendanceGeoFence {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId      String
+  name          String
+  description   String   @default("")
+  latitude      Float
+  longitude     Float
+  radiusMeters  Int      @default(150)
+  isActive      Boolean  @default(true)
+  isDefault     Boolean  @default(false)
+  address       String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  devices BiometricDevice[]
+  punches BiometricAttendancePunch[]
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, isActive])
+}
+
+model BiometricDevice {
+  id               String               @id @default(cuid())
+  institutionId    String
+  institution      Institution          @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId         String
+  name             String
+  deviceType       BiometricDeviceType
+  status           BiometricDeviceStatus @default(ACTIVE)
+  location         String               @default("")
+  serialNumber     String               @default("")
+  geoFenceId       String?
+  geoFence         AttendanceGeoFence?  @relation(fields: [geoFenceId], references: [id], onDelete: SetNull)
+  supportsStudents Boolean              @default(true)
+  supportsTeachers Boolean              @default(true)
+  supportsStaff    Boolean              @default(true)
+  requiresGeoFence Boolean              @default(true)
+  lastSyncAt       DateTime?
+  notes            String               @default("")
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  enrollments BiometricEnrollment[]
+  punches     BiometricAttendancePunch[]
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, status])
+}
+
+model BiometricEnrollment {
+  id                  String              @id @default(cuid())
+  institutionId       String
+  institution         Institution         @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId            String
+  personType          BiometricPersonType
+  studentId           String?
+  student             Student?            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  teacherProfileId    String?
+  teacherProfile      TeacherAttendanceProfile? @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
+  staffProfileId      String?
+  staffProfile        StaffAttendanceProfile? @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  academicYear        String              @default("2025-26")
+  rfidCardId          String              @default("")
+  biometricTemplateId String              @default("")
+  deviceId            String?
+  device              BiometricDevice?    @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  isActive            Boolean             @default(true)
+  enrolledBy          String              @default("")
+  enrolledAt          DateTime            @default(now())
+  notes               String              @default("")
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, personType, isActive])
+  @@index([institutionId, rfidCardId])
+}
+
+model BiometricAttendancePunch {
+  id                 String                     @id @default(cuid())
+  institutionId      String
+  institution        Institution                @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId           String
+  personType         BiometricPersonType
+  personId           String
+  personName         String
+  personCode         String                     @default("")
+  classGroup         String                     @default("")
+  deviceId           String?
+  device             BiometricDevice?           @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  deviceType         BiometricDeviceType
+  eventType          BiometricAttendanceEventType
+  punchStatus        BiometricPunchStatus
+  verificationMethod String                     @default("BIOMETRIC")
+  rfidCardId         String                     @default("")
+  latitude           Float?
+  longitude          Float?
+  distanceMeters     Float?
+  withinGeoFence     Boolean                    @default(false)
+  geoFenceId         String?
+  geoFence           AttendanceGeoFence?          @relation(fields: [geoFenceId], references: [id], onDelete: SetNull)
+  geoFenceName       String                     @default("")
+  remarks            String                     @default("")
+  punchedAt          DateTime                   @default(now())
+  createdAt          DateTime                   @default(now())
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, punchedAt])
+  @@index([institutionId, personType, punchStatus])
 }
