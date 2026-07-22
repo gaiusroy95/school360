@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   User, Users, BookOpen, HeartPulse, Bus, Home, FileText, IndianRupee, UserPlus,
   CheckCircle, Loader2, Download, ChevronLeft,
@@ -34,8 +34,6 @@ export function AddNewStudentView({ onNavigate, onCreated }: Props) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [draftSaved, setDraftSaved] = useState(false);
-  const pdfPage1Ref = useRef<HTMLDivElement>(null);
-  const pdfPage2Ref = useRef<HTMLDivElement>(null);
 
   const steps = [
     { id: 1, name: 'Basic Info', icon: <User size={14} /> },
@@ -134,11 +132,10 @@ export function AddNewStudentView({ onNavigate, onCreated }: Props) {
   };
 
   const handleDownloadPdf = async () => {
-    if (!pdfPage1Ref.current || !pdfPage2Ref.current) return;
     setGeneratingPdf(true);
     setError('');
     try {
-      await downloadAdmissionFormPdf(pdfPage1Ref.current, pdfPage2Ref.current, form);
+      await downloadAdmissionFormPdf(form, school);
       setSuccess('Admission application PDF downloaded.');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to generate PDF');
@@ -433,12 +430,6 @@ export function AddNewStudentView({ onNavigate, onCreated }: Props) {
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Hidden full-size A4 pages for PDF export */}
-      <div className="fixed -left-[9999px] top-0 pointer-events-none" aria-hidden>
-        <AdmissionFormPage1 form={form} school={school} exportMode innerRef={pdfPage1Ref} />
-        <AdmissionFormPage2 form={form} school={school} exportMode innerRef={pdfPage2Ref} />
       </div>
     </div>
   );

@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
-import { captureElementToCanvas } from '../../../lib/html2canvasCapture';
-import { jsPDF } from 'jspdf';
 import { fetchInstitutionSetup } from '../../../lib/institutionApi';
+import { downloadBulkStudentIdCardsPdf } from '../../../lib/studentIdCardPdf';
 import { IdCardByTemplate } from './IdCardFaces';
 import {
   DEMO_ID_CARD_STUDENTS,
@@ -123,33 +122,21 @@ export function IdCardTemplatesView({ selectedTemplate, onSelectTemplate }: Prop
   }, [selectedTemplate, onSelectTemplate]);
 
   const downloadPdf = async () => {
-    if (!printRef.current || !studentsForClass.length) return;
+    if (!studentsForClass.length) return;
     setGenerating(true);
     setError('');
     setMessage('');
     try {
-      const nodes = Array.from(printRef.current.querySelectorAll<HTMLElement>('[data-id-card]'));
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pageW = pdf.internal.pageSize.getWidth();
-      const pageH = pdf.internal.pageSize.getHeight();
-      const margin = 10;
-      const gap = 6;
-      const cardW = (pageW - margin * 2 - gap) / 2;
-      const cardH = (pageH - margin * 2 - gap) / 2;
-
-      for (let i = 0; i < nodes.length; i++) {
-        const canvas = await captureElementToCanvas(nodes[i], { scale: 2 });
-        const img = canvas.toDataURL('image/png');
-        const col = i % 2;
-        const row = Math.floor(i / 2) % 2;
-        if (i > 0 && i % 4 === 0) pdf.addPage();
-        const x = margin + col * (cardW + gap);
-        const y = margin + row * (cardH + gap);
-        pdf.addImage(img, 'PNG', x, y, cardW, cardH);
-      }
-
+      const items = studentsForClass.map((student) => ({
+        templateId,
+        student,
+        classLabel: selectedClass || student.className,
+      }));
       const safeClass = (selectedClass || 'Class').replace(/[^a-zA-Z0-9]+/g, '_');
-      pdf.save(`ID_Cards_${safeClass}.pdf`);
+      await downloadBulkStudentIdCardsPdf(items, school, `ID_Cards_${safeClass}.pdf`, {
+        coverTitle: `ID Cards — ${selectedClass || 'Class'}`,
+        coverSubtitle: `${studentsForClass.length} card(s) · CR80 standard · ready to print`,
+      });
       setMessage(`Downloaded ${studentsForClass.length} ID card(s) for ${selectedClass}.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to generate PDF');
@@ -167,7 +154,7 @@ export function IdCardTemplatesView({ selectedTemplate, onSelectTemplate }: Prop
           <div>
             <h2 className="text-base font-bold text-slate-800">ID Card Templates</h2>
             <p className="text-xs text-slate-500 mt-1">
-              Choose a template, pick a class, then download a printable PDF of student ID cards.
+              Choose a template, pick a class, then download a CR80-sized printable PDF (2 cards per A4 sheet).
             </p>
           </div>
         </div>

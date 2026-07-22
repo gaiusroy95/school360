@@ -6,6 +6,8 @@ export type IdCardStudent = {
   rollNo: string;
   dob: string;
   fatherName: string;
+  fatherMobile?: string;
+  motherMobile?: string;
   phone: string;
   address: string;
   aadhaar?: string;
@@ -86,6 +88,8 @@ export const DEMO_ID_CARD_STUDENTS: IdCardStudent[] = [
     rollNo: '101',
     dob: '12-03-2016',
     fatherName: 'Ramesh Vaishnav',
+    fatherMobile: '9782379251',
+    motherMobile: '9876501234',
     phone: '9782379251',
     address: 'Saran Nagar, Jodhpur',
     aadhaar: '1234-5678-9012',
@@ -102,6 +106,8 @@ export const DEMO_ID_CARD_STUDENTS: IdCardStudent[] = [
     rollNo: '102',
     dob: '08-07-2016',
     fatherName: 'Vikram Sharma',
+    fatherMobile: '9876543210',
+    motherMobile: '9123456789',
     phone: '9876543210',
     address: 'Banar Road, Jodhpur',
     aadhaar: '2345-6789-0123',

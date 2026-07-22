@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  Search, Filter, Loader2, X, Eye, RefreshCw, Info, AlertTriangle,
+  Search, Filter, Loader2, X, Eye, RefreshCw, Info, AlertTriangle, Download, Star, TrendingDown,
 } from 'lucide-react';
 import {
   STUDENT_ANALYTICS_STATUSES,
@@ -15,17 +15,17 @@ import {
   type StudentScores,
 } from '../../../lib/studentAnalyticsRecordServices';
 import { fetchStudentsMeta } from '../../../lib/studentServices';
-
-const STATUS_BADGE: Record<string, string> = {
-  Draft: 'bg-slate-100 text-slate-500 border-slate-200',
-  Pending: 'bg-amber-100 text-amber-700 border-amber-200',
-  Open: 'bg-blue-100 text-blue-700 border-blue-200',
-  Active: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-  Completed: 'bg-indigo-100 text-indigo-700 border-indigo-200',
-  Approved: 'bg-green-100 text-green-800 border-green-200',
-  Paid: 'bg-cyan-100 text-cyan-700 border-cyan-200',
-  Due: 'bg-red-100 text-red-700 border-red-200',
-};
+import {
+  downloadStudentAnalyticsListExcel,
+  downloadStudentAnalyticsRecordExcel,
+  downloadRedCategoryExcel,
+  downloadExceptionalExcel,
+} from '../../../lib/studentAnalyticsExcel';
+import {
+  categorizeStudentAnalytics,
+  lowestAreaScore,
+  AREA_SCORE_LABELS,
+} from '../../../lib/studentAnalyticsCategories';
 
 function scoreColor(score: number, invert = false) {
   const v = invert ? 100 - score : score;
@@ -148,6 +148,11 @@ export function StudentAnalyticsView() {
     }
   };
 
+  const { redCategory, exceptional } = useMemo(
+    () => categorizeStudentAnalytics(records),
+    [records],
+  );
+
   return (
     <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
       <div className="p-4 md:p-6 bg-white border-b border-slate-200 shrink-0">
@@ -157,15 +162,27 @@ export function StudentAnalyticsView() {
             <h1 className="text-xl md:text-2xl font-bold text-slate-800 mt-0.5">Student Analytics</h1>
             <p className="text-xs text-slate-500 mt-1">Holistic student scores — growth, performance, attendance &amp; AI risk</p>
           </div>
-          <button
-            type="button"
-            disabled={syncing}
-            onClick={() => void handleSync()}
-            className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold flex items-center gap-1.5 hover:bg-indigo-700 disabled:opacity-50 self-start"
-          >
-            {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            Sync Scores
-          </button>
+          <div className="flex flex-wrap gap-2 self-start">
+            <button
+              type="button"
+              disabled={records.length === 0}
+              onClick={() => downloadStudentAnalyticsListExcel(records)}
+              className="px-3 py-2 border border-emerald-600 text-emerald-700 rounded-lg text-sm font-bold flex items-center gap-1.5 hover:bg-emerald-50 disabled:opacity-50"
+            >
+              <Download size={14} />
+              Download Excel
+              {records.length > 0 ? ` (${records.length.toLocaleString('en-IN')})` : ''}
+            </button>
+            <button
+              type="button"
+              disabled={syncing}
+              onClick={() => void handleSync()}
+              className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold flex items-center gap-1.5 hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              Sync Scores
+            </button>
+          </div>
         </div>
 
         {summary && (
@@ -254,54 +271,35 @@ export function StudentAnalyticsView() {
         {message && <p className="text-xs text-indigo-600 mt-2">{message}</p>}
       </div>
 
-      <div className="flex-1 overflow-auto p-4 md:p-6">
+      <div className="flex-1 overflow-auto p-4 md:p-6 space-y-6">
         {loading ? (
           <div className="flex justify-center p-12"><Loader2 className="animate-spin text-slate-400" /></div>
-        ) : (
-          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b">
-                <tr>
-                  <th className="p-3 text-left text-xs font-bold text-slate-500">Report ID</th>
-                  <th className="p-3 text-left text-xs font-bold text-slate-500">Report Name</th>
-                  <th className="p-3 text-left text-xs font-bold text-slate-500 hidden md:table-cell">Growth</th>
-                  <th className="p-3 text-left text-xs font-bold text-slate-500 hidden md:table-cell">AI Risk</th>
-                  <th className="p-3 text-left text-xs font-bold text-slate-500">Status</th>
-                  <th className="p-3 text-right text-xs font-bold text-slate-500">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {records.map((r) => (
-                  <tr key={r.id} className="border-t hover:bg-slate-50">
-                    <td className="p-3 font-mono text-xs text-slate-600">{r.recordId}</td>
-                    <td className="p-3">
-                      <p className="font-medium text-slate-800">{r.name}</p>
-                      <p className="text-[10px] text-slate-400">{r.classGroup}</p>
-                    </td>
-                    <td className="p-3 hidden md:table-cell">
-                      <span className={`font-bold ${scoreColor(r.growthScore)}`}>{r.growthScore}</span>
-                    </td>
-                    <td className="p-3 hidden md:table-cell">
-                      <span className={`font-bold ${scoreColor(r.aiRiskScore, true)}`}>{r.aiRiskScore}</span>
-                    </td>
-                    <td className="p-3">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${STATUS_BADGE[r.statusLabel] || STATUS_BADGE.Open}`}>
-                        {r.statusLabel}
-                      </span>
-                    </td>
-                    <td className="p-3 text-right">
-                      <button type="button" onClick={() => void openView(r)} className="text-indigo-600 text-xs font-bold hover:underline">View</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {records.length === 0 && (
-              <p className="p-10 text-center text-slate-500 text-sm">
-                No analytics records yet. Click <strong>Sync Scores</strong> to compute scores from live student data.
-              </p>
-            )}
+        ) : records.length === 0 ? (
+          <div className="bg-white border border-slate-200 rounded-xl p-10 text-center text-slate-500 text-sm shadow-sm">
+            No analytics records yet. Click <strong>Sync Scores</strong> to compute scores from live student data.
           </div>
+        ) : (
+          <>
+            <CategoryReportSection
+              variant="red"
+              title="Red Category Students"
+              description="Growth score below 55%, attendance below 80%, and every other area score below 80%."
+              icon={<TrendingDown size={16} />}
+              records={redCategory}
+              onView={(r) => void openView(r)}
+              onDownloadExcel={() => downloadRedCategoryExcel(redCategory)}
+            />
+            <CategoryReportSection
+              variant="exceptional"
+              title="Exceptional Performance Students"
+              description="Highest holistic achievers — growth score and every area score at 80% or above."
+              icon={<Star size={16} />}
+              records={exceptional}
+              onView={(r) => void openView(r)}
+              onDownloadExcel={() => downloadExceptionalExcel(exceptional)}
+              showRank
+            />
+          </>
         )}
       </div>
 
@@ -317,6 +315,161 @@ export function StudentAnalyticsView() {
             void load();
           }}
         />
+      )}
+    </div>
+  );
+}
+
+function CategoryReportSection({
+  variant,
+  title,
+  description,
+  icon,
+  records,
+  onView,
+  onDownloadExcel,
+  showRank = false,
+}: {
+  variant: 'red' | 'exceptional';
+  title: string;
+  description: string;
+  icon: ReactNode;
+  records: StudentAnalyticsRecord[];
+  onView: (record: StudentAnalyticsRecord) => void;
+  onDownloadExcel: () => void;
+  showRank?: boolean;
+}) {
+  const isRed = variant === 'red';
+  const headerBg = isRed ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200';
+  const headerText = isRed ? 'text-red-800' : 'text-amber-900';
+  const headerSub = isRed ? 'text-red-600' : 'text-amber-700';
+  const badgeBg = isRed ? 'bg-red-600' : 'bg-amber-500';
+
+  return (
+    <div className={`bg-white border rounded-xl overflow-hidden shadow-sm ${isRed ? 'border-red-200' : 'border-amber-200'}`}>
+      <div className={`p-4 border-b flex flex-col sm:flex-row sm:items-start justify-between gap-3 ${headerBg}`}>
+        <div className="flex items-start gap-2">
+          <span className={`mt-0.5 ${headerText}`}>{icon}</span>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className={`text-sm font-bold ${headerText}`}>{title}</h2>
+              <span className={`text-[10px] font-bold text-white px-2 py-0.5 rounded-full ${badgeBg}`}>
+                {records.length.toLocaleString('en-IN')} student{records.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+            <p className={`text-[11px] mt-1 ${headerSub}`}>{description}</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled={records.length === 0}
+          onClick={onDownloadExcel}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shrink-0 disabled:opacity-50 ${
+            isRed
+              ? 'bg-red-600 text-white hover:bg-red-700'
+              : 'bg-amber-500 text-white hover:bg-amber-600'
+          }`}
+        >
+          <Download size={13} />
+          Download Excel
+          {records.length > 0 ? ` (${records.length})` : ''}
+        </button>
+      </div>
+
+      {records.length === 0 ? (
+        <p className="p-8 text-center text-slate-500 text-sm">
+          {isRed
+            ? 'No students currently match the red category criteria.'
+            : 'No students currently qualify as exceptional performers.'}
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[720px]">
+            <thead className="bg-slate-50 border-b">
+              <tr>
+                {showRank && <th className="p-3 text-left text-xs font-bold text-slate-500 w-14">Rank</th>}
+                <th className="p-3 text-left text-xs font-bold text-slate-500">Report ID</th>
+                <th className="p-3 text-left text-xs font-bold text-slate-500">Student</th>
+                <th className="p-3 text-left text-xs font-bold text-slate-500">Growth</th>
+                <th className="p-3 text-left text-xs font-bold text-slate-500 hidden lg:table-cell">Academic</th>
+                <th className="p-3 text-left text-xs font-bold text-slate-500 hidden lg:table-cell">Attendance</th>
+                <th className="p-3 text-left text-xs font-bold text-slate-500 hidden xl:table-cell">Behaviour</th>
+                <th className="p-3 text-left text-xs font-bold text-slate-500 hidden xl:table-cell">Discipline</th>
+                <th className="p-3 text-left text-xs font-bold text-slate-500">AI Risk</th>
+                <th className="p-3 text-left text-xs font-bold text-slate-500">
+                  {isRed ? 'Weakest Area' : 'Avg Area'}
+                </th>
+                <th className="p-3 text-right text-xs font-bold text-slate-500">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {records.map((r, index) => {
+                const weakest = lowestAreaScore(r.scores);
+                const areaAvg = Math.round(
+                  (r.scores.academicPerformance +
+                    r.scores.attendanceScore +
+                    r.scores.behaviourScore +
+                    r.scores.disciplineScore +
+                    r.scores.healthScore +
+                    r.scores.physicalFitnessScore +
+                    r.scores.skillDevelopmentScore +
+                    r.scores.parentEngagementScore +
+                    r.scores.teacherFeedbackScore) / 9,
+                );
+                return (
+                  <tr key={r.id} className={`border-t hover:bg-slate-50 ${isRed ? 'bg-red-50/30' : 'bg-amber-50/20'}`}>
+                    {showRank && (
+                      <td className="p-3">
+                        <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${
+                          index === 0 ? 'bg-amber-400 text-white' : index === 1 ? 'bg-slate-300 text-slate-700' : index === 2 ? 'bg-amber-700/80 text-white' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {index + 1}
+                        </span>
+                      </td>
+                    )}
+                    <td className="p-3 font-mono text-xs text-slate-600">{r.recordId}</td>
+                    <td className="p-3">
+                      <p className="font-medium text-slate-800">{r.name}</p>
+                      <p className="text-[10px] text-slate-400">{r.classGroup}</p>
+                    </td>
+                    <td className="p-3">
+                      <span className={`font-bold ${scoreColor(r.scores.growthScore)}`}>{r.scores.growthScore}</span>
+                    </td>
+                    <td className="p-3 hidden lg:table-cell">
+                      <span className={`font-bold ${scoreColor(r.scores.academicPerformance)}`}>{r.scores.academicPerformance}</span>
+                    </td>
+                    <td className="p-3 hidden lg:table-cell">
+                      <span className={`font-bold ${scoreColor(r.scores.attendanceScore)}`}>{r.scores.attendanceScore}</span>
+                    </td>
+                    <td className="p-3 hidden xl:table-cell">
+                      <span className={`font-bold ${scoreColor(r.scores.behaviourScore)}`}>{r.scores.behaviourScore}</span>
+                    </td>
+                    <td className="p-3 hidden xl:table-cell">
+                      <span className={`font-bold ${scoreColor(r.scores.disciplineScore)}`}>{r.scores.disciplineScore}</span>
+                    </td>
+                    <td className="p-3">
+                      <span className={`font-bold ${scoreColor(r.scores.aiRiskScore, true)}`}>{r.scores.aiRiskScore}</span>
+                    </td>
+                    <td className="p-3 text-xs">
+                      {isRed ? (
+                        <span className="text-red-700 font-medium">
+                          {AREA_SCORE_LABELS[weakest.key]} ({weakest.value})
+                        </span>
+                      ) : (
+                        <span className="text-emerald-700 font-bold">{areaAvg}</span>
+                      )}
+                    </td>
+                    <td className="p-3 text-right">
+                      <button type="button" onClick={() => onView(r)} className="text-indigo-600 text-xs font-bold hover:underline">
+                        View
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -444,7 +597,7 @@ function ViewAnalyticsModal({
           </div>
         </div>
 
-        <div className="p-4 border-t flex justify-between">
+        <div className="p-4 border-t flex flex-wrap justify-between gap-2">
           <button
             type="button"
             disabled={refreshing}
@@ -454,9 +607,18 @@ function ViewAnalyticsModal({
             {refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
             Refresh Scores
           </button>
-          <button type="button" onClick={onClose} className="px-4 py-2 border rounded-lg text-sm flex items-center gap-1">
-            <Eye size={14} /> Close
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => downloadStudentAnalyticsRecordExcel(record, student)}
+              className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold flex items-center gap-1 hover:bg-emerald-700"
+            >
+              <Download size={14} /> Download Excel
+            </button>
+            <button type="button" onClick={onClose} className="px-4 py-2 border rounded-lg text-sm flex items-center gap-1">
+              <Eye size={14} /> Close
+            </button>
+          </div>
         </div>
       </div>
     </div>

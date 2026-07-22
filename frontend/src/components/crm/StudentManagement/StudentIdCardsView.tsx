@@ -300,7 +300,7 @@ export function StudentIdCardsView({ onNavigate }: Props) {
 
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 text-xs text-amber-900">
           <strong>Class-wise bulk print:</strong> Select a class below — all students in that class are selected by default.
-          Use <strong>Download Class PDF</strong> to generate a print-ready PDF (cover page + 2 cards per A4 sheet) for your printing vendor.
+          Use <strong>Download Class PDF</strong> to generate a print-ready PDF at <strong>CR80 standard size</strong> (54 × 85.6 mm) — 2 cards per A4 sheet, ready to send to your printing vendor.
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2">

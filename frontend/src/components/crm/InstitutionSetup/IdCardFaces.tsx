@@ -9,6 +9,85 @@ const PHOTO_PLACEHOLDER =
 
 type CardProps = { student: IdCardStudent; school: IdCardSchool; scale?: number };
 
+const DISCLAIMER_HEIGHT = 34;
+
+const ID_CARD_DISCLAIMER_MAIN =
+  'This ID card if you find in any unexpected place kindly contact institute immediately';
+const ID_CARD_DISCLAIMER_SUB = '(if it is not used it should have been destroyed)';
+
+function formatParentMobiles(student: IdCardStudent): string {
+  const parts: string[] = [];
+  const father = student.fatherMobile?.trim();
+  const mother = student.motherMobile?.trim();
+  if (father && father !== '—') parts.push(`Father: ${father}`);
+  if (mother && mother !== '—') parts.push(`Mother: ${mother}`);
+  if (parts.length) return parts.join(' · ');
+  return student.phone || '—';
+}
+
+function IdCardDisclaimer({ scale, light = true }: { scale: number; light?: boolean }) {
+  return (
+    <div
+      style={{
+        padding: `${3 * scale}px ${6 * scale}px ${4 * scale}px`,
+        background: light ? '#f8fafc' : '#071428',
+        borderTop: `0.5px solid ${light ? '#e2e8f0' : '#1e3a5f'}`,
+      }}
+    >
+      <p
+        style={{
+          fontSize: 5 * scale,
+          lineHeight: 1.3,
+          color: light ? '#334155' : 'rgba(255,255,255,0.92)',
+          textAlign: 'center',
+        }}
+      >
+        {ID_CARD_DISCLAIMER_MAIN}
+      </p>
+      <p
+        style={{
+          fontSize: 4 * scale,
+          lineHeight: 1.25,
+          color: light ? '#64748b' : 'rgba(255,255,255,0.65)',
+          textAlign: 'center',
+          marginTop: 1 * scale,
+        }}
+      >
+        {ID_CARD_DISCLAIMER_SUB}
+      </p>
+    </div>
+  );
+}
+
+function SchoolContactFooter({
+  school,
+  scale,
+  darkBg = '#0B1B47',
+}: {
+  school: IdCardSchool;
+  scale: number;
+  darkBg?: string;
+}) {
+  const website = school.website?.replace(/^https?:\/\//, '') || 'www.website.com';
+  return (
+    <div
+      className="text-white flex flex-col"
+      style={{ background: darkBg, padding: `${8 * scale}px ${12 * scale}px ${6 * scale}px` }}
+    >
+      <p className="font-bold uppercase" style={{ fontSize: 8 * scale, marginBottom: 3 * scale }}>
+        {school.name}
+      </p>
+      <p style={{ fontSize: 7 * scale, lineHeight: 1.4, opacity: 0.95 }}>
+        {school.address}
+        {school.phone ? ` · Ph: ${school.phone}` : ''}
+      </p>
+      <p className="text-center font-bold uppercase" style={{ fontSize: 7.5 * scale, marginTop: 4 * scale }}>
+        {website}
+      </p>
+    </div>
+  );
+}
+
 function Photo({ src, className, style }: { src?: string; className?: string; style?: CSSProperties }) {
   return (
     <img
@@ -89,8 +168,9 @@ function GradCapLogo({ scale, color = '#0B1B47' }: { scale: number; color?: stri
 export function StAnthonyCard({ student, school, scale = 1 }: CardProps) {
   const designation =
     student.designation ||
-    `${student.className}${student.section ? ` - ${student.section}` : ''}`;
-  const website = school.website?.replace(/^https?:\/\//, '') || 'www.website.com';
+    `${student.className}${student.section && student.section !== '—' ? ` - ${student.section}` : ''}`;
+  const footerH = 88 * scale;
+  const disclaimerH = DISCLAIMER_HEIGHT * scale;
 
   return (
     <div
@@ -99,10 +179,10 @@ export function StAnthonyCard({ student, school, scale = 1 }: CardProps) {
     >
       <div
         className="relative flex items-center gap-2"
-        style={{ background: '#F5B800', padding: `${12 * scale}px ${12 * scale}px ${16 * scale}px`, minHeight: 56 * scale }}
+        style={{ background: '#F5B800', padding: `${10 * scale}px ${12 * scale}px ${14 * scale}px`, minHeight: 50 * scale }}
       >
         <GradCapLogo scale={scale} />
-        <p className="font-black uppercase leading-tight flex-1" style={{ fontSize: 12 * scale, color: '#0B1B47' }}>
+        <p className="font-black uppercase leading-tight flex-1" style={{ fontSize: 11 * scale, color: '#0B1B47' }}>
           {school.name}
         </p>
         <div style={{ opacity: 0.4 }}>
@@ -112,21 +192,24 @@ export function StAnthonyCard({ student, school, scale = 1 }: CardProps) {
 
       <svg
         className="absolute left-0"
-        style={{ top: 46 * scale, width: '100%', height: 88 * scale, zIndex: 1 }}
+        style={{ top: 42 * scale, width: '100%', height: 72 * scale, zIndex: 1 }}
         viewBox="0 0 320 88"
         preserveAspectRatio="none"
       >
         <path d="M0,0 C90,72 150,86 320,52 L320,0 Z" fill="#0B1B47" />
       </svg>
 
-      <div className="relative z-10 flex flex-col" style={{ padding: `0 ${18 * scale}px` }}>
-        <div className="flex justify-center" style={{ marginTop: 14 * scale }}>
+      <div
+        className="relative z-10 flex flex-col"
+        style={{ padding: `0 ${14 * scale}px`, paddingBottom: footerH + disclaimerH + 4 * scale }}
+      >
+        <div className="flex justify-center" style={{ marginTop: 10 * scale }}>
           <div
             className="overflow-hidden bg-sky-200"
             style={{
-              width: 142 * scale,
-              height: 162 * scale,
-              borderRadius: `${32 * scale}px ${6 * scale}px ${32 * scale}px ${6 * scale}px`,
+              width: 120 * scale,
+              height: 136 * scale,
+              borderRadius: `${28 * scale}px ${6 * scale}px ${28 * scale}px ${6 * scale}px`,
               border: `${3 * scale}px solid white`,
               boxShadow: '0 6px 18px rgba(11,27,71,0.2)',
             }}
@@ -135,44 +218,35 @@ export function StAnthonyCard({ student, school, scale = 1 }: CardProps) {
           </div>
         </div>
 
-        <div className="space-y-1" style={{ marginTop: 20 * scale, paddingBottom: 150 * scale }}>
+        <div style={{ marginTop: 12 * scale }}>
+          <p
+            className="font-black uppercase"
+            style={{ fontSize: 12 * scale, color: '#0B1B47', lineHeight: 1.25, marginBottom: 6 * scale }}
+          >
+            {student.name}
+          </p>
           {[
+            ["Father's Name", student.fatherName],
             ['Id No', student.rollNo],
-            ['Designation', designation],
-            ['Phone', student.phone],
-            ['Blood', student.bloodGroup || 'O+'],
+            ['Class', designation],
+            ['Address', student.address],
+            ['Father / Mother Mobile', formatParentMobiles(student)],
+            ['Blood Group', student.bloodGroup || '—'],
           ].map(([label, value]) => (
-            <p key={label} style={{ fontSize: 11 * scale, color: '#0B1B47', lineHeight: 1.4 }}>
-              <span className="font-bold">{label} :</span> {value}
+            <p key={label} style={{ fontSize: 9 * scale, color: '#0B1B47', lineHeight: 1.35, marginBottom: 2 * scale }}>
+              <span className="font-bold">{label} :</span>{' '}
+              <span style={{ fontWeight: label === 'Address' ? 500 : 600 }}>{value}</span>
             </p>
           ))}
         </div>
       </div>
 
-      <div className="absolute bottom-0 left-0 right-0" style={{ height: 142 * scale }}>
-        <svg className="absolute top-0 w-full" style={{ height: 26 * scale }} viewBox="0 0 320 26" preserveAspectRatio="none">
+      <div className="absolute bottom-0 left-0 right-0 z-20">
+        <svg className="w-full" style={{ height: 18 * scale, display: 'block' }} viewBox="0 0 320 26" preserveAspectRatio="none">
           <path d="M0,26 Q70,2 160,12 T320,18 L320,26 L0,26 Z" fill="#0B1B47" />
         </svg>
-        <div
-          className="absolute inset-0 text-white flex flex-col"
-          style={{ background: '#0B1B47', padding: `${30 * scale}px ${14 * scale}px ${12 * scale}px` }}
-        >
-          <div className="flex justify-between gap-2 flex-1">
-            <div className="flex-1 min-w-0">
-              <p className="font-bold uppercase" style={{ fontSize: 10 * scale, marginBottom: 5 * scale }}>
-                Contact:
-              </p>
-              <p style={{ fontSize: 8 * scale, lineHeight: 1.45, opacity: 0.95 }}>
-                {school.address}
-                {school.phone ? `. Ph: ${school.phone}` : ''}
-              </p>
-            </div>
-            <DotGrid cols={3} rows={6} color="rgba(255,255,255,0.45)" dotSize={2.5 * scale} gap={2.5 * scale} />
-          </div>
-          <p className="text-center font-bold uppercase" style={{ fontSize: 10 * scale, marginTop: 'auto' }}>
-            {website}
-          </p>
-        </div>
+        <SchoolContactFooter school={school} scale={scale} />
+        <IdCardDisclaimer scale={scale} />
       </div>
     </div>
   );
@@ -218,12 +292,12 @@ export function MountConventCard({ student, school, scale = 1 }: CardProps) {
         </p>
       </div>
 
-      <div className="flex-1 flex relative" style={{ padding: `${10 * scale}px ${12 * scale}px` }}>
+      <div className="flex-1 flex relative" style={{ padding: `${8 * scale}px ${12 * scale}px`, paddingBottom: 38 * scale }}>
         <div
           className="shrink-0 overflow-hidden"
           style={{
-            width: 100 * scale,
-            height: 120 * scale,
+            width: 90 * scale,
+            height: 108 * scale,
             borderRadius: 8 * scale,
             border: `${3 * scale}px solid #f472b6`,
             boxShadow: `0 0 ${12 * scale}px rgba(244,114,182,0.55)`,
@@ -232,37 +306,32 @@ export function MountConventCard({ student, school, scale = 1 }: CardProps) {
           <Photo src={student.photoUrl} className="w-full h-full object-cover" />
         </div>
 
-        <div className="flex-1 flex flex-col justify-between" style={{ paddingLeft: 14 * scale }}>
-          <div className="space-y-1">
+        <div className="flex-1 flex flex-col justify-between min-w-0" style={{ paddingLeft: 12 * scale }}>
+          <div className="space-y-0.5">
             {[
-              ['Student ID', student.rollNo],
               ['Student Name', student.name],
-              ['Father/Guardian', student.fatherName],
+              ['Father Name', student.fatherName],
+              ['Student ID', student.rollNo],
               ['Class', classLabel],
-              ['Emergency Call', student.phone],
+              ['Address', student.address],
+              ['Father / Mother Mobile', formatParentMobiles(student)],
             ].map(([label, value]) => (
-              <div key={label} className="flex gap-1" style={{ fontSize: 9 * scale, color: '#003B7A' }}>
-                <span className="font-semibold shrink-0" style={{ minWidth: 88 * scale }}>
+              <div key={label} className="flex gap-1" style={{ fontSize: 8 * scale, color: '#003B7A' }}>
+                <span className="font-semibold shrink-0" style={{ minWidth: 82 * scale }}>
                   {label} :
                 </span>
-                <span className="font-bold text-slate-800">{value}</span>
+                <span className="font-bold text-slate-800 break-words">{value}</span>
               </div>
             ))}
-          </div>
-
-          <div className="text-right" style={{ marginTop: 6 * scale }}>
-            <p className="italic text-blue-700" style={{ fontSize: 11 * scale, fontFamily: 'cursive' }}>
-              Signature Here
-            </p>
-            <p className="font-black uppercase text-blue-800" style={{ fontSize: 9 * scale }}>
-              Principal
-            </p>
           </div>
         </div>
       </div>
 
-      <div className="text-center text-white font-bold uppercase" style={{ background: '#003B7A', padding: `${6 * scale}px`, fontSize: 8 * scale }}>
-        {school.address || 'YOUR SLOGAN HERE'}
+      <div className="absolute bottom-0 left-0 right-0 z-20">
+        <div className="text-center text-white font-bold uppercase" style={{ background: '#003B7A', padding: `${4 * scale}px`, fontSize: 7 * scale }}>
+          {school.name} · {school.address} · Ph: {school.phone}
+        </div>
+        <IdCardDisclaimer scale={scale} />
       </div>
     </div>
   );
@@ -271,7 +340,6 @@ export function MountConventCard({ student, school, scale = 1 }: CardProps) {
 /** 3 — Professional Staff / John Doe (blue geometric) */
 export function ProfessionalStaffCard({ student, school, scale = 1 }: CardProps) {
   const role = student.designation || 'Student';
-  const validYear = school.session.split('-')[1] || '2026';
 
   return (
     <div
@@ -337,11 +405,13 @@ export function ProfessionalStaffCard({ student, school, scale = 1 }: CardProps)
           {role}
         </div>
 
-        <div className="w-full space-y-2" style={{ marginTop: 16 * scale, fontSize: 10 * scale }}>
+        <div className="w-full space-y-1" style={{ marginTop: 10 * scale, fontSize: 9 * scale, paddingBottom: 90 * scale }}>
           {[
+            ['Father Name', student.fatherName],
             ['ID Number', student.rollNo],
+            ['Address', student.address],
+            ['Father / Mother Mobile', formatParentMobiles(student)],
             ['Department', student.course || student.className],
-            ['Valid Through', `12/31/${validYear}`],
           ].map(([label, value]) => (
             <p key={label}>
               <span className="font-bold" style={{ color: '#1E5A8A' }}>
@@ -352,12 +422,16 @@ export function ProfessionalStaffCard({ student, school, scale = 1 }: CardProps)
           ))}
         </div>
 
-        <p className="font-bold text-center" style={{ fontSize: 9 * scale, marginTop: 'auto', paddingTop: 12 * scale, color: '#111' }}>
-          {school.name}
+        <p className="font-bold text-center absolute left-0 right-0" style={{ fontSize: 8 * scale, bottom: 84 * scale, color: '#111' }}>
+          {school.name} · {school.phone}
         </p>
       </div>
 
-      <div className="absolute bottom-0 left-0 right-0" style={{ height: 50 * scale }}>
+      <div className="absolute bottom-0 left-0 right-0 z-20">
+        <IdCardDisclaimer scale={scale} />
+      </div>
+
+      <div className="absolute left-0 right-0 z-10" style={{ bottom: DISCLAIMER_HEIGHT * scale, height: 50 * scale }}>
         <div style={{ height: '100%', background: '#B8D4E8', clipPath: 'polygon(0 40%, 100% 0, 100% 100%, 0 100%)' }} />
         <div
           className="absolute bottom-0 right-0"
@@ -427,15 +501,16 @@ export function BrightFutureCard({ student, school, scale = 1 }: CardProps) {
           </p>
 
           <div className="flex gap-2">
-            <div className="flex-1 space-y-1.5" style={{ fontSize: 8 * scale }}>
+            <div className="flex-1 space-y-1" style={{ fontSize: 7.5 * scale }}>
               {[
                 ['FATHER NAME', student.fatherName],
+                ['ADDRESS', student.address],
+                ['FATHER / MOTHER MOBILE', formatParentMobiles(student)],
                 ['D.O.B.', student.dob],
-                ['Contact No.', student.phone],
               ].map(([label, value]) => (
                 <div key={label}>
                   <span style={{ color: '#0D4F4F', fontWeight: 700 }}>{label}</span>
-                  <p className="text-slate-800 font-semibold">{value}</p>
+                  <p className="text-slate-800 font-semibold leading-tight">{value}</p>
                 </div>
               ))}
             </div>
@@ -456,11 +531,11 @@ export function BrightFutureCard({ student, school, scale = 1 }: CardProps) {
         </div>
       </div>
 
-      <div className="absolute bottom-0 left-0 right-0 text-center" style={{ padding: `${12 * scale}px` }}>
-        <p className="italic text-teal-200" style={{ fontSize: 10 * scale, fontFamily: 'cursive' }}>
-          ~~~~~~~~
+      <div className="absolute bottom-0 left-0 right-0 z-20">
+        <p className="text-center" style={{ fontSize: 7 * scale, color: '#5EEAD4', padding: `${4 * scale}px`, background: '#0D4F4F' }}>
+          {school.name} · {school.address} · Ph: {school.phone}
         </p>
-        <p style={{ fontSize: 8 * scale, color: '#5EEAD4' }}>Principal Signature</p>
+        <IdCardDisclaimer scale={scale} light={false} />
       </div>
     </div>
   );
@@ -519,7 +594,7 @@ export function AirForceCard({ student, school, scale = 1 }: CardProps) {
         </div>
       </div>
 
-      <div style={{ marginLeft: 58 * scale, padding: `0 ${10 * scale}px ${10 * scale}px` }}>
+      <div style={{ marginLeft: 58 * scale, padding: `0 ${10 * scale}px ${DISCLAIMER_HEIGHT + 8}px` }}>
         <div className="flex gap-2 items-start">
           <div
             className="shrink-0 overflow-hidden border-2 border-white shadow"
@@ -537,15 +612,14 @@ export function AirForceCard({ student, school, scale = 1 }: CardProps) {
           </div>
         </div>
 
-        <div className="space-y-1" style={{ marginTop: 10 * scale, fontSize: 8 * scale }}>
+        <div className="space-y-0.5" style={{ marginTop: 8 * scale, fontSize: 7.5 * scale }}>
           {[
             ['ADMISSION NO', student.rollNo],
-            ['ROLL NO', student.rollNo],
             ['NAME', student.name.toUpperCase()],
+            ['FATHER NAME', student.fatherName.toUpperCase()],
             ['CLASS & SEC', classSec],
-            ['DATE OF BIRTH', student.dob],
-            ['MOBILE', student.phone],
             ['ADDRESS', student.address],
+            ['FATHER / MOTHER MOBILE', formatParentMobiles(student)],
           ].map(([label, value]) => (
             <p key={label} className="font-bold uppercase text-slate-900 leading-snug">
               {label} : <span className="font-black">{value}</span>
@@ -553,14 +627,16 @@ export function AirForceCard({ student, school, scale = 1 }: CardProps) {
           ))}
         </div>
       </div>
+
+      <div className="absolute bottom-0 left-0 right-0 z-20">
+        <IdCardDisclaimer scale={scale} />
+      </div>
     </div>
   );
 }
 
 /** 6 — School Inc (curved navy arch, centered layout, barcode) */
 export function SchoolIncCard({ student, school, scale = 1 }: CardProps) {
-  const course = student.course || `${student.className} Student`;
-
   return (
     <div
       className="relative overflow-hidden bg-white text-center"
@@ -601,29 +677,42 @@ export function SchoolIncCard({ student, school, scale = 1 }: CardProps) {
           background: '#003B5C',
           borderTop: `${3 * scale}px solid #4ED2E0`,
           borderRadius: `${160 * scale}px ${160 * scale}px 0 0`,
-          padding: `${70 * scale}px ${16 * scale}px ${16 * scale}px`,
+          padding: `${70 * scale}px ${16 * scale}px ${DISCLAIMER_HEIGHT + 52}px`,
         }}
       >
         <p className="font-black uppercase" style={{ fontSize: 15 * scale, letterSpacing: 1 }}>
           {student.name}
         </p>
-        <p className="font-semibold uppercase" style={{ fontSize: 10 * scale, marginTop: 4 * scale, opacity: 0.9 }}>
-          Student
+        <p className="font-semibold uppercase" style={{ fontSize: 9 * scale, marginTop: 4 * scale, opacity: 0.9 }}>
+          {student.fatherName}
         </p>
 
-        <p className="font-bold uppercase" style={{ fontSize: 9 * scale, marginTop: 14 * scale }}>
-          Course
+        <p className="font-bold uppercase" style={{ fontSize: 8 * scale, marginTop: 10 * scale }}>
+          Address
         </p>
-        <p style={{ fontSize: 9 * scale, marginTop: 2 * scale, lineHeight: 1.4 }}>{course.toUpperCase()}</p>
+        <p style={{ fontSize: 8 * scale, marginTop: 2 * scale, lineHeight: 1.35 }}>{student.address}</p>
 
-        <p className="font-bold uppercase" style={{ fontSize: 9 * scale, marginTop: 10 * scale }}>
-          Student No :
+        <p className="font-bold uppercase" style={{ fontSize: 8 * scale, marginTop: 8 * scale }}>
+          Father / Mother Mobile
         </p>
-        <p style={{ fontSize: 10 * scale, letterSpacing: 1 }}>{student.rollNo}</p>
+        <p style={{ fontSize: 8 * scale, marginTop: 2 * scale }}>{formatParentMobiles(student)}</p>
 
-        <div style={{ marginTop: 'auto', paddingTop: 12 * scale }}>
+        <p className="font-bold uppercase" style={{ fontSize: 8 * scale, marginTop: 8 * scale }}>
+          Student No
+        </p>
+        <p style={{ fontSize: 9 * scale, letterSpacing: 1 }}>{student.rollNo}</p>
+
+        <p style={{ fontSize: 7 * scale, marginTop: 8 * scale, opacity: 0.85 }}>
+          {school.name} · {school.phone}
+        </p>
+
+        <div style={{ marginTop: 8 * scale }}>
           <FakeBarcode scale={scale} />
         </div>
+      </div>
+
+      <div className="absolute bottom-0 left-0 right-0 z-20">
+        <IdCardDisclaimer scale={scale} light={false} />
       </div>
     </div>
   );
@@ -671,7 +760,7 @@ export function GreenwoodPrimaryCard({ student, school, scale = 1 }: CardProps) 
         </div>
       </div>
 
-      <div className="relative z-10 flex flex-col items-center" style={{ paddingTop: 24 * scale }}>
+      <div className="relative z-10 flex flex-col items-center" style={{ paddingTop: 20 * scale, paddingBottom: DISCLAIMER_HEIGHT + 8 }}>
         <div
           className="overflow-hidden rounded-full"
           style={{
@@ -695,29 +784,34 @@ export function GreenwoodPrimaryCard({ student, school, scale = 1 }: CardProps) 
           <FakeQr scale={scale} size={40} />
         </div>
 
-        <div className="space-y-2" style={{ marginTop: 12 * scale, fontSize: 9 * scale }}>
+        <div className="space-y-1.5 text-left w-full px-4" style={{ marginTop: 10 * scale, fontSize: 8 * scale }}>
           <div>
-            <p className="font-bold uppercase" style={{ color: '#1d70b8' }}>
-              Id Number
-            </p>
-            <p className="font-semibold text-slate-900">{student.rollNo}</p>
+            <p className="font-bold uppercase" style={{ color: '#1d70b8' }}>Father Name</p>
+            <p className="font-semibold text-slate-900">{student.fatherName}</p>
           </div>
           <div>
-            <p className="font-bold uppercase" style={{ color: '#1d70b8' }}>
-              Class
-            </p>
+            <p className="font-bold uppercase" style={{ color: '#1d70b8' }}>Address</p>
+            <p className="font-semibold text-slate-900">{student.address}</p>
+          </div>
+          <div>
+            <p className="font-bold uppercase" style={{ color: '#1d70b8' }}>Father / Mother Mobile</p>
+            <p className="font-semibold text-slate-900">{formatParentMobiles(student)}</p>
+          </div>
+          <div>
+            <p className="font-bold uppercase" style={{ color: '#1d70b8' }}>Class</p>
             <p className="font-semibold text-slate-900">
               {grade}
               {student.section ? ` (${student.section})` : ''}
             </p>
           </div>
-          <div>
-            <p className="font-bold uppercase" style={{ color: '#1d70b8' }}>
-              Date Of Birth
-            </p>
-            <p className="font-semibold text-slate-900">{student.dob}</p>
-          </div>
+          <p className="text-center font-semibold" style={{ color: '#1d70b8', fontSize: 7 * scale }}>
+            {school.name} · {school.phone}
+          </p>
         </div>
+      </div>
+
+      <div className="absolute bottom-0 left-0 right-0 z-20">
+        <IdCardDisclaimer scale={scale} />
       </div>
     </div>
   );

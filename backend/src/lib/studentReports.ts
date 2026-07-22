@@ -130,7 +130,7 @@ export async function buildReportData(opts: GenerateOpts) {
   const students = await prisma.student.findMany({
     where,
     orderBy: [{ className: 'asc' }, { sectionName: 'asc' }, { rollNumber: 'asc' }],
-    take: 2000,
+    take: 5000,
   });
 
   const analytics = await getStudentAnalytics(opts.institutionId, opts.academicYear);
@@ -177,7 +177,13 @@ export async function buildReportData(opts: GenerateOpts) {
         students: c.value,
         percent: c.percent,
       }));
-      return { summary: { topperCount: toppers.length }, classResults, toppers };
+      return { summary: { topperCount: toppers.length }, classResults, toppers, rows: students.map((s) => ({
+          name: [s.firstName, s.lastName].filter(Boolean).join(' '),
+          admissionNumber: s.admissionNumber,
+          classGroup: formatClassSection(s.className, s.sectionName),
+          rollNumber: s.rollNumber,
+          entranceScore: s.entranceScore ?? '',
+        })) };
     }
     case StudentReportType.ABSENT_CLASS: {
       const absentStudents = students.filter((s) => {
@@ -279,6 +285,15 @@ export async function buildReportData(opts: GenerateOpts) {
       return {
         summary: analytics.summary,
         classStats: analytics.classStats,
+        rows: students.map((s) => ({
+          name: [s.firstName, s.lastName].filter(Boolean).join(' '),
+          admissionNumber: s.admissionNumber,
+          classGroup: formatClassSection(s.className, s.sectionName),
+          rollNumber: s.rollNumber,
+          status: s.status,
+          entranceScore: s.entranceScore ?? '',
+          mobile: s.mobile,
+        })),
         note: opts.customName || 'Custom configured report',
       };
   }

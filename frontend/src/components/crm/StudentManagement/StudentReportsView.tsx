@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Search, Filter, Loader2, X, Eye, RefreshCw, FileBarChart, Info,
+  Search, Filter, Loader2, X, Eye, RefreshCw, FileBarChart, Info, Download,
 } from 'lucide-react';
 import {
   STUDENT_REPORT_STATUSES,
@@ -15,6 +15,7 @@ import {
   type ReportTypeOption,
 } from '../../../lib/studentReportServices';
 import { fetchStudentsMeta } from '../../../lib/studentServices';
+import { downloadStudentReportExcel } from '../../../lib/studentReportExcel';
 
 const STATUS_BADGE: Record<string, string> = {
   Draft: 'bg-slate-100 text-slate-500 border-slate-200',
@@ -360,7 +361,10 @@ function ViewReportModal({
   const summary = (data.summary || {}) as Record<string, number | string>;
   const rows = (data.rows || []) as Record<string, unknown>[];
   const toppers = (data.toppers || []) as Record<string, unknown>[];
-  const classBreakdown = (data.classBreakdown || data.classResults || []) as Record<string, unknown>[];
+  const classBreakdown = (data.classBreakdown || data.classResults || data.classStats || []) as Record<string, unknown>[];
+  const breakdownColumns = classBreakdown.length > 0
+    ? Object.keys(classBreakdown[0]).filter((col) => col !== 'students')
+    : [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
@@ -395,7 +399,7 @@ function ViewReportModal({
                 <table className="w-full text-xs">
                   <thead className="bg-slate-50">
                     <tr>
-                      {Object.keys(classBreakdown[0]).map((col) => (
+                      {breakdownColumns.map((col) => (
                         <th key={col} className="p-2 text-left font-bold text-slate-500 capitalize">{col.replace(/([A-Z])/g, ' $1')}</th>
                       ))}
                     </tr>
@@ -403,8 +407,8 @@ function ViewReportModal({
                   <tbody>
                     {classBreakdown.map((row, i) => (
                       <tr key={i} className="border-t">
-                        {Object.values(row).map((val, j) => (
-                          <td key={j} className="p-2">{String(val)}</td>
+                        {breakdownColumns.map((col) => (
+                          <td key={col} className="p-2">{String(row[col] ?? '—')}</td>
                         ))}
                       </tr>
                     ))}
@@ -464,7 +468,11 @@ function ViewReportModal({
                     ))}
                   </tbody>
                 </table>
-                {rows.length > 100 && <p className="text-xs text-slate-400 p-2">Showing first 100 of {rows.length} rows</p>}
+                {rows.length > 100 && (
+                  <p className="text-xs text-amber-600 p-2 bg-amber-50 border-t">
+                    Preview shows first 100 of {rows.length.toLocaleString('en-IN')} students. Use <strong>Download Excel</strong> for the full list.
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -474,7 +482,7 @@ function ViewReportModal({
           )}
         </div>
 
-        <div className="p-4 border-t flex justify-between">
+        <div className="p-4 border-t flex flex-wrap justify-between gap-2">
           <button
             type="button"
             disabled={refreshing}
@@ -484,9 +492,20 @@ function ViewReportModal({
             {refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
             Refresh Data
           </button>
-          <button type="button" onClick={onClose} className="px-4 py-2 border rounded-lg text-sm flex items-center gap-1">
-            <Eye size={14} /> Close
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => downloadStudentReportExcel(report)}
+              className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold flex items-center gap-1 hover:bg-emerald-700"
+            >
+              <Download size={14} />
+              Download Excel
+              {rows.length > 0 ? ` (${rows.length.toLocaleString('en-IN')})` : ''}
+            </button>
+            <button type="button" onClick={onClose} className="px-4 py-2 border rounded-lg text-sm flex items-center gap-1">
+              <Eye size={14} /> Close
+            </button>
+          </div>
         </div>
       </div>
     </div>
