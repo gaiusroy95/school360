@@ -145,6 +145,25 @@ export function formatDisplayDate(iso: string) {
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+export const ADMISSION_DOCUMENT_FIELDS = [
+  { key: 'docBirthCertificate' as const, label: 'Birth Certificate' },
+  { key: 'docAadhaar' as const, label: 'Aadhaar Card' },
+  { key: 'docTransferCertificate' as const, label: 'Transfer Certificate' },
+  { key: 'docMarksheet' as const, label: 'Previous Marksheet' },
+  { key: 'docPhoto' as const, label: 'Passport Size Photo' },
+];
+
+export function getAdmissionDocuments(form: StudentAdmissionFormData) {
+  return ADMISSION_DOCUMENT_FIELDS.map((d) => ({
+    ...d,
+    submitted: Boolean(form[d.key]),
+  }));
+}
+
+export function getSubmittedDocumentLabels(form: StudentAdmissionFormData): string[] {
+  return getAdmissionDocuments(form).filter((d) => d.submitted).map((d) => d.label);
+}
+
 export function schoolFromInstitutionSetup(setup: Record<string, unknown> | null): SchoolBranding {
   const basic = setup?.basicInformation as { sections?: Record<string, Record<string, string>> } | undefined;
   const profile = basic?.sections?.['Institution Profile'] || {};

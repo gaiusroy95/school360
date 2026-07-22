@@ -7,6 +7,7 @@ import { createStudent, fetchStudentsMeta } from '../../../lib/studentServices';
 import { fetchInstitutionSetup } from '../../../lib/institutionApi';
 import { toViewKey } from '../../../lib/navigation';
 import {
+  ADMISSION_DOCUMENT_FIELDS,
   DRAFT_STORAGE_KEY,
   emptyAdmissionForm,
   schoolFromInstitutionSetup,
@@ -313,13 +314,7 @@ export function AddNewStudentView({ onNavigate, onCreated }: Props) {
             </div>
             <p className="text-xs font-bold text-slate-700 mb-2">Documents submitted (check when available)</p>
             <div className="space-y-2">
-              {([
-                ['docBirthCertificate', 'Birth Certificate'],
-                ['docAadhaar', 'Aadhaar Card'],
-                ['docTransferCertificate', 'Transfer Certificate'],
-                ['docMarksheet', 'Previous Marksheet'],
-                ['docPhoto', 'Passport Size Photo'],
-              ] as const).map(([key, label]) => (
+              {ADMISSION_DOCUMENT_FIELDS.map(({ key, label }) => (
                 <label key={key} className="flex items-center gap-2 text-sm text-slate-700">
                   <input type="checkbox" checked={form[key]} onChange={(e) => set(key, e.target.checked)} />
                   {label}
@@ -440,14 +435,10 @@ export function AddNewStudentView({ onNavigate, onCreated }: Props) {
         </div>
       </div>
 
-      {/* Hidden full-size pages for PDF export */}
+      {/* Hidden full-size A4 pages for PDF export */}
       <div className="fixed -left-[9999px] top-0 pointer-events-none" aria-hidden>
-        <div ref={pdfPage1Ref} className="w-[595px]">
-          <AdmissionFormPage1 form={form} school={school} exportMode />
-        </div>
-        <div ref={pdfPage2Ref} className="w-[595px]">
-          <AdmissionFormPage2 form={form} school={school} exportMode />
-        </div>
+        <AdmissionFormPage1 form={form} school={school} exportMode innerRef={pdfPage1Ref} />
+        <AdmissionFormPage2 form={form} school={school} exportMode innerRef={pdfPage2Ref} />
       </div>
     </div>
   );
