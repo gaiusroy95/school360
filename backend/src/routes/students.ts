@@ -18,6 +18,7 @@ import {
   splitFullName,
   syncStudentsFromConfirmedAdmissions,
 } from '../lib/students.js';
+import { getStudentSessionHistory } from '../lib/examGradePromotion.js';
 
 export const studentsRouter = Router();
 studentsRouter.use(requireAuth);
@@ -255,6 +256,18 @@ studentsRouter.get(
 );
 
 studentsRouter.get(
+  '/:id/session-history',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const student = await prisma.student.findFirst({
+      where: { id: req.params.id, institutionId },
+    });
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+    return res.json(await getStudentSessionHistory(institutionId, student.id));
+  }),
+);
+
+studentsRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
@@ -276,7 +289,12 @@ studentsRouter.get(
       select: { amountPaid: true, collectedAt: true, feeBreakdown: true },
     });
 
-    const bundle = buildStudentProfileBundle(student, feeReceipts);
+    const sessionRecords = await prisma.studentSessionHistory.findMany({
+      where: { institutionId, studentId: student.id },
+      orderBy: { promotedAt: 'desc' },
+    });
+
+    const bundle = buildStudentProfileBundle(student, feeReceipts, sessionRecords);
 
     return res.json({
       student: serializeStudent(student),

@@ -163,6 +163,18 @@ export type StudentProfileMeta = {
   attendanceToday: string;
   idCardTemplate: string;
   admissionForm: Record<string, unknown>;
+  sessionHistory?: {
+    fromAcademicYear: string;
+    toAcademicYear: string;
+    fromClassName: string;
+    fromSectionName: string;
+    toClassName: string;
+    toSectionName: string;
+    finalPercentage: number | null;
+    finalGrade: string;
+    promotionType: string;
+    promotedAt: string;
+  }[];
 };
 
 export async function fetchStudent(id: string) {

@@ -72,6 +72,20 @@ export function StudentProfileTabContent({
               <Info label="Fee Group" value={String(form.feeGroup || 'Standard')} />
             </Grid>
           </Section>
+          {(profile.sessionHistory?.length ?? 0) > 0 && (
+            <Section title="Session History">
+              <Table
+                headers={['From Session', 'To Session', 'Class Change', 'Result', 'Promoted On']}
+                rows={(profile.sessionHistory || []).map((h) => [
+                  h.fromAcademicYear,
+                  h.toAcademicYear,
+                  `${h.fromClassName} ${h.fromSectionName} → ${h.toClassName} ${h.toSectionName}`,
+                  h.finalPercentage != null ? `${h.finalPercentage}% (${h.finalGrade})` : h.finalGrade || '—',
+                  new Date(h.promotedAt).toLocaleDateString('en-IN'),
+                ])}
+              />
+            </Section>
+          )}
         </Panel>
       );
 

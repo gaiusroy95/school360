@@ -464,6 +464,7 @@ const DEFAULT_FEE_DUE = 12500;
 export function buildStudentProfileBundle(
   student: Student,
   feeReceipts: { amountPaid: number; collectedAt: Date; feeBreakdown: unknown }[],
+  sessionHistory?: { fromAcademicYear: string; toAcademicYear: string; fromClassName: string; fromSectionName: string; toClassName: string; toSectionName: string; finalPercentage: number | null; finalGrade: string; promotedAt: Date; promotionType: string }[],
 ) {
   const custom = (student.customFields || {}) as Record<string, unknown>;
   const profileMeta = (custom.profile || {}) as Record<string, unknown>;
@@ -498,6 +499,26 @@ export function buildStudentProfileBundle(
       title: `Enrolled in ${student.academicYear} — ${formatClassSection(student.className, student.sectionName)}`,
       time: student.enrolledAt.toISOString(),
       type: 'Enrollment',
+    });
+  }
+
+  for (const h of sessionHistory || []) {
+    activities.push({
+      title: `Promoted: ${h.fromClassName} ${h.fromSectionName} (${h.fromAcademicYear}) → ${h.toClassName} ${h.toSectionName} (${h.toAcademicYear}) — ${h.finalPercentage ?? '—'}% (${h.finalGrade})`,
+      time: h.promotedAt.toISOString(),
+      type: 'Promotion',
+    });
+  }
+
+  const customHistory = Array.isArray((custom as Record<string, unknown>).sessionHistory)
+    ? (custom as Record<string, unknown>).sessionHistory as Record<string, unknown>[]
+    : [];
+  for (const h of customHistory) {
+    if (sessionHistory?.some((s) => s.promotedAt.toISOString() === String(h.promotedAt))) continue;
+    activities.push({
+      title: `Session: ${String(h.fromClass || h.fromClassName)} → ${String(h.toClass || h.toClassName)} (${String(h.fromAcademicYear)} → ${String(h.toAcademicYear)})`,
+      time: String(h.promotedAt || new Date().toISOString()),
+      type: 'Promotion',
     });
   }
 
@@ -552,6 +573,18 @@ export function buildStudentProfileBundle(
       attendanceToday,
       idCardTemplate,
       admissionForm,
+      sessionHistory: (sessionHistory || []).map((h) => ({
+        fromAcademicYear: h.fromAcademicYear,
+        toAcademicYear: h.toAcademicYear,
+        fromClassName: h.fromClassName,
+        fromSectionName: h.fromSectionName,
+        toClassName: h.toClassName,
+        toSectionName: h.toSectionName,
+        finalPercentage: h.finalPercentage,
+        finalGrade: h.finalGrade,
+        promotionType: h.promotionType,
+        promotedAt: h.promotedAt.toISOString(),
+      })),
     },
     activities,
     alerts,

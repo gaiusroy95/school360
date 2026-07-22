@@ -94,6 +94,33 @@ model Institution {
   biometricDevices BiometricDevice[]
   biometricEnrollments BiometricEnrollment[]
   biometricAttendancePunches BiometricAttendancePunch[]
+  examSchedules ExamSchedule[]
+  examCalendarSessions ExamCalendarSession[]
+  examSubjectSyllabi ExamSubjectSyllabus[]
+  examQuestionPapers ExamQuestionPaper[]
+  examDigitalExamAttempts ExamDigitalExamAttempt[]
+  examSeatingPlans ExamSeatingPlan[]
+  examInvigilationPlans ExamInvigilationPlan[]
+  examInvigilationRotationStates ExamInvigilationRotationState[]
+  examSubjectTeacherAssignments ExamSubjectTeacherAssignment[]
+  examMarkingSheets ExamMarkingSheet[]
+  examResultBatches ExamResultBatch[]
+  examResultAuditLogs ExamResultAuditLog[]
+  examReportCardConfigs ExamReportCardConfig[]
+  examBoardMarksheetUploads ExamBoardMarksheetUpload[]
+  examRevaluationConfigs ExamRevaluationConfig[]
+  examRevaluationRequests ExamRevaluationRequest[]
+  examBackPaperExams ExamBackPaperExam[]
+  studentSessionHistory StudentSessionHistory[]
+  examGradePromotionBatches ExamGradePromotionBatch[]
+  examCoScholasticCertificates ExamCoScholasticCertificate[]
+  examCertificateConfigs ExamCertificateConfig[]
+  examAlerts ExamAlert[]
+  examMarksEntryProgress ExamMarksEntryProgress[]
+  examDashboardStats ExamDashboardStats[]
+  examQuestionSubjectStats ExamQuestionSubjectStat[]
+  examTopPerformers ExamTopPerformer[]
+  examPerformanceTrends ExamPerformanceTrend[]
 }
 
 enum EnquiryStatus {
@@ -640,6 +667,15 @@ model Student {
   leaveApplications StudentLeaveApplication[]
   gatePasses StudentGatePass[]
   biometricEnrollments BiometricEnrollment[]
+  examDigitalAttempts ExamDigitalExamAttempt[]
+  examSeatingAssignments ExamSeatingAssignment[]
+  examStudentMarkCells ExamStudentMarkCell[]
+  examStudentResults ExamStudentResult[]
+  examBoardMarksheetUploads ExamBoardMarksheetUpload[]
+  examRevaluationRequests ExamRevaluationRequest[]
+  examBackPaperExams ExamBackPaperExam[]
+  sessionHistory StudentSessionHistory[]
+  coScholasticCertificates ExamCoScholasticCertificate[]
 
   @@unique([institutionId, admissionNumber])
   @@index([institutionId, academicYear, status])
@@ -1472,6 +1508,7 @@ model AcademicClassTest {
   updatedAt     DateTime @updatedAt
 
   scores        AcademicClassTestScore[]
+  calendarSessions ExamCalendarSession[]
 
   @@unique([institutionId, recordId])
   @@unique([institutionId, lessonPlanId])
@@ -1987,6 +2024,7 @@ model TeacherAttendanceProfile {
   coverSubstituteAssignments TeacherSubstituteAssignment[] @relation("CoverTeacherSubstitute")
   leaveApplications TeacherLeaveApplication[]
   biometricEnrollments BiometricEnrollment[]
+  examInvigilationDuties ExamInvigilationDuty[]
 
   @@unique([institutionId, recordId])
   @@unique([institutionId, academicYear, teacherName])
@@ -2061,6 +2099,7 @@ model StaffAttendanceProfile {
   leaveGrants  StaffLeaveGrant[]
   leaveApplications StaffLeaveApplication[]
   biometricEnrollments BiometricEnrollment[]
+  examInvigilationDuties ExamInvigilationDuty[]
 
   @@unique([institutionId, recordId])
   @@unique([institutionId, academicYear, staffName])
@@ -2405,4 +2444,1073 @@ model BiometricAttendancePunch {
   @@unique([institutionId, recordId])
   @@index([institutionId, punchedAt])
   @@index([institutionId, personType, punchStatus])
+}
+
+enum ExamTypeFilter {
+  UNIT_TEST
+  MID_TERM
+  HALF_YEARLY
+  PRE_FINAL
+  FINAL_EXAMINATION
+}
+
+model ExamSchedule {
+  id                 String   @id @default(cuid())
+  institutionId      String
+  institution        Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId           String
+  academicYear       String   @default("2025-26")
+  examType           ExamTypeFilter
+  name               String
+  classRange         String
+  startDate          DateTime @db.Date
+  endDate            DateTime @db.Date
+  subjectCount       Int      @default(0)
+  studentCount       Int      @default(0)
+  plannedPercent     Int      @default(100)
+  preparationPercent Int      @default(0)
+  conductPercent     Int      @default(0)
+  evaluationPercent  Int      @default(0)
+  publishPercent     Int      @default(0)
+  isToday            Boolean  @default(false)
+  todayStartTime     String   @default("")
+  todayEndTime       String   @default("")
+  todaySubject       String   @default("")
+  todaySection       String   @default("")
+  todayPresent       Int      @default(0)
+  todayAbsent        Int      @default(0)
+  sortOrder          Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  calendarSessions ExamCalendarSession[]
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, academicYear, examType])
+}
+
+enum ExamCalendarEventType {
+  EXAM
+  CLASS_TEST
+}
+
+model ExamCalendarSession {
+  id            String                @id @default(cuid())
+  institutionId String
+  institution   Institution           @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId      String
+  academicYear  String                @default("2025-26")
+  eventType     ExamCalendarEventType @default(EXAM)
+  examType      ExamTypeFilter?
+  scheduleId    String?
+  schedule      ExamSchedule?         @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  classTestId   String?
+  classTest     AcademicClassTest?    @relation(fields: [classTestId], references: [id], onDelete: SetNull)
+  seriesName    String                @default("")
+  className     String
+  sectionName   String
+  subjectName   String
+  examDate      DateTime              @db.Date
+  startTime     String                @default("")
+  endTime       String                @default("")
+  status        String                @default("Scheduled")
+  sortOrder     Int                   @default(0)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, academicYear, examDate])
+  @@index([institutionId, academicYear, className, sectionName])
+}
+
+enum ExamSyllabusCategory {
+  CLASS_TEST_SERIES
+  UNIT_TEST
+  MID_TERM
+  ANNUAL_EXAM
+}
+
+model ExamSubjectSyllabus {
+  id               String              @id @default(cuid())
+  institutionId    String
+  institution      Institution         @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId         String
+  academicYear     String              @default("2025-26")
+  category         ExamSyllabusCategory
+  className        String
+  sectionName      String              @default("")
+  subjectName      String
+  title            String
+  unitsCovered     String              @default("")
+  topics           Json                @default("[]")
+  maxMarks         Int                 @default(25)
+  weightagePercent Float               @default(0)
+  durationMinutes  Int                 @default(45)
+  plannedMonth     String              @default("")
+  status           String              @default("Published")
+  notes            String              @default("")
+  sortOrder        Int                 @default(0)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@unique([institutionId, academicYear, category, className, sectionName, subjectName])
+  @@index([institutionId, academicYear, className, subjectName])
+  @@index([institutionId, academicYear, category])
+}
+
+enum ExamPaperSource {
+  AI_PDF
+  OCR
+  MANUAL
+  SYLLABUS
+}
+
+enum ExamPaperPurpose {
+  CLASS_TEST
+  UNIT_TEST
+  MID_TERM
+  ANNUAL_EXAM
+  ENTRANCE_TEST
+  PRACTICE
+}
+
+enum ExamPaperStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model ExamQuestionPaper {
+  id               String           @id @default(cuid())
+  institutionId    String
+  institution      Institution      @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId         String
+  academicYear     String           @default("2025-26")
+  className        String
+  sectionName      String           @default("")
+  subjectName      String
+  title            String
+  purpose          ExamPaperPurpose @default(PRACTICE)
+  source           ExamPaperSource  @default(MANUAL)
+  status           ExamPaperStatus  @default(DRAFT)
+  durationMinutes  Int              @default(60)
+  numQuestions     Int              @default(0)
+  questionType     String           @default("Multiple Choice")
+  difficulty       String           @default("Medium")
+  passMarksPercent Int              @default(33)
+  isDigitalExam    Boolean          @default(true)
+  sourceFilesMeta  Json             @default("[]")
+  createdBy        String           @default("")
+  mobilePublishedAt DateTime?
+  mobilePublishedBy String          @default("")
+  mobileVisibleOn   PublicationVisibility?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  questions        ExamQuestionPaperQuestion[]
+  attempts           ExamDigitalExamAttempt[]
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, academicYear, className, subjectName])
+  @@index([institutionId, academicYear, className, sectionName, subjectName])
+  @@index([institutionId, academicYear, purpose])
+  @@index([institutionId, mobilePublishedAt])
+}
+
+model ExamQuestionPaperQuestion {
+  id            String            @id @default(cuid())
+  paperId       String
+  paper         ExamQuestionPaper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  sortOrder     Int
+  type          TestQuestionType
+  difficulty    TestDifficulty
+  questionText  String
+  options       Json?
+  correctAnswer String?
+  marks         Float             @default(1)
+  autoGradable  Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([paperId, sortOrder])
+}
+
+model ExamDigitalExamAttempt {
+  id              String            @id @default(cuid())
+  institutionId   String
+  institution     Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  paperId         String
+  paper           ExamQuestionPaper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  studentId       String?
+  student         Student?          @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  candidateName   String            @default("")
+  candidateRef    String            @default("")
+  startedAt       DateTime          @default(now())
+  submittedAt     DateTime?
+  answers         Json              @default("{}")
+  score           Float?
+  maxScore        Float?
+  percentScore    Float?
+  passed          Boolean?
+  resultBreakdown Json?
+  autoScored      Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+
+  @@index([paperId, submittedAt])
+  @@index([institutionId, studentId])
+}
+
+enum ExamSeatingPlanStatus {
+  DRAFT
+  FINALIZED
+  EXAM_CALL_ISSUED
+  IN_PROGRESS
+  COMPLETED
+}
+
+model ExamSeatingPlan {
+  id                 String                @id @default(cuid())
+  institutionId      String
+  institution        Institution           @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId           String
+  academicYear       String                @default("2025-26")
+  title              String
+  examDate           DateTime              @db.Date
+  status             ExamSeatingPlanStatus @default(DRAFT)
+  seriesPrefix       String                @default("SER")
+  totalStudents      Int                   @default(0)
+  totalRooms         Int                   @default(0)
+  examCallIssuedAt   DateTime?
+  examCallIssuedBy   String                @default("")
+  notificationsSentAt DateTime?
+  createdBy          String                @default("")
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  rooms              ExamSeatingRoom[]
+  assignments        ExamSeatingAssignment[]
+  notifications      ExamSeatingNotification[]
+  invigilationPlans  ExamInvigilationPlan[]
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, academicYear, examDate])
+  @@index([institutionId, status])
+}
+
+model ExamSeatingRoom {
+  id              String   @id @default(cuid())
+  institutionId   String
+  planId          String
+  plan            ExamSeatingPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  roomNumber      String
+  buildingName    String   @default("")
+  capacity        Int      @default(40)
+  invigilatorName String   @default("")
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  assignments     ExamSeatingAssignment[]
+  invigilationDuties ExamInvigilationDuty[]
+
+  @@unique([planId, roomNumber])
+  @@index([planId, sortOrder])
+}
+
+model ExamSeatingAssignment {
+  id              String   @id @default(cuid())
+  institutionId   String
+  planId          String
+  plan            ExamSeatingPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  roomId          String
+  room            ExamSeatingRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  studentId       String
+  student         Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  seriesNumber    String
+  seatNumber      Int
+  rollLabel       String   @default("")
+  className       String
+  sectionName     String
+  studentName     String
+  admissionNumber String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([planId, studentId])
+  @@unique([planId, seriesNumber])
+  @@index([planId, roomId])
+  @@index([institutionId, studentId])
+}
+
+model ExamSeatingNotification {
+  id              String   @id @default(cuid())
+  institutionId   String
+  planId          String
+  plan            ExamSeatingPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  channel         String
+  recipientType   String
+  recipientName   String
+  recipientMobile String   @default("")
+  status          String   @default("SENT")
+  message         String   @default("")
+  sentAt          DateTime @default(now())
+
+  @@index([planId, channel])
+}
+
+enum ExamInvigilationPlanStatus {
+  DRAFT
+  SCHEDULED
+  ROTATED
+  PUBLISHED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum ExamInvigilatorRole {
+  PRIMARY
+  CO_INVIGILATOR
+  FLOOR_SUPERVISOR
+  RELIEF
+}
+
+enum ExamInvigilationDutyStatus {
+  ASSIGNED
+  PRESENT
+  ABSENT
+  REPLACED
+}
+
+model ExamInvigilationPlan {
+  id                 String                     @id @default(cuid())
+  institutionId      String
+  institution        Institution                @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId           String
+  academicYear       String                     @default("2025-26")
+  title              String
+  examDate           DateTime                   @db.Date
+  seatingPlanId      String?
+  seatingPlan        ExamSeatingPlan?           @relation(fields: [seatingPlanId], references: [id], onDelete: SetNull)
+  status             ExamInvigilationPlanStatus @default(DRAFT)
+  teamSize           Int                        @default(2)
+  rotationOffset     Int                        @default(0)
+  autoRotateEnabled  Boolean                    @default(true)
+  lastRotatedAt      DateTime?
+  publishedToMobile  Boolean                    @default(false)
+  mobilePublishedAt  DateTime?
+  createdBy          String                     @default("")
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+
+  duties             ExamInvigilationDuty[]
+  notifications      ExamInvigilationNotification[]
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, academicYear, examDate])
+  @@index([institutionId, status])
+}
+
+model ExamInvigilationDuty {
+  id               String                     @id @default(cuid())
+  institutionId    String
+  planId           String
+  plan             ExamInvigilationPlan       @relation(fields: [planId], references: [id], onDelete: Cascade)
+  teacherProfileId String?
+  teacherProfile   TeacherAttendanceProfile?  @relation(fields: [teacherProfileId], references: [id], onDelete: SetNull)
+  staffProfileId   String?
+  staffProfile     StaffAttendanceProfile?    @relation(fields: [staffProfileId], references: [id], onDelete: SetNull)
+  personName       String
+  personMobile     String                     @default("")
+  personEmail      String                     @default("")
+  employeeCode     String                     @default("")
+  department       String                     @default("")
+  designation      String                     @default("")
+  role             ExamInvigilatorRole        @default(PRIMARY)
+  roomNumber       String
+  buildingName     String                     @default("")
+  areaLabel        String                     @default("")
+  seatingRoomId    String?
+  seatingRoom      ExamSeatingRoom?           @relation(fields: [seatingRoomId], references: [id], onDelete: SetNull)
+  teamNumber       Int                        @default(1)
+  shiftStart       String                     @default("09:00")
+  shiftEnd         String                     @default("12:00")
+  status           ExamInvigilationDutyStatus @default(ASSIGNED)
+  sortOrder        Int                        @default(0)
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+
+  @@index([planId, roomNumber])
+  @@index([planId, teamNumber])
+  @@index([institutionId, teacherProfileId])
+  @@index([institutionId, staffProfileId])
+}
+
+model ExamInvigilationRotationState {
+  id              String   @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear    String   @default("2025-26")
+  dutyCounts      Json     @default("{}")
+  lastRunDate     DateTime? @db.Date
+  lastRunAt       DateTime?
+  updatedAt       DateTime @updatedAt
+
+  @@unique([institutionId, academicYear])
+}
+
+model ExamInvigilationNotification {
+  id              String   @id @default(cuid())
+  institutionId   String
+  planId          String
+  plan            ExamInvigilationPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  channel         String
+  recipientType   String
+  recipientName   String
+  recipientMobile String   @default("")
+  status          String   @default("SENT")
+  message         String   @default("")
+  sentAt          DateTime @default(now())
+
+  @@index([planId, channel])
+}
+
+enum ExamMarksColumnKey {
+  UNIT_1
+  UNIT_2
+  UNIT_3
+  HALF_YEARLY
+  YEARLY
+  PRACTICAL_VIVA
+}
+
+enum ExamMarkingSheetStatus {
+  DRAFT
+  SUBMITTED
+  RETURNED
+  APPROVED
+  LOCKED
+}
+
+model ExamSubjectTeacherAssignment {
+  id               String   @id @default(cuid())
+  institutionId    String
+  institution      Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId         String
+  academicYear     String   @default("2025-26")
+  className        String
+  sectionName      String
+  subjectName      String
+  teacherProfileId String?
+  teacherName      String
+  teacherEmail     String   @default("")
+  teacherPhone     String   @default("")
+  assignedColumns  ExamMarksColumnKey[]
+  examinationName  String   @default("Annual Examination")
+  studentCount     Int      @default(0)
+  createdBy        String   @default("")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  markingSheets    ExamMarkingSheet[]
+
+  @@unique([institutionId, recordId])
+  @@unique([institutionId, academicYear, className, sectionName, subjectName, teacherName])
+  @@index([institutionId, academicYear, teacherName])
+  @@index([institutionId, className, sectionName])
+}
+
+model ExamMarkingSheet {
+  id               String                 @id @default(cuid())
+  institutionId    String
+  institution      Institution            @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId         String
+  assignmentId     String
+  assignment       ExamSubjectTeacherAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  academicYear     String                 @default("2025-26")
+  examinationName  String
+  className        String
+  sectionName      String
+  subjectName      String
+  teacherName      String
+  status           ExamMarkingSheetStatus   @default(DRAFT)
+  submittedAt      DateTime?
+  submittedBy      String                   @default("")
+  pdfGeneratedAt   DateTime?
+  principalApprovedAt DateTime?
+  principalApprovedBy String                @default("")
+  principalRemarks    String                @default("")
+  returnedAt          DateTime?
+  returnedBy          String                @default("")
+  returnReason        String                @default("")
+  reopenedAt          DateTime?
+  reopenedBy          String                @default("")
+  reopenReason        String                @default("")
+  lockedAt            DateTime?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  cells            ExamStudentMarkCell[]
+  auditLogs        ExamResultAuditLog[]     @relation("SheetAuditLogs")
+
+  @@unique([institutionId, recordId])
+  @@unique([assignmentId])
+  @@index([institutionId, academicYear, status])
+}
+
+model ExamStudentMarkCell {
+  id                    String             @id @default(cuid())
+  institutionId         String
+  sheetId               String
+  sheet                 ExamMarkingSheet   @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  studentId             String
+  student               Student            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  columnKey             ExamMarksColumnKey
+  maxMarks              Int
+  marksObtained         Float?
+  isAbsent              Boolean            @default(false)
+  graceMarks            Float              @default(0)
+  remarks               String             @default("")
+  grade                 String             @default("")
+  examinerObservations  String             @default("")
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  @@unique([sheetId, studentId, columnKey])
+  @@index([sheetId, studentId])
+  @@index([institutionId, studentId])
+}
+
+enum ExamReportCardTemplate {
+  PRE_PRIMARY
+  PRIMARY
+  MIDDLE
+  UPPER
+  BOARD
+}
+
+enum ExamReportCardStatus {
+  PENDING
+  GENERATED
+  PUBLISHED
+  SHARED
+}
+
+enum ExamResultBatchStatus {
+  COMPILING
+  COMPILED
+  SCHEDULED
+  PUBLISHED
+}
+
+enum ExamResultPublishMode {
+  AUTOMATIC
+  MANUAL
+}
+
+model ExamResultBatch {
+  id                 String                @id @default(cuid())
+  institutionId      String
+  institution        Institution           @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId           String
+  academicYear       String                @default("2025-26")
+  examinationName    String
+  className          String
+  sectionName        String
+  status             ExamResultBatchStatus   @default(COMPILING)
+  publishMode        ExamResultPublishMode   @default(MANUAL)
+  scheduledPublishAt DateTime?
+  compiledAt         DateTime?
+  publishedAt        DateTime?
+  publishedBy        String                @default("")
+  totalStudents      Int                   @default(0)
+  subjectsTotal      Int                   @default(0)
+  subjectsApproved   Int                   @default(0)
+  averagePercent     Float                 @default(0)
+  passPercent        Float                 @default(0)
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  studentResults     ExamStudentResult[]
+  notifications      ExamResultNotification[]
+  auditLogs          ExamResultAuditLog[]  @relation("BatchAuditLogs")
+
+  @@unique([institutionId, recordId])
+  @@unique([institutionId, academicYear, examinationName, className, sectionName])
+  @@index([institutionId, academicYear, status])
+}
+
+model ExamStudentResult {
+  id                 String   @id @default(cuid())
+  institutionId      String
+  batchId            String
+  batch              ExamResultBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  studentId          String
+  student            Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentName        String
+  admissionNumber    String
+  totalObtained      Float    @default(0)
+  totalMax           Float    @default(0)
+  percentage         Float    @default(0)
+  grade              String   @default("")
+  gpa                Float    @default(0)
+  rank               Int      @default(0)
+  remarks            String   @default("")
+  overallPerformance String   @default("")
+  subjectScores      Json     @default("[]")
+  reportCardToken    String   @unique @default(cuid())
+  reportCardStatus   ExamReportCardStatus   @default(PENDING)
+  templateType       ExamReportCardTemplate @default(PRIMARY)
+  generatedAt        DateTime?
+  reportCardPublishedAt DateTime?
+  reportCardSharedAt DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([batchId, studentId])
+  @@index([institutionId, studentId])
+  @@index([batchId, rank])
+  @@index([institutionId, reportCardStatus])
+}
+
+model ExamReportCardConfig {
+  id                        String   @id @default(cuid())
+  institutionId             String
+  institution               Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear              String   @default("2025-26")
+  schoolName                String   @default("")
+  schoolAddress             String   @default("")
+  principalName             String   @default("")
+  principalSignatureData    String   @default("") @db.Text
+  schoolSealData            String   @default("") @db.Text
+  classTeacherSignatureData String   @default("") @db.Text
+  headerLogoData            String   @default("") @db.Text
+  footerNote                String   @default("This is a computer-generated report card.")
+  boardExamNotice           String   @default("Marksheet for this class is issued by the Board of Education as per government rules.")
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@unique([institutionId, academicYear])
+}
+
+model ExamBoardMarksheetUpload {
+  id              String   @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  studentId       String
+  student         Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  academicYear    String   @default("2025-26")
+  examinationName String
+  className       String
+  sectionName     String
+  fileName        String
+  mimeType        String   @default("application/pdf")
+  fileData        String   @db.Text
+  uploadedBy      String   @default("")
+  uploadedAt      DateTime @default(now())
+
+  @@unique([institutionId, studentId, academicYear, examinationName])
+  @@index([institutionId, className, sectionName])
+}
+
+enum ExamRevaluationRequestType {
+  REVALUATION
+  RECHECK
+}
+
+enum ExamRevaluationStatus {
+  RECEIVED
+  FEE_PENDING
+  FEE_PAID
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  COMPLETED
+  PUBLISHED
+}
+
+enum ExamBackPaperStatus {
+  CREATED
+  MARKS_ENTRY
+  COMPLETED
+  PUBLISHED
+}
+
+model ExamRevaluationConfig {
+  id               String   @id @default(cuid())
+  institutionId    String
+  institution      Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear     String   @default("2025-26")
+  revaluationFee   Float    @default(500)
+  recheckFee       Float    @default(300)
+  gracePeriodDays  Int      @default(30)
+  passingPercent   Float    @default(36)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([institutionId, academicYear])
+}
+
+model ExamRevaluationRequest {
+  id                 String   @id @default(cuid())
+  institutionId      String
+  institution        Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId           String
+  academicYear       String   @default("2025-26")
+  examinationName    String
+  studentId          String
+  student            Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentResultId    String?
+  batchId            String?
+  studentName        String
+  admissionNumber    String
+  className          String
+  sectionName        String
+  subjectName        String
+  requestType        ExamRevaluationRequestType
+  status             ExamRevaluationStatus @default(RECEIVED)
+  originalMarks      Float    @default(0)
+  originalMaxMarks   Float    @default(0)
+  originalGrade      String   @default("")
+  revisedMarks       Float?
+  revisedMaxMarks    Float?
+  revisedGrade       String   @default("")
+  feeAmount          Float    @default(0)
+  feePaid            Boolean  @default(false)
+  feeReceiptNumber   String   @default("")
+  feePaymentMode     String   @default("")
+  feePaidAt          DateTime?
+  gracePeriodEndsAt  DateTime
+  resultPublishedAt  DateTime?
+  requestedAt        DateTime @default(now())
+  requestedBy        String   @default("")
+  reviewedAt         DateTime?
+  reviewedBy         String   @default("")
+  completedAt        DateTime?
+  publishedAt        DateTime?
+  publishedBy        String   @default("")
+  remarks            String   @default("")
+  rejectionReason    String   @default("")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, academicYear, status])
+  @@index([institutionId, studentId])
+  @@index([institutionId, className, sectionName])
+}
+
+model ExamBackPaperExam {
+  id                 String   @id @default(cuid())
+  institutionId      String
+  institution        Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId           String
+  academicYear       String   @default("2025-26")
+  examinationName    String
+  studentId          String
+  student            Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentResultId    String?
+  studentName        String
+  admissionNumber    String
+  className          String
+  sectionName        String
+  subjectName        String
+  status             ExamBackPaperStatus @default(CREATED)
+  originalMarks      Float    @default(0)
+  originalMaxMarks   Float    @default(0)
+  originalGrade      String   @default("")
+  passingMarks       Float    @default(0)
+  examDate           DateTime?
+  newMarks           Float?
+  newMaxMarks        Float?
+  newGrade           String   @default("")
+  marksEnteredAt     DateTime?
+  marksEnteredBy     String   @default("")
+  publishedAt        DateTime?
+  publishedBy        String   @default("")
+  remarks            String   @default("")
+  createdBy          String   @default("")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@unique([institutionId, academicYear, studentId, subjectName, examinationName])
+  @@index([institutionId, academicYear, status])
+  @@index([institutionId, className, sectionName])
+}
+
+enum StudentPromotionType {
+  PROMOTED
+  PASSED_OUT
+  RETAINED
+  DETAINED
+}
+
+model StudentSessionHistory {
+  id               String   @id @default(cuid())
+  institutionId    String
+  institution      Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  studentId        String
+  student          Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  batchId          String?
+  promotionBatchId String?
+  promotionBatch   ExamGradePromotionBatch? @relation(fields: [promotionBatchId], references: [id], onDelete: SetNull)
+  fromAcademicYear String
+  toAcademicYear   String
+  fromClassName    String
+  fromSectionName  String
+  toClassName      String
+  toSectionName    String
+  promotionType    StudentPromotionType @default(PROMOTED)
+  finalPercentage  Float?
+  finalGrade       String   @default("")
+  resultSnapshot   Json     @default("{}")
+  parentSnapshot   Json     @default("{}")
+  remarks          String   @default("")
+  promotedAt       DateTime @default(now())
+  promotedBy       String   @default("")
+  createdAt        DateTime @default(now())
+
+  @@index([institutionId, studentId])
+  @@index([institutionId, fromAcademicYear])
+  @@index([promotionBatchId])
+}
+
+model ExamGradePromotionBatch {
+  id               String   @id @default(cuid())
+  institutionId    String
+  institution      Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId         String
+  fromAcademicYear String
+  toAcademicYear   String
+  fromClassName    String
+  fromSectionName  String
+  toClassName      String
+  toSectionName    String
+  studentCount     Int      @default(0)
+  promotedBy       String   @default("")
+  promotedAt       DateTime @default(now())
+  remarks          String   @default("")
+  sessionHistories StudentSessionHistory[]
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, fromAcademicYear, toAcademicYear])
+}
+
+enum ExamCertificateCategory {
+  PHYSICAL_HEALTH
+  WORK_EDUCATION
+  VISUAL_PERFORMING_ARTS
+  LEADERSHIP_COMMUNITY
+}
+
+enum ExamCertificateStatus {
+  RECORDED
+  GENERATED
+  ISSUED
+}
+
+model ExamCertificateConfig {
+  id                        String   @id @default(cuid())
+  institutionId             String
+  institution               Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear              String   @default("2025-26")
+  schoolName                String   @default("")
+  schoolAddress             String   @default("")
+  principalName             String   @default("")
+  principalSignatureData    String   @default("") @db.Text
+  schoolSealData            String   @default("") @db.Text
+  headerLogoData            String   @default("") @db.Text
+  footerNote                String   @default("This certificate is issued by the school authority.")
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@unique([institutionId, academicYear])
+}
+
+model ExamCoScholasticCertificate {
+  id                String   @id @default(cuid())
+  institutionId     String
+  institution       Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId          String
+  academicYear      String   @default("2025-26")
+  term              String   @default("Annual")
+  studentId         String
+  student           Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentName       String
+  admissionNumber   String
+  className         String
+  sectionName       String
+  category          ExamCertificateCategory
+  subCategory       String   @default("")
+  activityTitle     String
+  activityId        String?
+  performanceId     String?
+  performanceScore  Float    @default(0)
+  performanceGrade  String   @default("")
+  performanceBand   String   @default("")
+  status            ExamCertificateStatus @default(RECORDED)
+  certificateToken  String   @unique @default(cuid())
+  recordedBy        String   @default("")
+  recordedAt        DateTime @default(now())
+  generatedAt       DateTime?
+  issuedAt          DateTime?
+  remarks           String   @default("")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@unique([institutionId, studentId, activityId, category])
+  @@index([institutionId, academicYear, status])
+  @@index([institutionId, className, sectionName])
+  @@index([institutionId, category])
+}
+
+model ExamResultAuditLog {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  entityType    String
+  entityId      String
+  action        String
+  actor         String   @default("")
+  details       String   @default("")
+  sheetId       String?
+  sheet         ExamMarkingSheet? @relation("SheetAuditLogs", fields: [sheetId], references: [id], onDelete: SetNull)
+  batchId       String?
+  batch         ExamResultBatch? @relation("BatchAuditLogs", fields: [batchId], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now())
+
+  @@index([institutionId, entityType, entityId])
+  @@index([institutionId, createdAt])
+}
+
+model ExamResultNotification {
+  id              String   @id @default(cuid())
+  institutionId   String
+  batchId         String
+  batch           ExamResultBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  studentId       String
+  channel         String
+  recipientType   String   @default("parent")
+  recipientName   String
+  recipientMobile String   @default("")
+  recipientEmail  String   @default("")
+  status          String   @default("SENT")
+  message         String   @default("")
+  sentAt          DateTime @default(now())
+
+  @@index([batchId, channel])
+  @@index([institutionId, studentId])
+}
+
+model ExamAlert {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear  String   @default("2025-26")
+  alertType     String   @default("INFO")
+  title         String
+  description   String   @default("")
+  alertDate     DateTime? @db.Date
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  @@index([institutionId, academicYear])
+}
+
+model ExamMarksEntryProgress {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear  String   @default("2025-26")
+  examType      ExamTypeFilter
+  className     String
+  totalStudents Int      @default(0)
+  marksEntered  Int      @default(0)
+  sortOrder     Int      @default(0)
+
+  @@unique([institutionId, academicYear, examType, className])
+}
+
+model ExamDashboardStats {
+  id                    String   @id @default(cuid())
+  institutionId         String
+  institution           Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear          String   @default("2025-26")
+  examType              ExamTypeFilter
+  upcomingExams         Int      @default(0)
+  nextExamName          String   @default("")
+  nextExamDate          String   @default("")
+  studentsRegistered    Int      @default(0)
+  examsConducted        Int      @default(0)
+  papersCreated         Int      @default(0)
+  resultsDeclared       Int      @default(0)
+  averagePassPercent    Float    @default(0)
+  questionTotal         Int      @default(0)
+  questionSubjective    Int      @default(0)
+  questionObjective     Int      @default(0)
+  questionWithSolution  Int      @default(0)
+  resultAppeared        Int      @default(0)
+  resultPass            Int      @default(0)
+  resultFail            Int      @default(0)
+  resultHighest         Float    @default(0)
+  resultAverage         Float    @default(0)
+  analyticsPassPercent  Float    @default(0)
+  analyticsPassDelta    Float    @default(0)
+  analyticsAverage      Float    @default(0)
+  analyticsAverageDelta Float    @default(0)
+  analyticsImprovement  Float    @default(0)
+  revaluationReceived   Int      @default(0)
+  revaluationUnderReview Int     @default(0)
+  revaluationApproved   Int      @default(0)
+  revaluationRejected   Int      @default(0)
+  reportCardsGenerated  Int      @default(0)
+  reportCardsPublished  Int      @default(0)
+  reportCardsShared     Int      @default(0)
+  reportCardsPending    Int      @default(0)
+  updatedAt             DateTime @updatedAt
+
+  @@unique([institutionId, academicYear, examType])
+}
+
+model ExamQuestionSubjectStat {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear  String   @default("2025-26")
+  subjectName   String
+  questionCount Int      @default(0)
+  percentage    Float    @default(0)
+  color         String   @default("#3b82f6")
+  sortOrder     Int      @default(0)
+
+  @@index([institutionId, academicYear])
+}
+
+model ExamTopPerformer {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear  String   @default("2025-26")
+  examType      ExamTypeFilter
+  rank          Int
+  studentName   String
+  classGroup    String
+  percentage    Float
+  sortOrder     Int      @default(0)
+
+  @@index([institutionId, academicYear, examType])
+}
+
+model ExamPerformanceTrend {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear  String   @default("2025-26")
+  termLabel     String
+  averagePercent Float   @default(0)
+  passPercent   Float    @default(0)
+  sortOrder     Int      @default(0)
+
+  @@index([institutionId, academicYear])
 }

@@ -28,7 +28,9 @@ import { parentConsentsRouter } from './routes/parentConsents.js';
 import { parentCategoriesRouter } from './routes/parentCategories.js';
 import { academicRouter } from './routes/academic.js';
 import { attendanceRouter } from './routes/attendance.js';
+import { examinationRouter } from './routes/examination.js';
 import { connectDatabase } from './lib/prisma.js';
+import { startInvigilationScheduler } from './lib/examInvigilationScheduler.js';
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
@@ -83,6 +85,7 @@ app.use('/api/parent-consents', parentConsentsRouter);
 app.use('/api/parent-categories', parentCategoriesRouter);
 app.use('/api/academic', academicRouter);
 app.use('/api/attendance', attendanceRouter);
+app.use('/api/examination', examinationRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
@@ -104,6 +107,7 @@ async function start() {
 
   app.listen(port, () => {
     console.log(`API listening on http://localhost:${port}`);
+    startInvigilationScheduler();
   });
 }
 
