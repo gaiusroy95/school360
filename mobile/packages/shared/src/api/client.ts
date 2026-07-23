@@ -54,11 +54,30 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    const message =
-      (data as { error?: string }).error || res.statusText || 'Request failed';
-    throw new Error(typeof message === 'string' ? message : JSON.stringify(message));
+    const message = formatApiError(data, res.statusText);
+    throw new Error(message);
   }
   return data as T;
+}
+
+function formatApiError(data: unknown, statusText: string): string {
+  if (!data || typeof data !== 'object') {
+    return statusText || 'Request failed';
+  }
+
+  const { error, message } = data as { error?: unknown; message?: unknown };
+
+  if (typeof error === 'string' && error.trim()) return error;
+  if (typeof message === 'string' && message.trim()) return message;
+
+  if (error && typeof error === 'object') {
+    const formErrors = (error as { formErrors?: string[] }).formErrors;
+    if (Array.isArray(formErrors) && formErrors.length > 0) {
+      return formErrors.join(', ');
+    }
+  }
+
+  return statusText || 'Request failed';
 }
 
 export function uploadFileUrl(uploadPath: string) {

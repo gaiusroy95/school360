@@ -157,17 +157,25 @@ mobileRouter.post(
       const parsed = loginStaffSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-      const user = await loginStaff(parsed.data);
-      const token = signMobileToken(user);
-      return res.json({ token, user });
+      try {
+        const user = await loginStaff(parsed.data);
+        const token = signMobileToken(user);
+        return res.json({ token, user });
+      } catch (e) {
+        return res.status(401).json({ error: e instanceof Error ? e.message : 'Login failed' });
+      }
     }
 
     const parsed = loginStudentParentSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-    const user = await loginStudentParent(parsed.data);
-    const token = signMobileToken(user);
-    return res.json({ token, user });
+    try {
+      const user = await loginStudentParent(parsed.data);
+      const token = signMobileToken(user);
+      return res.json({ token, user });
+    } catch (e) {
+      return res.status(401).json({ error: e instanceof Error ? e.message : 'Login failed' });
+    }
   }),
 );
 
@@ -192,14 +200,18 @@ mobileRouter.post(
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-    const user = await changeMobilePassword(
-      req.mobileUser!.accountId,
-      parsed.data.currentPassword,
-      parsed.data.newPassword,
-    );
+    try {
+      const user = await changeMobilePassword(
+        req.mobileUser!.accountId,
+        parsed.data.currentPassword,
+        parsed.data.newPassword,
+      );
 
-    const token = signMobileToken(user);
-    return res.json({ token, user });
+      const token = signMobileToken(user);
+      return res.json({ token, user });
+    } catch (e) {
+      return res.status(400).json({ error: e instanceof Error ? e.message : 'Password change failed' });
+    }
   }),
 );
 

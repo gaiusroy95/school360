@@ -12,3 +12,9 @@ export {
   type MobileAuthModes,
 } from './api/client';
 export { mobileStaff } from './api/staff';
+export {
+  INDIA_MOBILE_PREFIX,
+  extractLocalMobileDigits,
+  formatMobileWithPrefix,
+  isValidIndiaMobile,
+} from './lib/mobileNumber';

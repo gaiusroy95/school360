@@ -10,8 +10,9 @@ import {
   View,
 } from 'react-native';
 import { Link, useRouter } from 'expo-router';
-import { mobileAuth, type MobileAuthModes } from '@360schoolerp/shared';
+import { mobileAuth, formatMobileWithPrefix, isValidIndiaMobile, type MobileAuthModes } from '@360schoolerp/shared';
 import { useAuth } from '../../src/context/AuthContext';
+import { MobileNumberInput } from '../../src/components/MobileNumberInput';
 import { colors, radius, spacing } from '../../src/theme';
 
 export default function LoginScreen() {
@@ -39,15 +40,23 @@ export default function LoginScreen() {
     if (modes.otpRequired) setUseOtp(true);
   }, [modes.otpRequired]);
 
+  function mobileForApi() {
+    return formatMobileWithPrefix(registeredMobile);
+  }
+
   async function onPasswordLogin() {
     setError(null);
     if (!employeeCode.trim() || !registeredMobile.trim() || !password) {
       setError('Please fill in all fields.');
       return;
     }
+    if (!isValidIndiaMobile(registeredMobile)) {
+      setError('Enter a valid 10-digit mobile number after +91.');
+      return;
+    }
     setLoading(true);
     try {
-      const user = await login(employeeCode.trim(), registeredMobile.trim(), password);
+      const user = await login(employeeCode.trim(), mobileForApi(), password);
       router.replace(user.mustResetPassword ? '/(auth)/change-password' : '/(app)');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Login failed');
@@ -62,12 +71,16 @@ export default function LoginScreen() {
       setError('Enter employee code and mobile.');
       return;
     }
+    if (!isValidIndiaMobile(registeredMobile)) {
+      setError('Enter a valid 10-digit mobile number after +91.');
+      return;
+    }
     setLoading(true);
     try {
       const res = await mobileAuth.requestOtp({
         app: 'staff',
         employeeCode: employeeCode.trim(),
-        registeredMobile: registeredMobile.trim(),
+        registeredMobile: mobileForApi(),
       });
       setOtpSent(true);
       if (res.devOtp) setError(`Dev OTP: ${res.devOtp}`);
@@ -84,9 +97,13 @@ export default function LoginScreen() {
       setError('Enter the OTP code.');
       return;
     }
+    if (!isValidIndiaMobile(registeredMobile)) {
+      setError('Enter a valid 10-digit mobile number after +91.');
+      return;
+    }
     setLoading(true);
     try {
-      const user = await loginWithOtp(employeeCode.trim(), registeredMobile.trim(), otp.trim());
+      const user = await loginWithOtp(employeeCode.trim(), mobileForApi(), otp.trim());
       router.replace(user.mustResetPassword ? '/(auth)/change-password' : '/(app)');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'OTP verification failed');
@@ -120,7 +137,7 @@ export default function LoginScreen() {
           <TextInput style={styles.input} value={employeeCode} onChangeText={setEmployeeCode} autoCapitalize="characters" />
 
           <Text style={styles.label}>Registered mobile</Text>
-          <TextInput style={styles.input} value={registeredMobile} onChangeText={setRegisteredMobile} keyboardType="phone-pad" />
+          <MobileNumberInput value={registeredMobile} onChange={setRegisteredMobile} />
 
           {showPassword ? (
             <>
@@ -154,7 +171,7 @@ export default function LoginScreen() {
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
           {showPassword ? (
-            <Text style={styles.hint}>First login uses your registered mobile as the password.</Text>
+            <Text style={styles.hint}>First login uses your registered mobile (+91…) as the password.</Text>
           ) : null}
 
           <Link href="/(auth)/privacy" style={styles.privacy}>

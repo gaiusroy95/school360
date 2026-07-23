@@ -10,8 +10,9 @@ import {
   View,
 } from 'react-native';
 import { Link, useRouter } from 'expo-router';
-import { mobileAuth, type MobileAuthModes } from '@360schoolerp/shared';
+import { mobileAuth, formatMobileWithPrefix, isValidIndiaMobile, type MobileAuthModes } from '@360schoolerp/shared';
 import { useAuth } from '../../src/context/AuthContext';
+import { MobileNumberInput } from '../../src/components/MobileNumberInput';
 import { colors, radius, spacing } from '../../src/theme';
 
 export default function LoginScreen() {
@@ -46,10 +47,18 @@ export default function LoginScreen() {
     else router.replace('/(app)');
   }
 
+  function mobileForApi() {
+    return formatMobileWithPrefix(registeredMobile);
+  }
+
   async function onPasswordLogin() {
     setError(null);
     if (!admissionNumber.trim() || !registeredMobile.trim() || !password) {
       setError('Please fill in all fields.');
+      return;
+    }
+    if (!isValidIndiaMobile(registeredMobile)) {
+      setError('Enter a valid 10-digit mobile number after +91.');
       return;
     }
     setLoading(true);
@@ -58,7 +67,7 @@ export default function LoginScreen() {
         await login({
           layer,
           admissionNumber: admissionNumber.trim(),
-          registeredMobile: registeredMobile.trim(),
+          registeredMobile: mobileForApi(),
           password,
         }),
       );
@@ -75,13 +84,17 @@ export default function LoginScreen() {
       setError('Enter admission number and mobile.');
       return;
     }
+    if (!isValidIndiaMobile(registeredMobile)) {
+      setError('Enter a valid 10-digit mobile number after +91.');
+      return;
+    }
     setLoading(true);
     try {
       const res = await mobileAuth.requestOtp({
         app: 'student-parent',
         layer,
         admissionNumber: admissionNumber.trim(),
-        registeredMobile: registeredMobile.trim(),
+        registeredMobile: mobileForApi(),
       });
       setOtpSent(true);
       if (res.devOtp) setError(`Dev OTP: ${res.devOtp}`);
@@ -98,13 +111,17 @@ export default function LoginScreen() {
       setError('Enter the OTP code.');
       return;
     }
+    if (!isValidIndiaMobile(registeredMobile)) {
+      setError('Enter a valid 10-digit mobile number after +91.');
+      return;
+    }
     setLoading(true);
     try {
       routeAfterLogin(
         await loginWithOtp({
           layer,
           admissionNumber: admissionNumber.trim(),
-          registeredMobile: registeredMobile.trim(),
+          registeredMobile: mobileForApi(),
           otp: otp.trim(),
         }),
       );
@@ -154,7 +171,7 @@ export default function LoginScreen() {
           <TextInput style={styles.input} value={admissionNumber} onChangeText={setAdmissionNumber} autoCapitalize="characters" />
 
           <Text style={styles.label}>Registered mobile</Text>
-          <TextInput style={styles.input} value={registeredMobile} onChangeText={setRegisteredMobile} keyboardType="phone-pad" />
+          <MobileNumberInput value={registeredMobile} onChange={setRegisteredMobile} />
 
           {showPassword ? (
             <>
