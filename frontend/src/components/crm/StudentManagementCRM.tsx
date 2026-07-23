@@ -17,7 +17,7 @@ export function StudentManagementCRM({ currentView = 'Students List', onNavigate
     case 'Add New Student':
       return <AddNewStudentView onNavigate={onNavigate} />;
     case 'Student Profiles':
-      return <StudentProfilesView />;
+    return <StudentProfilesView />;
     case 'Bulk Import':
       return <BulkImportView />;
     case 'Student Categories':

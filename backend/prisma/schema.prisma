@@ -130,6 +130,36 @@ model Institution {
   vehicleLocations VehicleLocation[]
   transportIncidents TransportIncident[]
   transportTrackingConfig TransportTrackingConfig?
+  feeMasters FeeMaster[]
+  feeInvoices FeeInvoice[]
+  feeDiscounts FeeDiscount[]
+  feeRefunds FeeRefund[]
+  feeFineTypes FeeFineType[]
+  feeFineLevies FeeFineLevy[]
+  feeScholarships FeeScholarship[]
+  feeScholarshipAwards FeeScholarshipAward[]
+  transportFeeVendors TransportFeeVendor[]
+  transportFeeCollections TransportFeeCollection[]
+  transportVendorPayments TransportVendorPayment[]
+  hostelFeeCategories HostelFeeCategory[]
+  hostelFeeCollections HostelFeeCollection[]
+  feeOtherChargeTypes FeeOtherChargeType[]
+  feeOtherChargeRequests FeeOtherChargeRequest[]
+  payrollEmployees PayrollEmployee[]
+  payrollSalaryStructures PayrollSalaryStructure[]
+  payrollStatutoryConfig PayrollStatutoryConfig?
+  payrollSlips PayrollSlip[]
+  feeStructures FeeStructure[]
+  paymentReconciliations PaymentReconciliation[]
+  bankCashDeposits BankCashDeposit[]
+  bankChequeDeposits BankChequeDeposit[]
+  expenseCategories ExpenseCategory[]
+  expenseHeads ExpenseHead[]
+  expenseVendors ExpenseVendor[]
+  expenseEntries ExpenseEntry[]
+  expenseBudgets ExpenseBudget[]
+  expenseRecurring ExpenseRecurring[]
+  expenseReimbursements ExpenseReimbursement[]
 }
 
 enum EnquiryStatus {
@@ -3801,3 +3831,1105 @@ model MessageDispatchLog {
 
   @@index([institutionId, channel, createdAt])
 }
+
+// ─── Fees & Finance modules ───────────────────────────────────────────────────
+
+enum FeeMasterStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum FeeStructureStatus {
+  DRAFT
+  OPEN
+  ACTIVE
+  PENDING
+  DUE
+  COMPLETED
+}
+
+enum FeeInvoiceStatus {
+  DRAFT
+  PENDING
+  PARTIAL
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum FeeApprovalStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  ACTIVE
+  EXPIRED
+  PROCESSED
+  CLOSED
+}
+
+enum FeeDiscountScope {
+  NEW_ADMISSION
+  EXISTING_STUDENT
+  BOTH
+  ACCOUNT_SETTLEMENT
+}
+
+enum FeeOtherChargeRequestType {
+  NEW_ADMISSION_DISCOUNT
+  ACCOUNT_SETTLEMENT
+}
+
+enum FeeRefundType {
+  ADVANCE
+  DEPOSIT
+  OVERPAYMENT
+  OTHER
+}
+
+enum FeeFineCategory {
+  LATE_FEE
+  LATE_EXAM_FEE
+  PROPERTY_DAMAGE
+  LAB_EQUIPMENT
+  LIBRARY_BOOK
+  COMPUTER_LAB
+  OTHER
+}
+
+enum FeeFineLevyStatus {
+  PENDING
+  PAID
+  WAIVED
+  CANCELLED
+}
+
+enum TransportVendorStatus {
+  ACTIVE
+  INACTIVE
+  EMPANELLED
+}
+
+/// Configurable fee headers used across collection, invoices, and payments
+model FeeMaster {
+  id              String          @id @default(cuid())
+  institutionId   String
+  institution     Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  code            String
+  name            String
+  description     String          @default("")
+  category        String          @default("OTHER")
+  defaultAmount   Float           @default(0)
+  isRefundable    Boolean         @default(false)
+  isTaxable       Boolean         @default(false)
+  displayOrder    Int             @default(0)
+  status          FeeMasterStatus @default(ACTIVE)
+  showInCollection Boolean        @default(true)
+  showInInvoice   Boolean         @default(true)
+  showInPayment   Boolean         @default(true)
+  schoolDetails   Json            @default("{}")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([institutionId, code])
+  @@index([institutionId, status])
+  @@index([institutionId, category])
+}
+
+/// Class / section fee structure with itemized fee heads
+model FeeStructure {
+  id                     String             @id @default(cuid())
+  institutionId          String
+  institution            Institution        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId               String
+  academicYear           String             @default("2025-26")
+  className              String
+  sectionName            String             @default("A")
+  frequency              String             @default("Yearly")
+  studentId              String             @default("")
+  studentName            String             @default("")
+  admissionNumber        String             @default("")
+  tuitionFee             Float              @default(0)
+  admissionFee           Float              @default(0)
+  registrationFee        Float              @default(0)
+  librarySecurityDeposit Float              @default(0)
+  cautionMoney           Float              @default(0)
+  computerLabFee         Float              @default(0)
+  picnicFieldTrip        Float              @default(0)
+  addOnFee               Float              @default(0)
+  examinationFee         Float              @default(0)
+  annualCharges          Float              @default(0)
+  sportsFee              Float              @default(0)
+  totalAmount            Float              @default(0)
+  status                 FeeStructureStatus @default(DRAFT)
+  effectiveDate          DateTime?          @db.Date
+  remarks                String             @default("")
+  createdBy              String             @default("")
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, academicYear, status])
+  @@index([institutionId, className, sectionName])
+  @@index([institutionId, studentId])
+}
+
+model FeeInvoice {
+  id                  String           @id @default(cuid())
+  institutionId       String
+  institution         Institution      @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  invoiceNumber       String
+  academicYear        String           @default("2025-26")
+  studentId           String           @default("")
+  admissionNumber     String           @default("")
+  studentName         String
+  className           String           @default("")
+  sectionName         String           @default("")
+  rollNumber          String           @default("")
+  parentName          String           @default("")
+  parentMobile        String           @default("")
+  parentEmail         String           @default("")
+  photoUrl            String           @default("")
+  feePeriod           String           @default("")
+  invoiceDate         DateTime         @default(now()) @db.Date
+  dueDate             DateTime?        @db.Date
+  status              FeeInvoiceStatus @default(PENDING)
+  paymentMode         String           @default("")
+  lineItems           Json             @default("[]")
+  totalFee            Float            @default(0)
+  concessionAmount    Float            @default(0)
+  lateFee             Float            @default(0)
+  previousDues        Float            @default(0)
+  netPayable          Float            @default(0)
+  amountPaid          Float            @default(0)
+  balance             Float            @default(0)
+  remarks             String           @default("")
+  preparedBy          String           @default("")
+  verifiedBy          String           @default("")
+  approvedBy          String           @default("")
+  feeReceiptId        String           @default("")
+  institutionSnapshot Json             @default("{}")
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  @@unique([institutionId, invoiceNumber])
+  @@index([institutionId, academicYear, status])
+  @@index([institutionId, admissionNumber])
+  @@index([institutionId, studentId])
+}
+
+model FeeDiscount {
+  id               String            @id @default(cuid())
+  institutionId    String
+  institution      Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  code             String
+  name             String
+  description      String            @default("")
+  discountType     String            @default("PERCENTAGE")
+  value            Float             @default(0)
+  scope            FeeDiscountScope  @default(NEW_ADMISSION)
+  academicYear     String            @default("2025-26")
+  maxUses          Int               @default(0)
+  usedCount        Int               @default(0)
+  status           FeeApprovalStatus @default(DRAFT)
+  studentId        String            @default("")
+  studentName      String            @default("")
+  admissionNumber  String            @default("")
+  settlementAmount Float             @default(0)
+  requestedBy      String            @default("")
+  approvedBy       String            @default("")
+  approvedAt       DateTime?
+  rejectionReason  String            @default("")
+  remarks          String            @default("")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([institutionId, code])
+  @@index([institutionId, status, academicYear])
+  @@index([institutionId, scope])
+}
+
+model FeeRefund {
+  id               String            @id @default(cuid())
+  institutionId    String
+  institution      Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId         String
+  academicYear     String            @default("2025-26")
+  studentId        String            @default("")
+  studentName      String
+  admissionNumber  String            @default("")
+  className        String            @default("")
+  sectionName      String            @default("")
+  refundType       FeeRefundType     @default(ADVANCE)
+  amount           Float
+  reason           String            @default("")
+  status           FeeApprovalStatus @default(PENDING_APPROVAL)
+  originalReceipt  String            @default("")
+  paymentMode      String            @default("")
+  requestedBy      String            @default("")
+  approvedBy       String            @default("")
+  approvedAt       DateTime?
+  processedAt      DateTime?
+  rejectionReason  String            @default("")
+  remarks          String            @default("")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, status, academicYear])
+  @@index([institutionId, studentId])
+}
+
+model FeeFineType {
+  id              String          @id @default(cuid())
+  institutionId   String
+  institution     Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  code            String
+  name            String
+  category        FeeFineCategory @default(OTHER)
+  defaultAmount   Float           @default(0)
+  description     String          @default("")
+  isCustomizable  Boolean         @default(true)
+  status          FeeMasterStatus @default(ACTIVE)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  levies          FeeFineLevy[]
+
+  @@unique([institutionId, code])
+  @@index([institutionId, category, status])
+}
+
+model FeeFineLevy {
+  id              String            @id @default(cuid())
+  institutionId   String
+  institution     Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  fineTypeId      String
+  fineType        FeeFineType       @relation(fields: [fineTypeId], references: [id], onDelete: Cascade)
+  academicYear    String            @default("2025-26")
+  studentId       String            @default("")
+  studentName     String
+  admissionNumber String            @default("")
+  className       String            @default("")
+  amount          Float
+  reason          String            @default("")
+  status          FeeFineLevyStatus @default(PENDING)
+  dueDate         DateTime?         @db.Date
+  collectedAt     DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([institutionId, academicYear, status])
+  @@index([institutionId, studentId])
+  @@index([fineTypeId])
+}
+
+model FeeScholarship {
+  id              String            @id @default(cuid())
+  institutionId   String
+  institution     Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  code            String
+  name            String
+  description     String            @default("")
+  academicYear    String            @default("2025-26")
+  waiverType      String            @default("PERCENTAGE")
+  waiverValue     Float             @default(0)
+  budgetAllocated Float             @default(0)
+  budgetUsed      Float             @default(0)
+  applicableFor   String            @default("BOTH")
+  status          FeeApprovalStatus @default(DRAFT)
+  requestedBy     String            @default("")
+  approvedBy      String            @default("")
+  approvedAt      DateTime?
+  rejectionReason String            @default("")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  awards          FeeScholarshipAward[]
+
+  @@unique([institutionId, code, academicYear])
+  @@index([institutionId, status, academicYear])
+}
+
+model FeeScholarshipAward {
+  id              String            @id @default(cuid())
+  institutionId   String
+  institution     Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  scholarshipId   String
+  scholarship     FeeScholarship    @relation(fields: [scholarshipId], references: [id], onDelete: Cascade)
+  academicYear    String            @default("2025-26")
+  studentId       String            @default("")
+  studentName     String
+  admissionNumber String            @default("")
+  className       String            @default("")
+  amount          Float             @default(0)
+  status          FeeApprovalStatus @default(PENDING_APPROVAL)
+  approvedBy      String            @default("")
+  approvedAt      DateTime?
+  remarks         String            @default("")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([institutionId, academicYear, status])
+  @@index([scholarshipId])
+  @@index([institutionId, studentId])
+}
+
+model TransportFeeVendor {
+  id              String                @id @default(cuid())
+  institutionId   String
+  institution     Institution           @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  vendorCode      String
+  vendorName      String
+  contactPerson   String                @default("")
+  mobile          String                @default("")
+  email           String                @default("")
+  address         String                @default("")
+  routesCovered   String                @default("")
+  vehicleCount    Int                   @default(0)
+  bankDetails     Json                  @default("{}")
+  status          TransportVendorStatus @default(EMPANELLED)
+  remarks         String                @default("")
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  payments        TransportVendorPayment[]
+
+  @@unique([institutionId, vendorCode])
+  @@index([institutionId, status])
+}
+
+model TransportFeeCollection {
+  id              String   @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  receiptNumber   String
+  academicYear    String   @default("2025-26")
+  monthLabel      String   @default("")
+  studentId       String   @default("")
+  studentName     String
+  admissionNumber String   @default("")
+  className       String   @default("")
+  routeName       String   @default("")
+  amount          Float
+  paymentMode     String   @default("CASH")
+  collectedBy     String   @default("")
+  collectedAt     DateTime @default(now())
+  remarks         String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([institutionId, receiptNumber])
+  @@index([institutionId, academicYear])
+  @@index([institutionId, studentId])
+}
+
+model TransportVendorPayment {
+  id              String   @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  vendorId        String
+  vendor          TransportFeeVendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  paymentNumber   String
+  amount          Float
+  paymentMode     String   @default("BANK_TRANSFER")
+  paymentDate     DateTime @default(now()) @db.Date
+  periodLabel     String   @default("")
+  remarks         String   @default("")
+  paidBy          String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([institutionId, paymentNumber])
+  @@index([institutionId, vendorId])
+  @@index([institutionId, paymentDate])
+}
+
+/// Hostel fee head master (Admission Fee, Rent, Mess, etc.)
+model HostelFeeCategory {
+  id              String          @id @default(cuid())
+  institutionId   String
+  institution     Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  code            String
+  name            String
+  frequency       String          @default("Monthly")
+  refundable      Boolean         @default(false)
+  gstMode         String          @default("CONFIGURABLE")
+  defaultAmount   Float           @default(0)
+  description     String          @default("")
+  displayOrder    Int             @default(0)
+  status          FeeMasterStatus @default(ACTIVE)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  collections     HostelFeeCollection[]
+
+  @@unique([institutionId, code])
+  @@index([institutionId, status])
+  @@index([institutionId, displayOrder])
+}
+
+model HostelFeeCollection {
+  id              String   @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  categoryId      String?
+  category        HostelFeeCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  receiptNumber   String
+  academicYear    String   @default("2025-26")
+  periodLabel     String   @default("")
+  studentId       String   @default("")
+  studentName     String
+  admissionNumber String   @default("")
+  className       String   @default("")
+  roomNumber      String   @default("")
+  amount          Float
+  paymentMode     String   @default("CASH")
+  collectedBy     String   @default("")
+  collectedAt     DateTime @default(now())
+  remarks         String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([institutionId, receiptNumber])
+  @@index([institutionId, academicYear])
+  @@index([institutionId, studentId])
+  @@index([categoryId])
+}
+
+/// Miscellaneous charge heads (ID card, certificate, alumni, etc.)
+model FeeOtherChargeType {
+  id              String          @id @default(cuid())
+  institutionId   String
+  institution     Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  code            String
+  name            String
+  description     String          @default("")
+  defaultAmount   Float           @default(0)
+  frequency       String          @default("As Applicable")
+  gstMode         String          @default("CONFIGURABLE")
+  displayOrder    Int             @default(0)
+  status          FeeMasterStatus @default(ACTIVE)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  requests        FeeOtherChargeRequest[]
+
+  @@unique([institutionId, code])
+  @@index([institutionId, status])
+}
+
+/// Discount codes & account settlement requests routed to Principal / Center Head
+model FeeOtherChargeRequest {
+  id               String                    @id @default(cuid())
+  institutionId    String
+  institution      Institution               @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId         String
+  requestType      FeeOtherChargeRequestType
+  academicYear     String                    @default("2025-26")
+  code             String                    @default("")
+  name             String
+  description      String                    @default("")
+  discountType     String                    @default("PERCENTAGE")
+  value            Float                     @default(0)
+  settlementAmount Float                     @default(0)
+  chargeTypeId     String?
+  chargeType       FeeOtherChargeType?       @relation(fields: [chargeTypeId], references: [id], onDelete: SetNull)
+  chargeAmount     Float                     @default(0)
+  studentId        String                    @default("")
+  studentName      String                    @default("")
+  admissionNumber  String                    @default("")
+  className        String                    @default("")
+  sectionName      String                    @default("")
+  status           FeeApprovalStatus         @default(DRAFT)
+  requestedBy      String                    @default("")
+  approvedBy       String                    @default("")
+  approvedAt       DateTime?
+  rejectionReason  String                    @default("")
+  remarks          String                    @default("")
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, requestType, status, academicYear])
+  @@index([institutionId, studentId])
+  @@index([chargeTypeId])
+}
+
+// ─── Payroll (Fees & Finance) ─────────────────────────────────────────────────
+
+enum PayrollEmploymentType {
+  TEACHING
+  NON_TEACHING
+  ADMIN
+  SUPPORT
+}
+
+enum PayrollSlipStatus {
+  DRAFT
+  GENERATED
+  PAID
+  CANCELLED
+}
+
+/// Staff / employee master for payroll processing
+model PayrollEmployee {
+  id              String                @id @default(cuid())
+  institutionId   String
+  institution     Institution           @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  employeeCode    String
+  fullName        String
+  employmentType  PayrollEmploymentType @default(TEACHING)
+  department      String                @default("General")
+  designation     String                @default("Staff")
+  mobile          String                @default("")
+  email           String                @default("")
+  joinDate        DateTime?
+  bankAccount     String                @default("")
+  bankIfsc        String                @default("")
+  panNumber       String                @default("")
+  uanNumber       String                @default("")
+  pfNumber        String                @default("")
+  esicNumber      String                @default("")
+  epfApplicable   Boolean               @default(true)
+  esicApplicable  Boolean               @default(true)
+  status          FeeMasterStatus       @default(ACTIVE)
+  remarks         String                @default("")
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  salaryStructures PayrollSalaryStructure[]
+  slips            PayrollSlip[]
+
+  @@unique([institutionId, employeeCode])
+  @@index([institutionId, status])
+  @@index([institutionId, employmentType])
+  @@index([institutionId, department])
+}
+
+/// Salary structure (earnings + statutory / other deductions) per employee
+model PayrollSalaryStructure {
+  id                   String          @id @default(cuid())
+  institutionId        String
+  institution          Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  employeeId           String
+  employee             PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  structureCode        String
+  effectiveFrom        DateTime        @db.Date
+  effectiveTo          DateTime?       @db.Date
+  basicSalary          Float           @default(0)
+  hra                  Float           @default(0)
+  da                   Float           @default(0)
+  specialAllowance     Float           @default(0)
+  conveyanceAllowance  Float           @default(0)
+  otherAllowances      Float           @default(0)
+  grossSalary          Float           @default(0)
+  pfWages              Float           @default(0)
+  epfEmployee          Float           @default(0)
+  epfEmployer          Float           @default(0)
+  esicEmployee         Float           @default(0)
+  esicEmployer         Float           @default(0)
+  professionalTax      Float           @default(0)
+  tds                  Float           @default(0)
+  otherDeductions      Float           @default(0)
+  totalDeductions      Float           @default(0)
+  netSalary            Float           @default(0)
+  status               FeeMasterStatus @default(ACTIVE)
+  remarks              String          @default("")
+  createdBy            String          @default("")
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  slips PayrollSlip[]
+
+  @@unique([institutionId, structureCode])
+  @@index([institutionId, employeeId, status])
+  @@index([institutionId, effectiveFrom])
+}
+
+/// Institution-level EPF / ESIC / PT statutory rates
+model PayrollStatutoryConfig {
+  id                    String   @id @default(cuid())
+  institutionId         String   @unique
+  institution           Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  epfEmployeePercent    Float    @default(12)
+  epfEmployerPercent    Float    @default(12)
+  epfWageCeiling        Float    @default(15000)
+  esicEmployeePercent   Float    @default(0.75)
+  esicEmployerPercent   Float    @default(3.25)
+  esicWageCeiling       Float    @default(21000)
+  professionalTaxAmount Float    @default(200)
+  remarks               String   @default("")
+  updatedBy             String   @default("")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+/// Monthly payroll / salary slip
+model PayrollSlip {
+  id                   String            @id @default(cuid())
+  institutionId        String
+  institution          Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  employeeId           String
+  employee             PayrollEmployee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  structureId          String?
+  structure            PayrollSalaryStructure? @relation(fields: [structureId], references: [id], onDelete: SetNull)
+  slipNumber           String
+  payPeriod            String
+  payMonth             Int
+  payYear              Int
+  workingDays          Float             @default(30)
+  presentDays          Float             @default(30)
+  leaveDays            Float             @default(0)
+  basicSalary          Float             @default(0)
+  hra                  Float             @default(0)
+  da                   Float             @default(0)
+  specialAllowance     Float             @default(0)
+  conveyanceAllowance  Float             @default(0)
+  otherAllowances      Float             @default(0)
+  grossEarnings        Float             @default(0)
+  epfEmployee          Float             @default(0)
+  epfEmployer          Float             @default(0)
+  esicEmployee         Float             @default(0)
+  esicEmployer         Float             @default(0)
+  professionalTax      Float             @default(0)
+  tds                  Float             @default(0)
+  otherDeductions      Float             @default(0)
+  totalDeductions      Float             @default(0)
+  netPay               Float             @default(0)
+  status               PayrollSlipStatus @default(DRAFT)
+  paidAt               DateTime?
+  paidBy               String            @default("")
+  generatedBy          String            @default("")
+  remarks              String            @default("")
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  @@unique([institutionId, slipNumber])
+  @@unique([institutionId, employeeId, payPeriod])
+  @@index([institutionId, payPeriod, status])
+  @@index([institutionId, payYear, payMonth])
+  @@index([employeeId])
+}
+
+enum PaymentReconciliationStatus {
+  DRAFT
+  PENDING_APPROVAL
+  RETURNED
+  REJECTED
+  FROZEN
+  DAY_CLOSING_COMPLETED
+}
+
+enum PaymentReconciliationStage {
+  CASHIER
+  ACCOUNTS_EXECUTIVE
+  ACCOUNTS_MANAGER
+  FINANCE_HEAD
+  PRINCIPAL_DIRECTOR
+  COMPLETED
+}
+
+enum PaymentReconciliationAction {
+  SUBMIT
+  APPROVE
+  REJECT
+  RETURN_FOR_CORRECTION
+  FREEZE
+  SIGN
+}
+
+/// Daily payment reconciliation / day closing record
+model PaymentReconciliation {
+  id                     String                      @id @default(cuid())
+  institutionId          String
+  institution            Institution                 @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  reconciliationDate     DateTime                    @db.Date
+  academicYear           String                      @default("2025-26")
+  status                 PaymentReconciliationStatus @default(DRAFT)
+  currentStage           PaymentReconciliationStage  @default(CASHIER)
+  bankStatementTotal     Float                       @default(0)
+  cashCount              Float                       @default(0)
+  gatewaySettlement      Float                       @default(0)
+  cashDepositedToBank    Float                       @default(0)
+  cashWithdrawnFromBank  Float                       @default(0)
+  cashPayments           Float                       @default(0)
+  bankCharges            Float                       @default(0)
+  openingPettyCash       Float                       @default(0)
+  previousDayOutstanding Float                       @default(0)
+  principalRequired      Boolean                     @default(false)
+  snapshot               Json?
+  frozenAt               DateTime?
+  frozenBy               String                      @default("")
+  completedAt            DateTime?
+  submittedBy              String                      @default("")
+  submittedAt              DateTime?
+  pdfGeneratedAt           DateTime?
+  remarks                  String                      @default("")
+  createdAt                DateTime                    @default(now())
+  updatedAt                DateTime                    @updatedAt
+  approvals                PaymentReconciliationApproval[]
+
+  @@unique([institutionId, reconciliationDate])
+  @@index([institutionId, status, reconciliationDate])
+}
+
+model PaymentReconciliationApproval {
+  id                 String                      @id @default(cuid())
+  reconciliationId   String
+  reconciliation     PaymentReconciliation       @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+  stage              PaymentReconciliationStage
+  action             PaymentReconciliationAction
+  actorName          String                      @default("")
+  actorRole          String                      @default("")
+  remarks            String                      @default("")
+  digitalSignature   String                      @default("")
+  signedAt           DateTime                    @default(now())
+  createdAt          DateTime                    @default(now())
+
+  @@index([reconciliationId, stage])
+}
+
+enum BankDepositStatus {
+  PENDING
+  APPROVED
+  DEPOSITED
+  REALIZED
+  REJECTED
+}
+
+/// Cash deposit slip to bank
+model BankCashDeposit {
+  id                  String            @id @default(cuid())
+  institutionId       String
+  institution         Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  depositId           String
+  academicYear        String            @default("2025-26")
+  depositDate         DateTime          @db.Date
+  depositTime         DateTime          @default(now())
+  campus              String            @default("Main Campus")
+  branch              String            @default("Main Branch")
+  cashierName         String            @default("")
+  depositBy           String            @default("")
+  bankName            String            @default("")
+  bankAccount         String            @default("")
+  depositSlipNo       String            @default("")
+  depositAmount       Float             @default(0)
+  depositType         String            @default("Cash")
+  collectionDate      DateTime          @db.Date
+  totalCashCollected  Float             @default(0)
+  cashCounted         Float             @default(0)
+  difference          Float             @default(0)
+  remarks             String            @default("")
+  slipUploadName      String            @default("")
+  status              BankDepositStatus @default(PENDING)
+  approvedBy          String            @default("")
+  approvedAt          DateTime?
+  createdBy           String            @default("")
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@unique([institutionId, depositId])
+  @@index([institutionId, depositDate, status])
+  @@index([institutionId, academicYear])
+}
+
+/// Cheque deposit slip to bank
+model BankChequeDeposit {
+  id              String            @id @default(cuid())
+  institutionId   String
+  institution     Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  depositId       String
+  academicYear    String            @default("2025-26")
+  depositDate     DateTime          @db.Date
+  bankName        String            @default("")
+  branch          String            @default("")
+  depositSlipNo   String            @default("")
+  depositAmount   Float             @default(0)
+  totalCheques    Int               @default(0)
+  depositBy       String            @default("")
+  remarks         String            @default("")
+  status          BankDepositStatus @default(PENDING)
+  approvedBy      String            @default("")
+  approvedAt      DateTime?
+  realizedAt      DateTime?
+  createdBy       String            @default("")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  items           BankChequeDepositItem[]
+
+  @@unique([institutionId, depositId])
+  @@index([institutionId, depositDate, status])
+  @@index([institutionId, academicYear])
+}
+
+/// Individual cheques within a deposit slip
+model BankChequeDepositItem {
+  id              String            @id @default(cuid())
+  depositId       String
+  deposit         BankChequeDeposit @relation(fields: [depositId], references: [id], onDelete: Cascade)
+  studentName     String            @default("")
+  receiptNumber   String            @default("")
+  bankName        String            @default("")
+  chequeNumber    String            @default("")
+  chequeBankBranch String           @default("")
+  depositDate     DateTime          @db.Date
+  amount          Float             @default(0)
+  status          BankDepositStatus @default(DEPOSITED)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([depositId])
+  @@index([receiptNumber])
+}
+
+enum ExpenseEntryStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  RETURNED
+  PAID
+}
+
+enum ExpensePaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CHEQUE
+  UPI
+  CARD
+  ONLINE
+  NEFT_RTGS
+}
+
+enum ExpenseBudgetType {
+  ANNUAL
+  MONTHLY
+  DEPARTMENT
+  CATEGORY
+  BRANCH
+  EVENT
+  PROJECT
+}
+
+enum ExpenseRecurringFrequency {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum ExpenseApprovalStage {
+  STAFF
+  DEPARTMENT_HEAD
+  ACCOUNTS
+  PRINCIPAL
+  MANAGEMENT
+  COMPLETED
+}
+
+model ExpenseCategory {
+  id            String        @id @default(cuid())
+  institutionId String
+  institution   Institution   @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  code          String
+  name          String
+  groupName     String        @default("")
+  status        FeeMasterStatus @default(ACTIVE)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  heads         ExpenseHead[]
+  entries       ExpenseEntry[]
+  budgets       ExpenseBudget[]
+
+  @@unique([institutionId, code])
+  @@index([institutionId, groupName])
+}
+
+model ExpenseHead {
+  id            String          @id @default(cuid())
+  institutionId String
+  institution   Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  categoryId    String
+  category      ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  code          String
+  name          String
+  status        FeeMasterStatus @default(ACTIVE)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  entries       ExpenseEntry[]
+  recurring     ExpenseRecurring[]
+
+  @@unique([institutionId, code])
+  @@index([categoryId])
+}
+
+model ExpenseVendor {
+  id                 String           @id @default(cuid())
+  institutionId      String
+  institution        Institution      @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  vendorCode         String
+  vendorName         String
+  contactPerson      String           @default("")
+  mobile             String           @default("")
+  email              String           @default("")
+  gstin              String           @default("")
+  pan                String           @default("")
+  bankAccount        String           @default("")
+  bankIfsc           String           @default("")
+  paymentTerms       String           @default("Net 30")
+  outstandingBalance Float            @default(0)
+  rating             Float            @default(0)
+  contractExpiry     DateTime?        @db.Date
+  amcExpiry          DateTime?        @db.Date
+  status             FeeMasterStatus  @default(ACTIVE)
+  remarks            String           @default("")
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  entries            ExpenseEntry[]
+  recurring          ExpenseRecurring[]
+
+  @@unique([institutionId, vendorCode])
+  @@index([institutionId, status])
+}
+
+model ExpenseEntry {
+  id                String               @id @default(cuid())
+  institutionId     String
+  institution       Institution          @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  expenseId         String
+  academicYear      String               @default("2025-26")
+  expenseDate       DateTime             @db.Date
+  categoryId        String
+  category          ExpenseCategory      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  headId            String?
+  head              ExpenseHead?         @relation(fields: [headId], references: [id], onDelete: SetNull)
+  department        String               @default("General")
+  campus            String               @default("Main Campus")
+  branch            String               @default("Main Branch")
+  vendorId          String?
+  vendor            ExpenseVendor?       @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  invoiceNumber     String               @default("")
+  purchaseOrderRef  String               @default("")
+  paymentMethod     ExpensePaymentMethod @default(CASH)
+  amount            Float                @default(0)
+  gstAmount         Float                @default(0)
+  cgst              Float                @default(0)
+  sgst              Float                @default(0)
+  igst              Float                @default(0)
+  taxBreakdown      Json                 @default("{}")
+  budgetCode        String               @default("")
+  costCenter        String               @default("")
+  description       String               @default("")
+  billUploadName    String               @default("")
+  status            ExpenseEntryStatus   @default(DRAFT)
+  currentStage      ExpenseApprovalStage @default(STAFF)
+  assetType         String               @default("")
+  assetRef          String               @default("")
+  recurringId       String?
+  remarks           String               @default("")
+  paidAt            DateTime?
+  createdBy         String               @default("")
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  approvals         ExpenseApproval[]
+
+  @@unique([institutionId, expenseId])
+  @@index([institutionId, expenseDate, status])
+  @@index([institutionId, academicYear, department])
+  @@index([institutionId, campus])
+  @@index([categoryId])
+  @@index([vendorId])
+}
+
+model ExpenseApproval {
+  id               String               @id @default(cuid())
+  entryId          String
+  entry            ExpenseEntry         @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  stage            ExpenseApprovalStage
+  action           String               @default("APPROVE")
+  actorName        String               @default("")
+  remarks          String               @default("")
+  digitalSignature String               @default("")
+  signedAt         DateTime             @default(now())
+  createdAt        DateTime             @default(now())
+
+  @@index([entryId, stage])
+}
+
+model ExpenseBudget {
+  id              String            @id @default(cuid())
+  institutionId   String
+  institution     Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  budgetCode      String
+  name            String
+  budgetType      ExpenseBudgetType @default(ANNUAL)
+  academicYear    String            @default("2025-26")
+  department      String            @default("")
+  categoryId      String?
+  category        ExpenseCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  campus          String            @default("")
+  periodStart     DateTime          @db.Date
+  periodEnd       DateTime          @db.Date
+  allocatedAmount Float             @default(0)
+  alertThreshold  Float             @default(0.9)
+  status          FeeMasterStatus   @default(ACTIVE)
+  remarks         String            @default("")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@unique([institutionId, budgetCode])
+  @@index([institutionId, academicYear, budgetType])
+}
+
+model ExpenseRecurring {
+  id              String                    @id @default(cuid())
+  institutionId   String
+  institution     Institution               @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  templateCode    String
+  name            String
+  categoryId      String?
+  headId          String?
+  head            ExpenseHead?              @relation(fields: [headId], references: [id], onDelete: SetNull)
+  vendorId        String?
+  vendor          ExpenseVendor?            @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  amount          Float                     @default(0)
+  frequency       ExpenseRecurringFrequency @default(MONTHLY)
+  nextDueDate     DateTime                  @db.Date
+  department      String                    @default("General")
+  campus          String                    @default("Main Campus")
+  paymentMethod   ExpensePaymentMethod      @default(BANK_TRANSFER)
+  autoCreate      Boolean                   @default(false)
+  status          FeeMasterStatus           @default(ACTIVE)
+  lastGeneratedAt DateTime?
+  remarks         String                    @default("")
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  @@unique([institutionId, templateCode])
+  @@index([institutionId, status, nextDueDate])
+}
+
+model ExpenseReimbursement {
+  id             String             @id @default(cuid())
+  institutionId  String
+  institution    Institution        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  requestId      String
+  academicYear   String             @default("2025-26")
+  employeeName   String
+  department     String             @default("General")
+  amount         Float              @default(0)
+  description    String             @default("")
+  billUploadName String             @default("")
+  status         ExpenseEntryStatus @default(PENDING_APPROVAL)
+  approvedBy     String             @default("")
+  approvedAt     DateTime?
+  paidAt         DateTime?
+  remarks        String             @default("")
+  createdBy      String             @default("")
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@unique([institutionId, requestId])
+  @@index([institutionId, status, academicYear])
+}
+
