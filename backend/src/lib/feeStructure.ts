@@ -139,7 +139,8 @@ async function nextRecordId(institutionId: string) {
 }
 
 export async function getFeeStructureSummary(institutionId: string, academicYear: string) {
-  const [classCount, structureCount, pendingCount, activeCount] = await Promise.all([
+  const [classCount, structureCount, pendingCount, activeCount, receipts, transport, hostel] =
+    await Promise.all([
     prisma.academicClassSection.count({
       where: { institutionId, academicYear, isActive: true },
     }),
@@ -154,7 +155,25 @@ export async function getFeeStructureSummary(institutionId: string, academicYear
     prisma.feeStructure.count({
       where: { institutionId, academicYear, status: FeeStructureStatus.ACTIVE },
     }),
+    prisma.feeReceipt.findMany({
+      where: { institutionId, academicYear },
+      select: { amountPaid: true },
+    }),
+    prisma.transportFeeCollection.findMany({
+      where: { institutionId, academicYear },
+      select: { amount: true },
+    }),
+    prisma.hostelFeeCollection.findMany({
+      where: { institutionId, academicYear },
+      select: { amount: true },
+    }),
   ]);
+
+  const totalCollection = round2(
+    receipts.reduce((s, r) => s + r.amountPaid, 0) +
+      transport.reduce((s, r) => s + r.amount, 0) +
+      hostel.reduce((s, r) => s + r.amount, 0),
+  );
 
   return {
     academicYear,
@@ -162,6 +181,7 @@ export async function getFeeStructureSummary(institutionId: string, academicYear
     structuresCreated: structureCount,
     pendingCount,
     activeCount,
+    totalCollection,
   };
 }
 

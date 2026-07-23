@@ -388,7 +388,7 @@ export function FeeStructureView() {
         {message && <FeeMessage message={message} type="success" />}
         {error && <FeeMessage message={error} type="error" />}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="bg-gradient-to-r from-blue-600 to-blue-500 rounded-xl px-5 py-4 text-white shadow-sm">
             <p className="text-[11px] font-bold uppercase tracking-wide opacity-90">Total Class</p>
             <p className="text-3xl font-bold mt-1">{summary?.totalClasses ?? 0}</p>
@@ -403,14 +403,11 @@ export function FeeStructureView() {
             <p className="text-[11px] font-bold uppercase tracking-wide opacity-90">Pending</p>
             <p className="text-3xl font-bold mt-1">{summary?.pendingCount ?? 0}</p>
           </div>
-        </div>
-
-        <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 overflow-x-auto">
-          <p className="text-[10px] font-bold text-slate-500 uppercase mb-1">Fee Components</p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-700 whitespace-nowrap">
-            {FEE_HEAD_FIELDS.map((f) => (
-              <span key={f.key}>{f.label}</span>
-            ))}
+          <div className="bg-gradient-to-r from-blue-600 to-blue-500 rounded-xl px-5 py-4 text-white shadow-sm">
+            <p className="text-[11px] font-bold uppercase tracking-wide opacity-90">Total Collection</p>
+            <p className="text-2xl md:text-3xl font-bold mt-1">
+              {formatInr(summary?.totalCollection ?? 0)}
+            </p>
           </div>
         </div>
 
@@ -449,28 +446,74 @@ export function FeeStructureView() {
             No fee structures yet. Click <strong>Add New</strong> or <strong>Import</strong> from Institution Setup.
           </EmptyState>
         ) : (
-          <div className={am.tableWrap}>
-            <table className="w-full">
+          <div className={`${am.tableWrap} overflow-x-auto`}>
+            <table className="w-full min-w-[1400px]">
               <thead>
                 <tr>
-                  <th className={am.th}>Ref ID</th>
-                  <th className={am.th}>Student / Party</th>
-                  <th className={am.th}>Class</th>
-                  <th className={am.th}>Amount</th>
-                  <th className={am.th}>Date</th>
-                  <th className={am.th}>Status</th>
-                  <th className={am.th}>Action</th>
+                  <th className={am.th} rowSpan={2}>
+                    Ref ID
+                  </th>
+                  <th className={am.th} rowSpan={2}>
+                    Student / Party
+                  </th>
+                  <th className={am.th} rowSpan={2}>
+                    Class
+                  </th>
+                  <th
+                    className={`${am.th} text-center border-l border-slate-200/80`}
+                    colSpan={FEE_HEAD_FIELDS.length}
+                  >
+                    Fee Components
+                  </th>
+                  <th className={`${am.th} border-l border-slate-200/80`} rowSpan={2}>
+                    Total Amount
+                  </th>
+                  <th className={am.th} rowSpan={2}>
+                    Date
+                  </th>
+                  <th className={am.th} rowSpan={2}>
+                    Status
+                  </th>
+                  <th className={am.th} rowSpan={2}>
+                    Action
+                  </th>
+                </tr>
+                <tr>
+                  {FEE_HEAD_FIELDS.map((field) => (
+                    <th
+                      key={field.key}
+                      className={`${am.th} text-xs font-semibold normal-case tracking-normal whitespace-nowrap min-w-[120px] border-l border-slate-200/80 first:border-l-0`}
+                      title={field.label}
+                    >
+                      {field.label}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((row) => (
                   <tr key={row.id} className="hover:bg-slate-50/80">
-                    <td className={`${am.td} font-mono text-xs`}>{row.recordId}</td>
-                    <td className={`${am.td} font-medium`}>{row.partyName}</td>
-                    <td className={am.td}>{row.classLabel}</td>
-                    <td className={`${am.td} font-semibold`}>{formatInr(row.totalAmount)}</td>
-                    <td className={`${am.td} text-xs`}>{formatDisplayDate(row.displayDate)}</td>
-                    <td className={am.td}><StatusBadge status={row.status} /></td>
+                    <td className={`${am.td} font-mono text-xs whitespace-nowrap`}>{row.recordId}</td>
+                    <td className={`${am.td} font-medium whitespace-nowrap`}>{row.partyName}</td>
+                    <td className={`${am.td} whitespace-nowrap`}>{row.classLabel}</td>
+                    {FEE_HEAD_FIELDS.map((field) => {
+                      const amount = row[field.key as keyof FeeStructureRecord] as number;
+                      return (
+                        <td
+                          key={field.key}
+                          className={`${am.td} text-right tabular-nums text-xs border-l border-slate-100 whitespace-nowrap`}
+                        >
+                          {amount > 0 ? formatInr(amount) : '—'}
+                        </td>
+                      );
+                    })}
+                    <td className={`${am.td} font-semibold text-right tabular-nums border-l border-slate-100 whitespace-nowrap`}>
+                      {formatInr(row.totalAmount)}
+                    </td>
+                    <td className={`${am.td} text-xs whitespace-nowrap`}>{formatDisplayDate(row.displayDate)}</td>
+                    <td className={am.td}>
+                      <StatusBadge status={row.status} />
+                    </td>
                     <td className={am.td}>
                       <button
                         type="button"

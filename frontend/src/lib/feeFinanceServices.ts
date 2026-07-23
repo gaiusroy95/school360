@@ -1349,6 +1349,7 @@ export type FeeStructureSummary = {
   structuresCreated: number;
   pendingCount: number;
   activeCount: number;
+  totalCollection: number;
 };
 
 export async function getFeeStructureSummary(academicYear?: string) {
