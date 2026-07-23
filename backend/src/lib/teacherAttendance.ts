@@ -126,6 +126,191 @@ async function nextTeacherRecordId(institutionId: string) {
   return `TCH-${String(1000 + count + 1)}`;
 }
 
+function makeEmployeeCode(teacherName: string, taken: Set<string>) {
+  const base = teacherName.split(/\s+/).filter(Boolean)[0]?.slice(0, 3).toUpperCase() || 'TCH';
+  let code = `TCH-${base}`;
+  let n = 1;
+  while (taken.has(code)) {
+    code = `TCH-${base}${n}`;
+    n += 1;
+  }
+  taken.add(code);
+  return code;
+}
+
+type TeacherCandidate = { department: string; email: string; phone: string; source: string };
+
+async function collectTeacherCandidates(
+  institutionId: string,
+  academicYear: string,
+): Promise<Map<string, TeacherCandidate>> {
+  const map = new Map<string, TeacherCandidate>();
+
+  const add = (name: string, meta: Partial<TeacherCandidate> & { source: string }) => {
+    const teacherName = name.trim();
+    if (!teacherName) return;
+    const existing = map.get(teacherName) || {
+      department: 'General',
+      email: '',
+      phone: '',
+      source: meta.source,
+    };
+    map.set(teacherName, {
+      department: meta.department || existing.department,
+      email: meta.email || existing.email,
+      phone: meta.phone || existing.phone,
+      source: existing.source || meta.source,
+    });
+  };
+
+  const setup = await prisma.institutionSetup.findUnique({ where: { institutionId } });
+  const classesTile = (setup?.classesSections || {}) as {
+    records?: Record<string, string>[];
+    sections?: Record<string, Record<string, string>>;
+    teacherPool?: string;
+  };
+  const teacherPool =
+    classesTile.sections?.['Class Teacher Assign']?.teacherPool ||
+    classesTile.teacherPool ||
+    '';
+  if (teacherPool) {
+    for (const line of teacherPool.split(/\n/).map((l) => l.trim()).filter(Boolean)) {
+      if (line.includes('|')) {
+        const [name, department, phone, email] = line.split('|').map((p) => p.trim());
+        if (name) add(name, { department: department || 'Teaching Staff', phone, email, source: 'Institution setup' });
+      } else {
+        for (const part of line.split(/[,;]/)) {
+          const name = part.trim();
+          if (name) add(name, { department: 'Teaching Staff', source: 'Institution setup' });
+        }
+      }
+    }
+  }
+  for (const row of classesTile.records || []) {
+    const name = row.classTeacher?.trim() || row['Class Teacher']?.trim() || '';
+    if (name) {
+      add(name, {
+        department: 'Class Teacher',
+        phone: row.classTeacherPhone?.trim() || row['Class Teacher Phone']?.trim() || '',
+        email: row.classTeacherEmail?.trim() || row['Class Teacher Email']?.trim() || '',
+        source: 'Class teacher assign',
+      });
+    }
+  }
+
+  const classSections = await prisma.academicClassSection.findMany({
+    where: { institutionId, academicYear },
+    select: { classTeacher: true, classTeacherPhone: true, classTeacherEmail: true },
+  });
+  for (const cs of classSections) {
+    if (cs.classTeacher) {
+      add(cs.classTeacher, {
+        department: 'Class Teacher',
+        phone: cs.classTeacherPhone,
+        email: cs.classTeacherEmail,
+        source: 'Academic class section',
+      });
+    }
+  }
+
+  const [allocations, subjects, roster, examAssignments] = await Promise.all([
+    prisma.academicTeacherAllocation.findMany({
+      where: { institutionId, academicYear },
+      select: { teacherName: true, department: true },
+    }),
+    prisma.academicSubjectAllocation.findMany({
+      where: { institutionId, academicYear },
+      select: { teacherName: true, teacherEmail: true, teacherPhone: true },
+    }),
+    prisma.academicTeacherRosterTask.findMany({
+      where: { institutionId, academicYear },
+      select: { teacherName: true, department: true },
+    }),
+    prisma.examSubjectTeacherAssignment.findMany({
+      where: { institutionId, academicYear },
+      select: { teacherName: true, teacherEmail: true, teacherPhone: true },
+    }),
+  ]);
+
+  for (const a of allocations) {
+    if (a.teacherName) add(a.teacherName, { department: a.department || 'General', source: 'Teacher allocation' });
+  }
+  for (const s of subjects) {
+    if (s.teacherName) {
+      add(s.teacherName, {
+        email: s.teacherEmail,
+        phone: s.teacherPhone,
+        source: 'Subject management',
+      });
+    }
+  }
+  for (const r of roster) {
+    if (r.teacherName) add(r.teacherName, { department: r.department || 'General', source: 'Teacher roster' });
+  }
+  for (const e of examAssignments) {
+    if (e.teacherName) {
+      add(e.teacherName, {
+        email: e.teacherEmail,
+        phone: e.teacherPhone,
+        source: 'Exam marks entry',
+      });
+    }
+  }
+
+  return map;
+}
+
+async function upsertTeacherCandidates(
+  institutionId: string,
+  academicYear: string,
+  candidates: Map<string, TeacherCandidate>,
+) {
+  const existingProfiles = await prisma.teacherAttendanceProfile.findMany({
+    where: { institutionId, academicYear },
+  });
+  const takenCodes = new Set(existingProfiles.map((p) => p.employeeCode).filter(Boolean));
+  let created = 0;
+  let updated = 0;
+
+  for (const [teacherName, meta] of candidates) {
+    const existing = existingProfiles.find((p) => p.teacherName === teacherName);
+    if (existing) {
+      const needsUpdate =
+        (meta.email && !existing.email) ||
+        (meta.phone && !existing.mobile) ||
+        (meta.department && existing.department === 'General' && meta.department !== 'General');
+      if (needsUpdate) {
+        await prisma.teacherAttendanceProfile.update({
+          where: { id: existing.id },
+          data: {
+            email: existing.email || meta.email,
+            mobile: existing.mobile || meta.phone,
+            department: existing.department === 'General' ? meta.department : existing.department,
+          },
+        });
+        updated += 1;
+      }
+      continue;
+    }
+    await prisma.teacherAttendanceProfile.create({
+      data: {
+        institutionId,
+        recordId: await nextTeacherRecordId(institutionId),
+        academicYear,
+        teacherName,
+        employeeCode: makeEmployeeCode(teacherName, takenCodes),
+        department: meta.department,
+        email: meta.email,
+        mobile: meta.phone,
+        designation: 'Teacher',
+      },
+    });
+    created += 1;
+  }
+
+  return { synced: candidates.size, created, updated };
+}
+
 function serializeTeacherProfile(row: {
   id: string;
   recordId: string;
@@ -185,60 +370,85 @@ function serializeDailyRecord(row: {
 }
 
 export async function syncTeacherProfilesFromAcademic(institutionId: string, academicYear = '2025-26') {
-  const allocations = await prisma.academicTeacherAllocation.findMany({
-    where: { institutionId, academicYear },
-    select: { teacherName: true, department: true },
+  const candidates = await collectTeacherCandidates(institutionId, academicYear);
+  const result = await upsertTeacherCandidates(institutionId, academicYear, candidates);
+  return {
+    ...result,
+    message: result.created > 0
+      ? `Registered ${result.created} new teacher(s) from academic & institution data`
+      : result.updated > 0
+        ? `Updated ${result.updated} teacher profile(s)`
+        : candidates.size > 0
+          ? `${candidates.size} teacher(s) already registered`
+          : 'No teachers found — add teachers in Institution Setup, Subject Management, or Register Teacher below',
+  };
+}
+
+export async function listTeacherProfiles(institutionId: string, academicYear = '2025-26') {
+  const teachers = await prisma.teacherAttendanceProfile.findMany({
+    where: { institutionId, academicYear, isActive: true },
+    orderBy: [{ teacherName: 'asc' }],
   });
-  const subjects = await prisma.academicSubjectAllocation.findMany({
-    where: { institutionId, academicYear },
-    select: { teacherName: true, teacherEmail: true, teacherPhone: true },
+  return {
+    academicYear,
+    teachers: teachers.map(serializeTeacherProfile),
+    total: teachers.length,
+  };
+}
+
+export async function registerTeacherProfile(
+  institutionId: string,
+  data: {
+    academicYear?: string;
+    teacherName: string;
+    department?: string;
+    mobile?: string;
+    email?: string;
+    employeeCode?: string;
+    designation?: string;
+  },
+) {
+  const academicYear = data.academicYear || '2025-26';
+  const teacherName = data.teacherName.trim();
+  if (!teacherName) throw new Error('Teacher name is required');
+
+  const existing = await prisma.teacherAttendanceProfile.findFirst({
+    where: { institutionId, academicYear, teacherName },
   });
-  const roster = await prisma.academicTeacherRosterTask.findMany({
-    where: { institutionId, academicYear },
-    select: { teacherName: true },
+  if (existing) {
+    return {
+      teacher: serializeTeacherProfile(existing),
+      created: false,
+      message: `${teacherName} is already registered`,
+    };
+  }
+
+  const taken = new Set(
+    (await prisma.teacherAttendanceProfile.findMany({
+      where: { institutionId },
+      select: { employeeCode: true },
+    })).map((p) => p.employeeCode).filter(Boolean),
+  );
+
+  const teacher = await prisma.teacherAttendanceProfile.create({
+    data: {
+      institutionId,
+      recordId: await nextTeacherRecordId(institutionId),
+      academicYear,
+      teacherName,
+      employeeCode: data.employeeCode?.trim() || makeEmployeeCode(teacherName, taken),
+      department: data.department?.trim() || 'General',
+      mobile: data.mobile?.trim() || '',
+      email: data.email?.trim() || '',
+      designation: data.designation?.trim() || 'Teacher',
+    },
   });
 
-  const map = new Map<string, { department: string; email: string; phone: string }>();
-  for (const a of allocations) {
-    if (!a.teacherName) continue;
-    const cur = map.get(a.teacherName) || { department: a.department || 'General', email: '', phone: '' };
-    map.set(a.teacherName, { ...cur, department: a.department || cur.department });
-  }
-  for (const s of subjects) {
-    if (!s.teacherName) continue;
-    const cur = map.get(s.teacherName) || { department: 'General', email: '', phone: '' };
-    map.set(s.teacherName, {
-      department: cur.department,
-      email: s.teacherEmail || cur.email,
-      phone: s.teacherPhone || cur.phone,
-    });
-  }
-  for (const r of roster) {
-    if (!r.teacherName) continue;
-    if (!map.has(r.teacherName)) map.set(r.teacherName, { department: 'General', email: '', phone: '' });
-  }
-
-  let created = 0;
-  for (const [teacherName, meta] of map) {
-    const existing = await prisma.teacherAttendanceProfile.findFirst({
-      where: { institutionId, academicYear, teacherName },
-    });
-    if (existing) continue;
-    await prisma.teacherAttendanceProfile.create({
-      data: {
-        institutionId,
-        recordId: await nextTeacherRecordId(institutionId),
-        academicYear,
-        teacherName,
-        department: meta.department,
-        email: meta.email,
-        mobile: meta.phone,
-        designation: 'Teacher',
-      },
-    });
-    created += 1;
-  }
-  return { synced: map.size, created };
+  return {
+    teacher: serializeTeacherProfile(teacher),
+    created: true,
+    message: `${teacherName} registered successfully (Employee code: ${teacher.employeeCode})`,
+  };
 }
 
 export async function getTeacherAttendanceMeta(institutionId: string) {

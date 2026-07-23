@@ -23,6 +23,8 @@ import {
   syncClassSectionsFromInstitutionSetup,
 } from '../lib/academicManagement.js';
 import { seedAcademicDemoData } from '../lib/academicSeed.js';
+import { clearInstitutionDemoData } from '../lib/clearDemoData.js';
+import { syncTeacherProfilesFromAcademic } from '../lib/teacherAttendance.js';
 import { getInstitutionFilterMeta } from '../lib/students.js';
 import {
   bulkAssignElectives,
@@ -144,6 +146,22 @@ academicRouter.post(
     const year = typeof req.body?.academicYear === 'string' ? req.body.academicYear : '2025-26';
     const result = await seedAcademicDemoData(institutionId, year);
     return res.json(result);
+  }),
+);
+
+academicRouter.post(
+  '/clear-demo',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const year = typeof req.body?.academicYear === 'string' ? req.body.academicYear : '2025-26';
+    const confirm = req.body?.confirm === true;
+    if (!confirm) {
+      return res.status(400).json({
+        error: 'Confirmation required',
+        message: 'Send { "confirm": true, "academicYear": "2025-26" } to clear demo data',
+      });
+    }
+    return res.json(await clearInstitutionDemoData(institutionId, year));
   }),
 );
 
@@ -294,6 +312,7 @@ academicRouter.post(
 
     if (parsed.data.teachers && parsed.data.teachers.length > 0) {
       const result = await createSubjectWithTeachers(institutionId, parsed.data);
+      await syncTeacherProfilesFromAcademic(institutionId, parsed.data.academicYear || '2025-26');
       return res.status(201).json(result);
     }
 
@@ -1610,6 +1629,7 @@ academicRouter.post(
         workloadLevel: (parsed.data.workloadLevel as AcademicWorkloadLevel) || 'MEDIUM',
       },
     });
+    await syncTeacherProfilesFromAcademic(institutionId, parsed.data.academicYear);
     return res.status(201).json({ record: row });
   }),
 );
@@ -1663,6 +1683,7 @@ academicRouter.post(
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const institutionId = await getDefaultInstitutionId();
     const task = await createRosterTask(institutionId, parsed.data);
+    await syncTeacherProfilesFromAcademic(institutionId, parsed.data.academicYear);
     return res.status(201).json({ task });
   }),
 );

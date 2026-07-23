@@ -292,6 +292,19 @@ export async function seedAcademicData(academicYear?: string) {
   });
 }
 
+export async function clearAcademicDemoData(academicYear?: string) {
+  return api<{
+    cleared: boolean;
+    academicYear: string;
+    totalDeleted: number;
+    counts: Record<string, number>;
+    message: string;
+  }>('/api/academic/clear-demo', {
+    method: 'POST',
+    body: JSON.stringify({ academicYear, confirm: true }),
+  });
+}
+
 export async function syncAcademicClasses(academicYear?: string) {
   return api<{ created: number }>('/api/academic/sync-classes', {
     method: 'POST',

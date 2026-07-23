@@ -330,9 +330,31 @@ export async function fetchTeacherAttendanceReport(params?: {
 }
 
 export async function syncTeacherProfiles(academicYear?: string) {
-  return api<{ synced: number; created: number }>('/api/attendance/teachers/sync', {
+  return api<{ synced: number; created: number; updated?: number; message: string }>('/api/attendance/teachers/sync', {
     method: 'POST',
     body: JSON.stringify({ academicYear }),
+  });
+}
+
+export async function fetchTeachers(academicYear?: string) {
+  return api<{
+    academicYear: string;
+    total: number;
+    teachers: TeacherProfile[];
+  }>(`/api/attendance/teachers${qs({ academicYear })}`);
+}
+
+export async function registerTeacher(data: {
+  academicYear?: string;
+  teacherName: string;
+  department?: string;
+  mobile?: string;
+  email?: string;
+  employeeCode?: string;
+}) {
+  return api<{ teacher: TeacherProfile; created: boolean; message: string }>('/api/attendance/teachers', {
+    method: 'POST',
+    body: JSON.stringify(data),
   });
 }
 

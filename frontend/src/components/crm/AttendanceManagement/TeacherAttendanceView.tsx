@@ -5,19 +5,24 @@ import {
   ChevronRight,
   Download,
   Loader2,
+  Plus,
   RefreshCw,
   Smartphone,
+  UserPlus,
   Users,
 } from 'lucide-react';
 import {
   fetchTeacherAttendanceCalendar,
   fetchTeacherAttendanceMeta,
   fetchTeacherAttendanceReport,
+  fetchTeachers,
+  registerTeacher,
   seedTeacherAttendanceDemo,
   syncTeacherProfiles,
   type TeacherAttendanceReport,
   type TeacherCalendar,
   type TeacherPeriod,
+  type TeacherProfile,
 } from '../../../lib/attendanceServices';
 import { downloadTeacherAttendanceReportExcel } from '../../../lib/teacherAttendanceExcel';
 import { TeacherAttendanceDayModal } from './TeacherAttendanceDayModal';
@@ -55,7 +60,15 @@ export function TeacherAttendanceView() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [teachers, setTeachers] = useState<TeacherProfile[]>([]);
+  const [showRegister, setShowRegister] = useState(false);
+  const [registerForm, setRegisterForm] = useState({
+    teacherName: '', department: 'General', mobile: '', email: '', employeeCode: '',
+  });
+  const [registering, setRegistering] = useState(false);
 
   const reportParams = useMemo(() => ({
     academicYear,
@@ -65,6 +78,12 @@ export function TeacherAttendanceView() {
     quarter,
     half,
   }), [academicYear, period, calYear, calMonth, quarter, half]);
+
+  const loadTeachers = useCallback(async (year?: string) => {
+    const data = await fetchTeachers(year || academicYear);
+    setTeachers(data.teachers);
+    return data;
+  }, [academicYear]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -86,12 +105,13 @@ export function TeacherAttendanceView() {
       ]);
       setCalendar(cal);
       setReport(rep);
+      await loadTeachers(m.defaultAcademicYear);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to load teacher attendance');
     } finally {
       setLoading(false);
     }
-  }, [calYear, calMonth, period, quarter, half]);
+  }, [calYear, calMonth, period, quarter, half, loadTeachers]);
 
   const refreshData = useCallback(async () => {
     setLoading(true);
@@ -103,12 +123,13 @@ export function TeacherAttendanceView() {
       ]);
       setCalendar(cal);
       setReport(rep);
+      await loadTeachers(academicYear);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to refresh');
     } finally {
       setLoading(false);
     }
-  }, [academicYear, calYear, calMonth, reportParams]);
+  }, [academicYear, calYear, calMonth, reportParams, loadTeachers]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
@@ -120,6 +141,39 @@ export function TeacherAttendanceView() {
     const d = new Date(Date.UTC(calYear, calMonth - 1 + delta, 1));
     setCalYear(d.getUTCFullYear());
     setCalMonth(d.getUTCMonth() + 1);
+  };
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    try {
+      const result = await syncTeacherProfiles(academicYear);
+      setSuccessMsg(result.message);
+      await refreshData();
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Sync failed');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleRegister = async () => {
+    if (!registerForm.teacherName.trim()) return;
+    setRegistering(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    try {
+      const result = await registerTeacher({ academicYear, ...registerForm });
+      setSuccessMsg(result.message);
+      setShowRegister(false);
+      setRegisterForm({ teacherName: '', department: 'General', mobile: '', email: '', employeeCode: '' });
+      await refreshData();
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Registration failed');
+    } finally {
+      setRegistering(false);
+    }
   };
 
   const handleSeed = async () => {
@@ -200,6 +254,14 @@ export function TeacherAttendanceView() {
             <button type="button" onClick={() => void refreshData()} disabled={loading} className="p-2 border border-slate-200 rounded-lg bg-white hover:bg-slate-50" title="Refresh">
               <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             </button>
+            <button type="button" disabled={syncing} onClick={() => void handleSync()} className="px-3 py-2 border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-lg flex items-center gap-1.5">
+              <UserPlus size={14} />
+              {syncing ? 'Syncing…' : 'Sync Teachers'}
+            </button>
+            <button type="button" onClick={() => setShowRegister(true)} className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg flex items-center gap-1.5">
+              <Plus size={14} />
+              Register Teacher
+            </button>
             {(meta?.teacherCount === 0 || !calendar?.days.some((d) => d.hasData)) && (
               <button type="button" disabled={seeding} onClick={() => void handleSeed()} className="px-3 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg">
                 {seeding ? 'Loading…' : 'Load Demo Data'}
@@ -220,6 +282,73 @@ export function TeacherAttendanceView() {
           <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
             <AlertCircle size={16} />
             {errorMsg}
+          </div>
+        )}
+        {successMsg && (
+          <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
+            {successMsg}
+            <button type="button" onClick={() => setSuccessMsg(null)} className="ml-auto text-xs underline">Dismiss</button>
+          </div>
+        )}
+
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-slate-100">
+            <div>
+              <h2 className="text-sm font-bold text-slate-800">Registered Teachers</h2>
+              <p className="text-[10px] text-slate-500">Teachers must be registered here before attendance & mobile app login</p>
+            </div>
+            <span className="text-xs font-semibold text-indigo-600">{teachers.length} registered</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-[10px] uppercase text-slate-500">
+                  <th className="px-4 py-2 text-left">Name</th>
+                  <th className="px-4 py-2 text-left">Employee Code</th>
+                  <th className="px-4 py-2 text-left">Department</th>
+                  <th className="px-4 py-2 text-left">Mobile</th>
+                  <th className="px-4 py-2 text-left">Email</th>
+                </tr>
+              </thead>
+              <tbody>
+                {teachers.map((t) => (
+                  <tr key={t.id} className="border-t border-slate-100">
+                    <td className="px-4 py-2 font-medium text-slate-800">{t.teacherName}</td>
+                    <td className="px-4 py-2 text-slate-600">{t.employeeCode || '—'}</td>
+                    <td className="px-4 py-2 text-slate-600">{t.department}</td>
+                    <td className="px-4 py-2 text-slate-600">{t.mobile || '—'}</td>
+                    <td className="px-4 py-2 text-slate-600">{t.email || '—'}</td>
+                  </tr>
+                ))}
+                {!teachers.length && (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-8 text-center text-slate-400 text-sm">
+                      No teachers registered yet. Click <strong>Register Teacher</strong> or <strong>Sync Teachers</strong> to pull from Institution Setup / Subject Management.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {showRegister && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/45" onClick={() => setShowRegister(false)}>
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-bold text-slate-900">Register Teacher</h3>
+              <p className="text-xs text-slate-500">Creates a teacher profile for attendance tracking and staff mobile app login.</p>
+              <input placeholder="Full Name *" value={registerForm.teacherName} onChange={(e) => setRegisterForm((f) => ({ ...f, teacherName: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+              <input placeholder="Department" value={registerForm.department} onChange={(e) => setRegisterForm((f) => ({ ...f, department: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+              <input placeholder="Mobile (for app login)" value={registerForm.mobile} onChange={(e) => setRegisterForm((f) => ({ ...f, mobile: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+              <input placeholder="Email" value={registerForm.email} onChange={(e) => setRegisterForm((f) => ({ ...f, email: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+              <input placeholder="Employee Code (optional — auto-generated if blank)" value={registerForm.employeeCode} onChange={(e) => setRegisterForm((f) => ({ ...f, employeeCode: e.target.value }))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => void handleRegister()} disabled={registering || !registerForm.teacherName.trim()} className="px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg disabled:opacity-50">
+                  {registering ? 'Registering…' : 'Register'}
+                </button>
+                <button type="button" onClick={() => setShowRegister(false)} className="px-4 py-2 border border-slate-200 text-sm rounded-lg">Cancel</button>
+              </div>
+            </div>
           </div>
         )}
 

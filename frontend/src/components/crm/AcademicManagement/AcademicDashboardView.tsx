@@ -8,10 +8,10 @@ import {
   Tooltip as RechartsTooltip, CartesianGrid, LineChart, Line, Legend,
 } from 'recharts';
 import {
-  fetchAcademicDashboard, fetchAcademicMeta, seedAcademicData, type AcademicDashboard,
+  fetchAcademicDashboard, fetchAcademicMeta, seedAcademicData, clearAcademicDemoData, type AcademicDashboard,
 } from '../../../lib/academicServices';
 import {
-  AcademicLoading, AcademicPageHeader, AcademicPageShell, AcademicYearTermFilters, am,
+  AcademicLoading, AcademicModal, AcademicPageHeader, AcademicPageShell, AcademicYearTermFilters, am,
 } from './AcademicManagementUi';
 
 const KPI_ICONS = [
@@ -34,6 +34,8 @@ export function AcademicDashboardView() {
   const [className, setClassName] = useState('');
   const [sectionName, setSectionName] = useState('');
   const [message, setMessage] = useState('');
+  const [clearOpen, setClearOpen] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -60,6 +62,21 @@ export function AcademicDashboardView() {
     void load();
   };
 
+  const handleClearDemo = async () => {
+    setClearing(true);
+    try {
+      const res = await clearAcademicDemoData(academicYear);
+      setMessage(res.message);
+      setClearOpen(false);
+      void load();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Failed to clear demo data');
+      setClearOpen(false);
+    } finally {
+      setClearing(false);
+    }
+  };
+
   if (loading && !data) return <AcademicLoading label="Loading academic dashboard…" />;
 
   const lessonPie = data ? [
@@ -79,6 +96,7 @@ export function AcademicDashboardView() {
         actions={
           <>
             <button type="button" onClick={() => void handleSeed()} className={am.btnSecondary}>Load Demo Data</button>
+            <button type="button" onClick={() => setClearOpen(true)} className={am.btnSecondary}>Clear Demo Data</button>
             <button type="button" className={am.btnPrimary}><PlusCircle size={14} /> Plan New Activity</button>
           </>
         }
@@ -284,6 +302,39 @@ export function AcademicDashboardView() {
           </>
         )}
       </div>
+
+      <AcademicModal
+        open={clearOpen}
+        onClose={() => setClearOpen(false)}
+        title="Clear Demo Data?"
+      >
+        <div className="space-y-4 text-sm">
+          <p className="text-slate-600">
+            This will permanently delete all demo records for session <strong>{academicYear}</strong>, including:
+          </p>
+          <ul className="list-inside list-disc space-y-1 text-xs text-slate-500">
+            <li>Academic data (classes, subjects, lesson plans, homework, assessments)</li>
+            <li>Examination data (schedules, marks, results, report cards, certificates)</li>
+            <li>Attendance data (teacher/staff profiles, daily records, gate passes)</li>
+          </ul>
+          <p className="text-xs text-red-600">
+            Real student admissions, enquiries, and user accounts are not deleted.
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => void handleClearDemo()}
+              disabled={clearing}
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold shadow-sm transition-colors disabled:opacity-50"
+            >
+              {clearing ? 'Clearing…' : 'Yes, Clear Demo Data'}
+            </button>
+            <button type="button" onClick={() => setClearOpen(false)} className={am.btnSecondary} disabled={clearing}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </AcademicModal>
     </AcademicPageShell>
   );
 }

@@ -21,6 +21,8 @@ import {
   getTeacherAttendanceDayDetail,
   getTeacherAttendanceMeta,
   getTeacherAttendanceReport,
+  listTeacherProfiles,
+  registerTeacherProfile,
   seedTeacherAttendanceDemo,
   syncTeacherProfilesFromAcademic,
   type TeacherPeriod,
@@ -178,6 +180,34 @@ attendanceRouter.post(
     const institutionId = await getDefaultInstitutionId();
     const academicYear = typeof req.body?.academicYear === 'string' ? req.body.academicYear : '2025-26';
     return res.json(await syncTeacherProfilesFromAcademic(institutionId, academicYear));
+  }),
+);
+
+attendanceRouter.get(
+  '/teachers',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const academicYear = typeof req.query.academicYear === 'string' ? req.query.academicYear : '2025-26';
+    return res.json(await listTeacherProfiles(institutionId, academicYear));
+  }),
+);
+
+attendanceRouter.post(
+  '/teachers',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const schema = z.object({
+      academicYear: z.string().optional(),
+      teacherName: z.string().min(1),
+      department: z.string().optional(),
+      mobile: z.string().optional(),
+      email: z.string().optional(),
+      employeeCode: z.string().optional(),
+      designation: z.string().optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    return res.status(201).json(await registerTeacherProfile(institutionId, parsed.data));
   }),
 );
 
