@@ -1,0 +1,6 @@
+appId: com.schoolerp.staff
+---
+# Smoke test — Staff app login screen
+- launchApp
+- assertVisible: "360schoolERP Staff"
+- tapOn: "Sign in"

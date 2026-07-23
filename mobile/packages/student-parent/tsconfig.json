@@ -1,0 +1,19 @@
+{
+  "extends": "../../node_modules/expo/tsconfig.base.json",
+  "compilerOptions": {
+    "strict": true,
+    "moduleResolution": "bundler",
+    "paths": {
+      "@360schoolerp/shared": [
+        "../shared/src/index.ts"
+      ],
+      "@/*": [
+        "./src/*"
+      ]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx"
+  ]
+}

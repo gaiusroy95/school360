@@ -6,6 +6,7 @@ import {
   StudentStatus,
 } from '@prisma/client';
 import { prisma } from './prisma.js';
+import { notifyParentsStudentAbsent } from './attendanceAlerts.js';
 import { formatClassSection, getInstitutionFilterMeta } from './students.js';
 import { resolveTeacherPeriodRange, type TeacherPeriod } from './teacherAttendance.js';
 
@@ -796,6 +797,17 @@ export async function markAttendanceSession(
           },
         });
       }
+    }
+
+    if (rec.status === AttendanceStatus.ABSENT && formatDateIso(sessionDate) === formatDateIso(new Date())) {
+      void notifyParentsStudentAbsent({
+        institutionId,
+        studentId: rec.studentId,
+        sessionDate: formatDateIso(sessionDate),
+        className: input.className,
+        sectionName,
+        absentReason: rec.absentReason,
+      }).catch((err) => console.error('[attendance-absent-alert]', err));
     }
   }
 

@@ -235,6 +235,7 @@ export function serializeHomework(row: {
   submittedCount: number;
   sharedAt: Date | null;
   publishedAt?: Date | null;
+  attachments?: unknown;
   createdAt: Date;
   updatedAt: Date;
 }) {
@@ -262,6 +263,7 @@ export function serializeHomework(row: {
     sharedAt: row.sharedAt?.toISOString() ?? null,
     publishedAt: row.publishedAt?.toISOString() ?? null,
     isPublished: Boolean(row.publishedAt || row.sharedAt),
+    attachments: Array.isArray(row.attachments) ? row.attachments : [],
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

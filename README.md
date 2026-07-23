@@ -4,6 +4,7 @@ Monorepo layout:
 
 - `frontend/` — React + Vite dashboard
 - `backend/` — Node.js + Express + Prisma API (Neon PostgreSQL)
+- `mobile/` — React Native (Expo) apps: Student+Parent and Staff (see `mobile/README.md`)
 
 ## Quick start
 

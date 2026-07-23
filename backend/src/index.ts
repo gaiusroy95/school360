@@ -29,8 +29,12 @@ import { parentCategoriesRouter } from './routes/parentCategories.js';
 import { academicRouter } from './routes/academic.js';
 import { attendanceRouter } from './routes/attendance.js';
 import { examinationRouter } from './routes/examination.js';
+import { mobileRouter } from './routes/mobile.js';
 import { connectDatabase } from './lib/prisma.js';
 import { startInvigilationScheduler } from './lib/examInvigilationScheduler.js';
+import { startMobileReminderScheduler } from './lib/mobileReminderScheduler.js';
+import { handleRazorpayWebhook } from './lib/mobileFees.js';
+import { asyncHandler } from './lib/asyncHandler.js';
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
@@ -52,6 +56,27 @@ app.use(
     credentials: true,
   }),
 );
+
+app.post(
+  '/api/mobile/webhooks/razorpay',
+  express.raw({ type: 'application/json' }),
+  asyncHandler(async (req, res) => {
+    const signature = req.headers['x-razorpay-signature'];
+    if (typeof signature !== 'string') {
+      return res.status(400).json({ error: 'Missing Razorpay signature' });
+    }
+
+    const rawBody = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : String(req.body ?? '');
+    try {
+      const result = await handleRazorpayWebhook(rawBody, signature);
+      return res.json(result);
+    } catch (e) {
+      return res.status(400).json({ error: e instanceof Error ? e.message : 'Webhook handling failed' });
+    }
+  }),
+);
+
+app.use('/api/mobile', express.json({ limit: '15mb' }), mobileRouter);
 app.use(express.json({ limit: '5mb' }));
 
 app.get('/health', (_req, res) => {
@@ -108,6 +133,7 @@ async function start() {
   app.listen(port, () => {
     console.log(`API listening on http://localhost:${port}`);
     startInvigilationScheduler();
+    startMobileReminderScheduler();
   });
 }
 

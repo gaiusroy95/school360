@@ -1,0 +1,35 @@
+{
+  "name": "360schoolerp-mobile",
+  "private": true,
+  "version": "1.0.0",
+  "description": "360schoolERP mobile apps — Student/Parent and Staff",
+  "workspaces": [
+    "packages/*"
+  ],
+  "dependencies": {
+    "react": "19.2.3",
+    "react-native": "0.85.3"
+  },
+  "scripts": {
+    "student-parent": "npm run start --workspace=@360schoolerp/student-parent",
+    "staff": "npm run start --workspace=@360schoolerp/staff",
+    "build:family": "npm run build --workspace=@360schoolerp/student-parent",
+    "build:staff": "npm run build --workspace=@360schoolerp/staff",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.14",
+    "expo-font": "~56.0.7",
+    "typescript": "~6.0.3"
+  },
+  "overrides": {
+    "react": "19.2.3",
+    "react-native": "0.85.3",
+    "@types/react": "~19.2.14",
+    "expo-font": "~56.0.7"
+  }
+}

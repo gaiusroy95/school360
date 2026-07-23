@@ -1,0 +1,8 @@
+appId: com.schoolerp.family
+---
+# Smoke test — Family app login (requires dev build on emulator/device)
+- launchApp
+- assertVisible: "360schoolERP"
+- tapOn: "Sign in"
+# Fill credentials via env or Maestro parameters in CI:
+# maestro test -e ADMISSION_NUMBER=... -e MOBILE=... -e PASSWORD=...

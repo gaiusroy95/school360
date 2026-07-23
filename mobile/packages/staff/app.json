@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "360schoolERP Staff",
+    "slug": "360schoolerp-staff",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "schoolerp-staff",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.schoolerp.staff"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0f172a"
+      },
+      "package": "com.schoolerp.staff"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "color": "#7c3aed"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Track school transport vehicles during duty hours."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
+      }
+    }
+  }
+}

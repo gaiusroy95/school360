@@ -1,3 +1,4 @@
+import { deliverPushToTokens } from './pushDelivery.js';
 import { prisma } from './prisma.js';
 
 export type PushRecipient = {
@@ -5,6 +6,7 @@ export type PushRecipient = {
   name: string;
   mobile?: string;
   email?: string;
+  fcmToken?: string;
 };
 
 export async function dispatchPushNotifications(params: {
@@ -17,16 +19,27 @@ export async function dispatchPushNotifications(params: {
   const { institutionId, event, title, body, recipients } = params;
   if (recipients.length === 0) return { sent: 0, event, title };
 
-  console.info('[push-notification]', {
+  const tokens = recipients.map((r) => r.fcmToken).filter((t): t is string => Boolean(t));
+
+  if (tokens.length > 0) {
+    const result = await deliverPushToTokens(tokens, {
+      title,
+      body,
+      data: { event, institutionId },
+    });
+    console.info('[push-notification]', { institutionId, event, ...result });
+    return { sent: result.sent, event, title };
+  }
+
+  console.info('[push-notification-log]', {
     institutionId,
     event,
     title,
     recipientCount: recipients.length,
     preview: body.slice(0, 160),
-    recipients: recipients.slice(0, 10).map((r) => ({ type: r.type, name: r.name, mobile: r.mobile, email: r.email })),
   });
 
-  return { sent: recipients.length, event, title };
+  return { sent: recipients.length, event, title, logged: true };
 }
 
 export async function notifyStaffPush(

@@ -121,6 +121,15 @@ model Institution {
   examQuestionSubjectStats ExamQuestionSubjectStat[]
   examTopPerformers ExamTopPerformer[]
   examPerformanceTrends ExamPerformanceTrend[]
+  mobileAccounts MobileAccount[]
+  mobileNotifications MobileNotification[]
+  mobileUploads MobileUpload[]
+  feeDues FeeDue[]
+  paymentOrders PaymentOrder[]
+  transportVehicles TransportVehicle[]
+  vehicleLocations VehicleLocation[]
+  transportIncidents TransportIncident[]
+  transportTrackingConfig TransportTrackingConfig?
 }
 
 enum EnquiryStatus {
@@ -1408,6 +1417,8 @@ model AcademicSyllabusChapter {
   plannedEndDate    DateTime?
   revisionDeadline  DateTime?
   completionPercent Int      @default(0)
+  teacherInstructions String @default("")
+  lmsMediaItems     Json     @default("[]")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -1555,6 +1566,7 @@ model AcademicHomework {
   submittedCount  Int                    @default(0)
   sharedAt        DateTime?
   publishedAt     DateTime?
+  attachments     Json                   @default("[]")
   createdAt       DateTime               @default(now())
   updatedAt       DateTime               @updatedAt
 
@@ -1985,6 +1997,7 @@ model StudentLeaveApplication {
   reviewedBy    String   @default("")
   reviewerRemarks String @default("")
   source        String   @default("PARENT_APP")
+  attachmentUrl String   @default("")
   reviewedAt    DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -3513,4 +3526,278 @@ model ExamPerformanceTrend {
   sortOrder     Int      @default(0)
 
   @@index([institutionId, academicYear])
+}
+
+// ─── Mobile apps (Student/Parent + Staff) ─────────────────────────────────────
+
+enum MobileAppRole {
+  STUDENT
+  PARENT
+  TEACHER
+  PRINCIPAL
+  TRANSPORT
+}
+
+enum MobileDevicePlatform {
+  IOS
+  ANDROID
+  WEB
+  OTHER
+}
+
+/// Login identity for mobile apps — separate from dashboard User accounts.
+model MobileAccount {
+  id                String        @id @default(cuid())
+  institutionId     String
+  institution       Institution   @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  role              MobileAppRole
+  admissionNumber   String        @default("")
+  employeeCode      String        @default("")
+  registeredMobile  String
+  passwordHash      String
+  mustResetPassword Boolean       @default(true)
+  displayName       String
+  studentId         String?
+  parentKey         String        @default("")
+  parentRelationship ParentRelationship?
+  teacherProfileId  String?
+  staffProfileId    String?
+  studentIds        Json          @default("[]")
+  isActive          Boolean       @default(true)
+  lastLoginAt       DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  devices           MobileDevice[]
+  notifications     MobileNotification[]
+  uploads           MobileUpload[]
+  reminderPreference MobileReminderPreference?
+
+  @@unique([institutionId, role, admissionNumber, registeredMobile])
+  @@unique([institutionId, role, employeeCode, registeredMobile])
+  @@index([institutionId, studentId])
+  @@index([institutionId, parentKey])
+  @@index([institutionId, role, isActive])
+}
+
+model MobileOtpChallenge {
+  id               String    @id @default(cuid())
+  institutionId    String
+  purpose          String    @default("login")
+  app              String
+  layer            String    @default("")
+  identifier       String
+  registeredMobile String
+  otpHash          String
+  expiresAt        DateTime
+  attempts         Int       @default(0)
+  consumedAt       DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([institutionId, registeredMobile, identifier, createdAt])
+}
+
+model MobileDevice {
+  id           String               @id @default(cuid())
+  accountId    String
+  account      MobileAccount        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  fcmToken     String
+  platform     MobileDevicePlatform @default(OTHER)
+  deviceName   String               @default("")
+  appVersion   String               @default("")
+  lastSeenAt   DateTime             @default(now())
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  @@unique([accountId, fcmToken])
+  @@index([accountId])
+}
+
+model MobileNotification {
+  id            String        @id @default(cuid())
+  institutionId String
+  institution   Institution   @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  accountId     String
+  account       MobileAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  studentId     String        @default("")
+  category      String        @default("general")
+  title         String
+  body          String        @default("")
+  payload       Json          @default("{}")
+  readAt        DateTime?
+  createdAt     DateTime      @default(now())
+
+  @@index([accountId, readAt, createdAt])
+  @@index([institutionId, accountId])
+}
+
+model MobileUpload {
+  id            String        @id @default(cuid())
+  institutionId String
+  institution   Institution   @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  accountId     String
+  account       MobileAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  studentId     String        @default("")
+  fileName      String
+  mimeType      String        @default("application/octet-stream")
+  sizeBytes     Int           @default(0)
+  storagePath   String
+  createdAt     DateTime      @default(now())
+
+  @@index([accountId, createdAt])
+  @@index([institutionId, studentId])
+}
+
+enum FeeDueStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum PaymentOrderStatus {
+  CREATED
+  PAID
+  FAILED
+  CANCELLED
+}
+
+model FeeDue {
+  id              String       @id @default(cuid())
+  institutionId   String
+  institution     Institution  @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  studentId       String
+  admissionNumber String       @default("")
+  academicYear    String       @default("2025-26")
+  title           String
+  feeHead         String       @default("tuitionFee")
+  amount          Float
+  dueDate         DateTime     @db.Date
+  status          FeeDueStatus @default(PENDING)
+  remarks         String       @default("")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  paymentOrders   PaymentOrder[]
+
+  @@index([institutionId, studentId, status])
+  @@index([institutionId, admissionNumber, academicYear])
+}
+
+model PaymentOrder {
+  id                String             @id @default(cuid())
+  institutionId     String
+  institution       Institution        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  feeDueId          String
+  feeDue            FeeDue             @relation(fields: [feeDueId], references: [id], onDelete: Cascade)
+  accountId         String             @default("")
+  amount            Float
+  currency          String             @default("INR")
+  status            PaymentOrderStatus @default(CREATED)
+  provider          String             @default("RAZORPAY")
+  providerOrderId   String             @default("")
+  providerPaymentId String             @default("")
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([institutionId, feeDueId])
+  @@index([institutionId, status])
+}
+
+model MobileReminderPreference {
+  id          String        @id @default(cuid())
+  accountId   String        @unique
+  account     MobileAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  preferences Json          @default("{}")
+  updatedAt   DateTime      @updatedAt
+}
+
+// ─── Transport (mobile GPS tracking) ──────────────────────────────────────────
+
+model TransportTrackingConfig {
+  id              String   @id @default(cuid())
+  institutionId   String   @unique
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  trackingStart   String   @default("06:00")
+  trackingEnd     String   @default("10:00")
+  collisionRadiusMeters Int @default(50)
+  updatedAt       DateTime @updatedAt
+}
+
+model TransportVehicle {
+  id              String   @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId        String
+  vehicleNumber   String
+  routeName       String   @default("")
+  driverName      String   @default("")
+  driverMobile    String   @default("")
+  staffProfileId  String   @default("")
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  locations       VehicleLocation[]
+  incidents       TransportIncident[]
+
+  @@unique([institutionId, recordId])
+  @@unique([institutionId, vehicleNumber])
+  @@index([institutionId, isActive])
+}
+
+model VehicleLocation {
+  id              String   @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  vehicleId       String
+  vehicle         TransportVehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  staffProfileId  String   @default("")
+  latitude        Float
+  longitude       Float
+  speedKmh        Float    @default(0)
+  heading         Float    @default(0)
+  recordedAt      DateTime @default(now())
+
+  @@index([institutionId, vehicleId, recordedAt])
+  @@index([vehicleId, recordedAt])
+}
+
+enum TransportIncidentType {
+  COLLISION
+  BREAKDOWN
+  DELAY
+  EMERGENCY
+  OTHER
+}
+
+model TransportIncident {
+  id              String   @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  vehicleId       String
+  vehicle         TransportVehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  staffProfileId  String   @default("")
+  incidentType    TransportIncidentType @default(OTHER)
+  description     String   @default("")
+  latitude        Float    @default(0)
+  longitude       Float    @default(0)
+  resolvedAt      DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([institutionId, createdAt])
+  @@index([vehicleId, createdAt])
+}
+
+model MessageDispatchLog {
+  id            String   @id @default(cuid())
+  institutionId String
+  channel       String
+  recipient     String
+  template      String   @default("")
+  status        String
+  response      String   @default("")
+  createdAt     DateTime @default(now())
+
+  @@index([institutionId, channel, createdAt])
 }

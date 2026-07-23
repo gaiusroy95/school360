@@ -455,6 +455,7 @@ export async function createLeaveApplication(
     toDate: string;
     reason: string;
     source?: string;
+    attachmentUrl?: string;
   },
 ) {
   const academicYear = input.academicYear || '2025-26';
@@ -474,6 +475,7 @@ export async function createLeaveApplication(
         toDate,
         reason: input.reason,
         source: input.source || 'ADMIN',
+        attachmentUrl: input.attachmentUrl || '',
       },
       include: { student: true },
     });
