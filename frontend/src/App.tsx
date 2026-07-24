@@ -177,7 +177,7 @@ export default function App() {
               'Attendance Management': <AttendanceManagementCRM currentView={page} onNavigate={setCurrentView} />,
               'Examination Management': <ExaminationManagementCRM currentView={page} onNavigate={setCurrentView} />,
               'Fees & Finance': <FeeFinanceManagementCRM currentView={page} onNavigate={setCurrentView} />,
-              'HR & Payroll Management': <HrPayrollManagementCRM currentView={page} />,
+              'HR & Payroll Management': <HrPayrollManagementCRM currentView={page} onNavigate={setCurrentView} />,
               'Transport Management': <TransportManagementCRM currentView={page} />,
               'Library Management': <LibraryManagementCRM currentView={page} />,
               'Hostel Management': <HostelManagementCRM currentView={page} />,

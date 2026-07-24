@@ -30,6 +30,7 @@ import { parentCategoriesRouter } from './routes/parentCategories.js';
 import { academicRouter } from './routes/academic.js';
 import { attendanceRouter } from './routes/attendance.js';
 import { examinationRouter } from './routes/examination.js';
+import { hrRouter } from './routes/hr.js';
 import { mobileRouter } from './routes/mobile.js';
 import { connectDatabase } from './lib/prisma.js';
 import { startInvigilationScheduler } from './lib/examInvigilationScheduler.js';
@@ -113,6 +114,7 @@ app.use('/api/parent-categories', parentCategoriesRouter);
 app.use('/api/academic', academicRouter);
 app.use('/api/attendance', attendanceRouter);
 app.use('/api/examination', examinationRouter);
+app.use('/api/hr', hrRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);

@@ -160,6 +160,97 @@ model Institution {
   expenseBudgets ExpenseBudget[]
   expenseRecurring ExpenseRecurring[]
   expenseReimbursements ExpenseReimbursement[]
+  hrDepartments HrDepartment[]
+  hrDesignations HrDesignation[]
+  hrShifts HrShift[]
+  hrAttendanceSettings HrAttendanceSettings[]
+  hrAttendanceDailyRecords HrAttendanceDailyRecord[]
+  hrAttendanceCorrections HrAttendanceCorrection[]
+  hrAttendancePeriodLocks HrAttendancePeriodLock[]
+  hrLeavePolicies HrLeavePolicy[]
+  hrLeavePolicyAssignments HrLeavePolicyAssignment[]
+  hrLeaveApplications HrLeaveApplication[]
+  hrLeaveBalances HrLeaveBalance[]
+  hrLeaveSettings HrLeaveSettings[]
+  hrSalaryStructureTemplates HrSalaryStructureTemplate[]
+  hrSalaryStructureAssignments HrSalaryStructureAssignment[]
+  hrSalaryComponentGroups HrSalaryComponentGroup[]
+  hrSalaryComponents HrSalaryComponent[]
+  hrSalaryComponentMappings HrSalaryComponentMapping[]
+  hrSalaryComponentHistory HrSalaryComponentHistory[]
+  hrInstitutionWorkingHours HrInstitutionWorkingHours[]
+  hrDepartmentShiftMappings HrDepartmentShiftMapping[]
+  hrEmployeeShiftAssignments HrEmployeeShiftAssignment[]
+  hrShiftChangeRequests HrShiftChangeRequest[]
+  hrShiftSubstitutes HrShiftSubstitute[]
+  hrShiftOvertimeRecords HrShiftOvertimeRecord[]
+  hrShiftDutyAssignments HrShiftDutyAssignment[]
+  hrWeeklyShiftPlanner HrWeeklyShiftPlanner[]
+  hrShiftModuleSettings HrShiftModuleSettings[]
+  hrPerformanceCycles HrPerformanceCycle[]
+  hrPerformanceKpis HrPerformanceKpi[]
+  hrPerformanceAppraisals HrPerformanceAppraisal[]
+  hrPerformanceAnnualReviews HrPerformanceAnnualReview[]
+  hrPerformancePips HrPerformancePip[]
+  hrPayGrades HrPayGrade[]
+  hrPerformanceSettings HrPerformanceSettings[]
+  hrEmployeeDevelopmentPlans HrEmployeeDevelopmentPlan[]
+  hrManpowerPlans HrManpowerPlan[]
+  hrJobRequisitions HrJobRequisition[]
+  hrJobPostings HrJobPosting[]
+  hrCandidates HrCandidate[]
+  hrCandidateApplications HrCandidateApplication[]
+  hrInterviewFeedbacks HrInterviewFeedback[]
+  hrRecruitmentOffers HrRecruitmentOffer[]
+  hrBackgroundVerifications HrBackgroundVerification[]
+  hrReferenceChecks HrReferenceCheck[]
+  hrRecruitmentOnboardings HrRecruitmentOnboarding[]
+  hrRecruitmentSettings HrRecruitmentSettings[]
+  hrTrainingCategories HrTrainingCategory[]
+  hrTrainingCourses HrTrainingCourse[]
+  hrTrainingTrainers HrTrainingTrainer[]
+  hrTrainingVenues HrTrainingVenue[]
+  hrTrainingNeeds HrTrainingNeed[]
+  hrTrainingAnnualPlans HrTrainingAnnualPlan[]
+  hrTrainingBatches HrTrainingBatch[]
+  hrTrainingNominations HrTrainingNomination[]
+  hrTrainingAttendances HrTrainingAttendance[]
+  hrTrainingAssessments HrTrainingAssessment[]
+  hrTrainingAssignments HrTrainingAssignment[]
+  hrTrainingFeedbacks HrTrainingFeedback[]
+  hrTrainingCompetencies HrTrainingCompetency[]
+  hrTrainingCertificates HrTrainingCertificate[]
+  hrTrainingBudgets HrTrainingBudget[]
+  hrTrainingExternals HrTrainingExternal[]
+  hrTrainingIdps HrTrainingIdp[]
+  hrTrainingSettings HrTrainingSettings[]
+  hrEdomsOnboardings HrEdomsOnboarding[]
+  hrEdomsDocuments HrEdomsDocument[]
+  hrEdomsQualifications HrEdomsQualification[]
+  hrEdomsEmploymentHistories HrEdomsEmploymentHistory[]
+  hrEdomsVerifications HrEdomsVerification[]
+  hrEdomsChecklists HrEdomsChecklist[]
+  hrEdomsAssets HrEdomsAsset[]
+  hrEdomsSystemAccesses HrEdomsSystemAccess[]
+  hrEdomsInductions HrEdomsInduction[]
+  hrEdomsProbations HrEdomsProbation[]
+  hrEdomsEmploymentLetters HrEdomsEmploymentLetter[]
+  hrEdomsAuditLogs HrEdomsAuditLog[]
+  hrEdomsSettings HrEdomsSettings[]
+  hrExitResignations HrExitResignation[]
+  hrExitApprovals HrExitApproval[]
+  hrExitRetentions HrExitRetention[]
+  hrExitHandovers HrExitHandover[]
+  hrExitKnowledgeTransfers HrExitKnowledgeTransfer[]
+  hrExitClearances HrExitClearance[]
+  hrExitAssetRecoveries HrExitAssetRecovery[]
+  hrExitFnfSettlements HrExitFnfSettlement[]
+  hrExitLeaveSettlements HrExitLeaveSettlement[]
+  hrExitInterviews HrExitInterview[]
+  hrExitDocuments HrExitDocument[]
+  hrExitAlumniRecords HrExitAlumniRecord[]
+  hrExitAuditLogs HrExitAuditLog[]
+  hrExitSettings HrExitSettings[]
 }
 
 enum EnquiryStatus {
@@ -4395,16 +4486,2090 @@ model PayrollEmployee {
   esicApplicable  Boolean               @default(true)
   status          FeeMasterStatus       @default(ACTIVE)
   remarks         String                @default("")
+  classGroup      String                @default("")
+  profileData     Json                  @default("{}")
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
   salaryStructures PayrollSalaryStructure[]
   slips            PayrollSlip[]
+  attendanceRecords HrAttendanceDailyRecord[]
+  attendanceCorrections HrAttendanceCorrection[]
+  leaveApplications HrLeaveApplication[]
+  leaveBalances HrLeaveBalance[]
+  leavePolicyAssignments HrLeavePolicyAssignment[]
+  salaryStructureAssignments HrSalaryStructureAssignment[]
+  shiftAssignments HrEmployeeShiftAssignment[]
+  shiftChangeRequests HrShiftChangeRequest[]
+  shiftSubstitutesAbsent HrShiftSubstitute[] @relation("AbsentEmployee")
+  shiftSubstitutesCover HrShiftSubstitute[] @relation("SubstituteEmployee")
+  shiftOvertimeRecords HrShiftOvertimeRecord[]
+  shiftDutyAssignments HrShiftDutyAssignment[]
+  performanceAppraisals HrPerformanceAppraisal[]
+  performanceAnnualReviews HrPerformanceAnnualReview[]
+  performancePips HrPerformancePip[]
+  developmentPlans HrEmployeeDevelopmentPlan[]
+  trainingNominations HrTrainingNomination[]
+  trainingAttendances HrTrainingAttendance[]
+  trainingCertificates HrTrainingCertificate[]
+  trainingIdps HrTrainingIdp[]
+  edomsOnboardings HrEdomsOnboarding[]
+  exitResignations HrExitResignation[]
 
   @@unique([institutionId, employeeCode])
   @@index([institutionId, status])
   @@index([institutionId, employmentType])
   @@index([institutionId, department])
+}
+
+/// HR department master with org structure & settings
+model HrDepartment {
+  id                  String        @id @default(cuid())
+  institutionId       String
+  institution         Institution   @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  code                String
+  name                String
+  parentId            String?
+  parent              HrDepartment? @relation("HrDeptHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children            HrDepartment[] @relation("HrDeptHierarchy")
+  headEmployeeId      String        @default("")
+  reportsToEmployeeId String        @default("")
+  shortDescription    String        @default("")
+  detailedDescription String        @default("")
+  campus              String        @default("Main Campus")
+  status              String        @default("ACTIVE")
+  budgetAllocation    Float         @default(0)
+  costCenter          String        @default("")
+  email               String        @default("")
+  phone               String        @default("")
+  workingDays         Json          @default("[]")
+  logoUrl             String        @default("")
+  notes               String        @default("")
+  functions           Json          @default("[]")
+  structureTree       Json          @default("[]")
+  settings            Json          @default("{}")
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  @@unique([institutionId, code])
+  @@index([institutionId, parentId])
+  @@index([institutionId, status])
+}
+
+/// HR designation master with position mapping
+model HrDesignation {
+  id              String      @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  name            String
+  department      String
+  designationType String      @default("Teaching")
+  totalPositions  Int         @default(1)
+  filledPositions Int         @default(0)
+  status          String      @default("ACTIVE")
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@unique([institutionId, name, department])
+  @@index([institutionId, department])
+  @@index([institutionId, status])
+  @@index([institutionId, designationType])
+}
+
+/// HR shift master for attendance & shift management
+model HrShift {
+  id                    String      @id @default(cuid())
+  institutionId         String
+  institution           Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  code                  String
+  name                  String
+  shiftType             String      @default("REGULAR")
+  description           String      @default("")
+  startTime             String      @default("09:00")
+  endTime               String      @default("17:00")
+  breakStart            String      @default("")
+  breakEnd              String      @default("")
+  breakMinutes          Int         @default(60)
+  totalHours            Float       @default(8)
+  graceMinutes          Int         @default(15)
+  lateMarkRule          String      @default("Mark late after grace period")
+  earlyExitRule         String      @default("Deduction if exit before shift end")
+  overtimeEligible      Boolean     @default(true)
+  halfDayRule           String      @default("Less than 4 hours = Half Day")
+  attendanceRule        String      @default("Standard biometric attendance")
+  payrollRule           String      @default("Standard payroll mapping")
+  applicableDepartments Json        @default("[]")
+  weeklyOff             Json        @default("[\"Sunday\"]")
+  isNightShift          Boolean     @default(false)
+  isFlexible            Boolean     @default(false)
+  status                String      @default("ACTIVE")
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  departmentMappings HrDepartmentShiftMapping[]
+  employeeAssignments HrEmployeeShiftAssignment[]
+  plannerEntries HrWeeklyShiftPlanner[]
+
+  @@unique([institutionId, code])
+  @@index([institutionId, status])
+  @@index([institutionId, shiftType])
+}
+
+/// Institution working hours configuration
+model HrInstitutionWorkingHours {
+  id               String      @id @default(cuid())
+  institutionId    String      @unique
+  institution      Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear     String      @default("2025-26")
+  branch           String      @default("Main Branch")
+  institutionType  String      @default("School")
+  workingDays      Json        @default("[\"Monday\",\"Tuesday\",\"Wednesday\",\"Thursday\",\"Friday\",\"Saturday\"]")
+  weeklyOff        Json        @default("[\"Sunday\"]")
+  workingHoursStart String     @default("09:00")
+  workingHoursEnd   String     @default("17:00")
+  breakDuration    Int         @default(60)
+  prayerAssembly   String      @default("08:45 - 09:00")
+  lunchBreak       String      @default("13:00 - 13:45")
+  teaBreak         String      @default("16:00 - 16:15")
+  earlyClosing     String      @default("")
+  halfDayRules     String      @default("Less than 4 hours worked = Half Day")
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+}
+
+/// Department to shift mapping
+model HrDepartmentShiftMapping {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  department    String
+  shiftId       String
+  shift         HrShift     @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  branch        String      @default("Main Branch")
+  status        String      @default("ACTIVE")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([institutionId, department])
+}
+
+/// Employee shift assignment
+model HrEmployeeShiftAssignment {
+  id              String          @id @default(cuid())
+  institutionId   String
+  institution     Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  employeeId      String
+  employee        PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shiftId         String
+  shift           HrShift         @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  effectiveDate   DateTime        @db.Date
+  employmentType  String          @default("PERMANENT")
+  branch          String          @default("Main Branch")
+  workingDays     Json            @default("[]")
+  weeklyOff       Json            @default("[\"Sunday\"]")
+  attendanceRule  String          @default("")
+  payrollRule     String          @default("")
+  remarks         String          @default("")
+  status          String          @default("ACTIVE")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([institutionId, employeeId])
+  @@index([shiftId])
+}
+
+/// Shift change request workflow
+model HrShiftChangeRequest {
+  id               String          @id @default(cuid())
+  institutionId    String
+  institution      Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  employeeId       String
+  employee         PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  currentShiftCode String          @default("")
+  requestedShiftId String          @default("")
+  reasonCategory   String          @default("Personal")
+  reason           String          @default("")
+  effectiveDate    DateTime        @db.Date
+  status           String          @default("PENDING")
+  workflowLevel    String          @default("MANAGER")
+  approvedBy       String          @default("")
+  reviewerRemarks  String          @default("")
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([institutionId, status])
+}
+
+/// Substitute teacher/staff allocation
+model HrShiftSubstitute {
+  id                  String          @id @default(cuid())
+  institutionId       String
+  institution         Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  absentEmployeeId    String
+  absentEmployee      PayrollEmployee @relation("AbsentEmployee", fields: [absentEmployeeId], references: [id], onDelete: Cascade)
+  substituteEmployeeId String
+  substituteEmployee  PayrollEmployee @relation("SubstituteEmployee", fields: [substituteEmployeeId], references: [id], onDelete: Cascade)
+  dutyDate            DateTime        @db.Date
+  shiftCode           String          @default("")
+  classInfo           String          @default("")
+  subject             String          @default("")
+  status              String          @default("ASSIGNED")
+  notifiedAt          DateTime?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  @@index([institutionId, dutyDate])
+}
+
+/// Overtime records
+model HrShiftOvertimeRecord {
+  id            String          @id @default(cuid())
+  institutionId String
+  institution   Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  employeeId    String
+  employee      PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  otDate        DateTime        @db.Date
+  hours         Float           @default(0)
+  otType        String          @default("EXTRA_HOURS")
+  reason        String          @default("")
+  status        String          @default("PENDING")
+  approvedBy    String          @default("")
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([institutionId, otDate])
+}
+
+/// Weekend / holiday / exam / event / GPS duty
+model HrShiftDutyAssignment {
+  id              String          @id @default(cuid())
+  institutionId   String
+  institution     Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  dutyType        String
+  employeeId      String
+  employee        PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shiftCode       String          @default("")
+  dutyDate        DateTime        @db.Date
+  reportingTime   String          @default("")
+  completionTime  String          @default("")
+  compensation    String          @default("OT")
+  location        String          @default("")
+  gpsEnabled      Boolean         @default(false)
+  details         Json            @default("{}")
+  status          String          @default("ASSIGNED")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([institutionId, dutyType, dutyDate])
+}
+
+/// Weekly shift planner grid entries
+model HrWeeklyShiftPlanner {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  weekStart     DateTime    @db.Date
+  dayOfWeek     String
+  timeSlot      String
+  shiftId       String?
+  shift         HrShift?    @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  department    String      @default("")
+  entryType     String      @default("WORKING")
+  colorCode     String      @default("green")
+  label         String      @default("")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([institutionId, weekStart])
+}
+
+/// Shift module settings (notifications, integrations, rotation)
+model HrShiftModuleSettings {
+  id                    String      @id @default(cuid())
+  institutionId         String      @unique
+  institution           Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  rotationEnabled       Boolean     @default(true)
+  flexibleShiftEnabled  Boolean     @default(true)
+  gpsAttendanceEnabled  Boolean     @default(true)
+  timetableSyncEnabled  Boolean     @default(true)
+  maxWeeklyHours        Int         @default(48)
+  minRestBetweenShifts  Int         @default(8)
+  overtimeLimitHours    Int         @default(20)
+  notificationChannels  Json        @default("[\"Push\",\"Email\",\"SMS\"]")
+  attendanceRules       Json        @default("{}")
+  flexiblePolicies      Json        @default("{}")
+  rotationTemplates     Json        @default("[]")
+  dutyMasters           Json        @default("{}")
+  allowanceMasters      Json        @default("{}")
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+}
+
+// ─── Performance Appraisal & Management ─────────────────────────────────────
+
+/// Quarterly / mid-year / annual performance cycles
+model HrPerformanceCycle {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear  String
+  cycleType     String      // Q1, Q2, Q3, Q4, MID_YEAR, ANNUAL
+  cycleNumber   Int         @default(1)
+  name          String
+  periodStart   DateTime    @db.Date
+  periodEnd     DateTime    @db.Date
+  reviewDueDate DateTime    @db.Date
+  status        String      @default("ACTIVE")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  appraisals HrPerformanceAppraisal[]
+
+  @@unique([institutionId, academicYear, cycleType])
+  @@index([institutionId, academicYear])
+}
+
+/// KPI library (goal categories & parameters)
+model HrPerformanceKpi {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  category      String      // Academic, Discipline, Attendance, etc.
+  code          String
+  name          String
+  description   String      @default("")
+  staffType     String      @default("ALL") // TEACHING, NON_TEACHING, ALL
+  weight        Float       @default(0)
+  maxScore      Float       @default(100)
+  status        String      @default("ACTIVE")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, code])
+  @@index([institutionId, category])
+}
+
+/// Quarterly employee appraisal with multi-stage workflow
+model HrPerformanceAppraisal {
+  id            String          @id @default(cuid())
+  institutionId String
+  institution   Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  employeeId    String
+  employee      PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  cycleId       String
+  cycle         HrPerformanceCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  academicYear  String
+  quarter       String          // Q1, Q2, Q3, Q4
+  staffType     String          @default("TEACHING")
+  classSubject  String          @default("")
+  kpiScore      Float           @default(0)
+  competencyScore Float         @default(0)
+  attendanceScore Float         @default(0)
+  behaviourScore Float          @default(0)
+  feedbackScore Float           @default(0)
+  innovationScore Float         @default(0)
+  trainingScore Float           @default(0)
+  taskActionScore Float         @default(0)
+  improvementScore Float        @default(0)
+  parentEngScore Float           @default(0)
+  parentFbScore Float           @default(0)
+  studentFbScore Float          @default(0)
+  overallScore  Float           @default(0)
+  ratingBand    String          @default("")
+  outcome       String          @default("")
+  workflowStage String          @default("SELF") // SELF, MANAGER, HOD, PRINCIPAL, HR, MANAGEMENT, FINAL
+  status        String          @default("DRAFT") // DRAFT, IN_REVIEW, COMPLETED, PUBLISHED
+  selfRemarks   String          @default("")
+  managerRemarks String         @default("")
+  hodRemarks    String          @default("")
+  principalRemarks String       @default("")
+  hrRemarks     String          @default("")
+  kpiDetails    Json            @default("[]")
+  competencyDetails Json        @default("[]")
+  publishedToMobile Boolean     @default(false)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@unique([employeeId, cycleId])
+  @@index([institutionId, academicYear, quarter])
+  @@index([cycleId])
+}
+
+/// Annual performance review with weighted quarterly scores
+model HrPerformanceAnnualReview {
+  id               String          @id @default(cuid())
+  institutionId    String
+  institution      Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  employeeId       String
+  employee         PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  academicYear     String
+  q1Score          Float           @default(0)
+  q2Score          Float           @default(0)
+  q3Score          Float           @default(0)
+  q4Score          Float           @default(0)
+  specialAchievementScore Float    @default(0)
+  leadershipScore  Float           @default(0)
+  annualScore      Float           @default(0)
+  ratingBand       String          @default("")
+  promotionEligible Boolean        @default(false)
+  incrementPercent Float           @default(0)
+  recommendedPayGrade String        @default("")
+  workflowStage    String          @default("EMPLOYEE")
+  status           String          @default("DRAFT")
+  salaryRevisionStatus String      @default("PENDING")
+  remarks          String          @default("")
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@unique([employeeId, academicYear])
+  @@index([institutionId, academicYear])
+}
+
+/// Performance Improvement Plan (auto when score < 70)
+model HrPerformancePip {
+  id            String          @id @default(cuid())
+  institutionId String
+  institution   Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  employeeId    String
+  employee      PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  appraisalId   String          @default("")
+  academicYear  String
+  startDate     DateTime        @db.Date
+  endDate       DateTime        @db.Date
+  goals         Json            @default("[]")
+  trainingPlan  Json            @default("[]")
+  mentorName    String          @default("")
+  weeklyReviews Json            @default("[]")
+  monthlyReviews Json           @default("[]")
+  completionStatus String       @default("IN_PROGRESS")
+  status        String          @default("ACTIVE")
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([institutionId, employeeId])
+}
+
+/// Pay grade hierarchy (PG-01 to PG-20)
+model HrPayGrade {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  code          String
+  name          String
+  level         Int
+  minSalary     Float       @default(0)
+  maxSalary     Float       @default(0)
+  description   String      @default("")
+  status        String      @default("ACTIVE")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, code])
+  @@index([institutionId, level])
+}
+
+/// Configurable weightage, rating scale, increment & promotion matrices
+model HrPerformanceSettings {
+  id                    String      @id @default(cuid())
+  institutionId         String      @unique
+  institution           Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  weightage             Json        @default("{\"kpi\":35,\"competency\":25,\"attendance\":10,\"behaviour\":10,\"feedback\":10,\"innovation\":5,\"training\":5}")
+  ratingScale           Json        @default("[{\"rating\":5,\"label\":\"Outstanding\",\"min\":90,\"max\":100},{\"rating\":4,\"label\":\"Exceeds Expectations\",\"min\":80,\"max\":89},{\"rating\":3,\"label\":\"Meets Expectations\",\"min\":70,\"max\":79},{\"rating\":2,\"label\":\"Needs Improvement\",\"min\":60,\"max\":69},{\"rating\":1,\"label\":\"Unsatisfactory\",\"min\":0,\"max\":59}]")
+  annualWeightage       Json        @default("{\"q1\":20,\"q2\":20,\"q3\":20,\"q4\":20,\"specialAchievement\":10,\"leadership\":10}")
+  promotionMatrix       Json        @default("[{\"minScore\":95,\"outcome\":\"Fast Track Promotion\"},{\"minScore\":90,\"outcome\":\"Promotion Eligible\"},{\"minScore\":80,\"outcome\":\"Grade Upgrade\"},{\"minScore\":70,\"outcome\":\"Salary Increment Only\"},{\"minScore\":0,\"outcome\":\"Improvement Plan\"}]")
+  incrementMatrix       Json        @default("[{\"band\":\"Outstanding\",\"minPercent\":15,\"maxPercent\":20},{\"band\":\"Excellent\",\"minPercent\":12,\"maxPercent\":15},{\"band\":\"Very Good\",\"minPercent\":8,\"maxPercent\":10},{\"band\":\"Good\",\"minPercent\":5,\"maxPercent\":7},{\"band\":\"Average\",\"minPercent\":2,\"maxPercent\":4},{\"band\":\"Poor\",\"minPercent\":0,\"maxPercent\":0}]")
+  promotionRules        Json        @default("{\"minServiceMonths\":12,\"minAnnualScore\":70,\"noDisciplinary\":true,\"mandatoryTrainings\":true,\"budgetApproval\":true}")
+  approvalMatrix        Json        @default("[{\"action\":\"Self Review\",\"level\":\"Employee\"},{\"action\":\"Performance Review\",\"level\":\"Reporting Manager\"},{\"action\":\"Department Review\",\"level\":\"HOD\"},{\"action\":\"Academic Review\",\"level\":\"Principal\"},{\"action\":\"HR Review\",\"level\":\"HR Manager\"},{\"action\":\"Budget Approval\",\"level\":\"Finance\"},{\"action\":\"Final Approval\",\"level\":\"Management\"}]")
+  pipThreshold          Float       @default(70)
+  pipDurationDays       Int         @default(90)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+}
+
+/// Employee Development Plan generated after reviews
+model HrEmployeeDevelopmentPlan {
+  id               String          @id @default(cuid())
+  institutionId    String
+  institution      Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  employeeId       String
+  employee         PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  academicYear     String
+  reviewType       String          @default("QUARTERLY") // QUARTERLY, MID_YEAR, ANNUAL
+  skillGaps        Json            @default("[]")
+  mandatoryTraining Json           @default("[]")
+  certifications   Json            @default("[]")
+  careerAspirations String         @default("")
+  leadershipReadiness String        @default("")
+  coachingAssignments Json          @default("[]")
+  mentoringPlan    Json            @default("{}")
+  milestones       Json            @default("[]")
+  status           String          @default("ACTIVE")
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([institutionId, employeeId, academicYear])
+}
+
+// ─── Recruitment Management System (RMS) ──────────────────────────────────
+
+model HrManpowerPlan {
+  id                   String      @id @default(cuid())
+  institutionId        String
+  institution          Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear         String
+  campus               String      @default("Main Campus")
+  department           String
+  designation          String
+  existingHeadcount    Int         @default(0)
+  approvedHeadcount    Int         @default(0)
+  vacantPositions      Int         @default(0)
+  expectedResignations Int         @default(0)
+  newPositions         Int         @default(0)
+  budgetedSalary       Float       @default(0)
+  priority             String      @default("MEDIUM")
+  justification        String      @default("")
+  recruitmentDeadline  DateTime?   @db.Date
+  status               String      @default("DRAFT")
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  requisitions HrJobRequisition[]
+
+  @@index([institutionId, academicYear])
+}
+
+model HrJobRequisition {
+  id               String          @id @default(cuid())
+  institutionId    String
+  institution      Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  manpowerPlanId   String?
+  manpowerPlan     HrManpowerPlan? @relation(fields: [manpowerPlanId], references: [id], onDelete: SetNull)
+  requisitionNumber String
+  academicYear     String          @default("2025-26")
+  campus           String          @default("Main Campus")
+  department       String
+  positionTitle    String
+  designation      String
+  grade            String          @default("")
+  vacancies        Int             @default(1)
+  employmentType   String          @default("FULL_TIME")
+  salaryMin        Float           @default(0)
+  salaryMax        Float           @default(0)
+  reportingManager String          @default("")
+  budgetCode       String          @default("")
+  costCenter       String          @default("")
+  reasonForHiring  String          @default("NEW_POSITION")
+  workflowStage    String          @default("DRAFT")
+  status           String          @default("DRAFT")
+  jobDescription   Json            @default("{}")
+  attachments      Json            @default("[]")
+  approvalHistory  Json            @default("[]")
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  postings     HrJobPosting[]
+  applications HrCandidateApplication[]
+
+  @@unique([institutionId, requisitionNumber])
+  @@index([institutionId, status])
+}
+
+model HrJobPosting {
+  id              String           @id @default(cuid())
+  institutionId   String
+  institution     Institution      @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  requisitionId   String
+  requisition     HrJobRequisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  jobTitle        String
+  department      String
+  location        String           @default("Main Campus")
+  status          String           @default("DRAFT")
+  publishChannels Json             @default("[]")
+  publishedAt     DateTime?
+  closingDate     DateTime?        @db.Date
+  jobDetails      Json             @default("{}")
+  applicationCount Int             @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  applications HrCandidateApplication[]
+
+  @@index([institutionId, status])
+}
+
+model HrCandidate {
+  id              String      @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  candidateCode   String
+  fullName        String
+  email           String      @default("")
+  mobile          String      @default("")
+  gender          String      @default("")
+  dateOfBirth     DateTime?   @db.Date
+  address         String      @default("")
+  qualification   String      @default("")
+  experienceYears Float       @default(0)
+  currentEmployer String      @default("")
+  currentSalary   Float       @default(0)
+  expectedSalary  Float       @default(0)
+  noticePeriod    String      @default("")
+  skills          Json        @default("[]")
+  subjectExpertise String     @default("")
+  languages       Json        @default("[]")
+  certifications  Json        @default("[]")
+  documents       Json        @default("[]")
+  source          String      @default("Career Portal")
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  applications HrCandidateApplication[]
+
+  @@unique([institutionId, candidateCode])
+  @@index([institutionId, email])
+}
+
+model HrCandidateApplication {
+  id                String           @id @default(cuid())
+  institutionId     String
+  institution       Institution      @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  candidateId       String
+  candidate         HrCandidate      @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  postingId         String
+  posting           HrJobPosting     @relation(fields: [postingId], references: [id], onDelete: Cascade)
+  requisitionId     String
+  requisition       HrJobRequisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  applicationNumber String
+  pipelineStage     String           @default("APPLICATION_RECEIVED")
+  status            String           @default("ACTIVE")
+  resumeMatchPct    Float            @default(0)
+  skillMatchPct     Float            @default(0)
+  experienceMatchPct Float           @default(0)
+  screeningNotes    String           @default("")
+  shortlistStatus   String           @default("")
+  employeeId        String           @default("")
+  appliedAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  interviews            HrInterviewFeedback[]
+  offers                HrRecruitmentOffer[]
+  backgroundVerifications HrBackgroundVerification[]
+  referenceChecks       HrReferenceCheck[]
+  onboarding            HrRecruitmentOnboarding?
+
+  @@unique([institutionId, applicationNumber])
+  @@index([institutionId, pipelineStage])
+  @@index([candidateId])
+}
+
+model HrInterviewFeedback {
+  id              String                 @id @default(cuid())
+  institutionId   String
+  institution     Institution            @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  applicationId   String
+  application     HrCandidateApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  interviewType   String
+  interviewerName String                 @default("")
+  scheduledAt     DateTime?
+  rating          Float                  @default(0)
+  comments        String                 @default("")
+  strengths       String                 @default("")
+  weaknesses      String                 @default("")
+  recommendation  String                 @default("HOLD")
+  scorecard       Json                   @default("{}")
+  status          String                 @default("SCHEDULED")
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@index([applicationId])
+}
+
+model HrRecruitmentOffer {
+  id              String                 @id @default(cuid())
+  institutionId   String
+  institution     Institution            @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  applicationId   String
+  application     HrCandidateApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  proposedCtc     Float                  @default(0)
+  grade           String                 @default("")
+  payBand         String                 @default("")
+  joiningBonus    Float                  @default(0)
+  variablePay     Float                  @default(0)
+  probationSalary Float                  @default(0)
+  workflowStage   String                 @default("HR")
+  status          String                 @default("DRAFT")
+  offerLetterSentAt DateTime?
+  acceptedAt      DateTime?
+  documents       Json                   @default("[]")
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@index([applicationId])
+}
+
+model HrBackgroundVerification {
+  id            String                 @id @default(cuid())
+  institutionId String
+  institution   Institution            @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  applicationId String
+  application   HrCandidateApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  checkType     String
+  status        String                 @default("PENDING")
+  remarks       String                 @default("")
+  completedAt   DateTime?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@index([applicationId])
+}
+
+model HrReferenceCheck {
+  id            String                 @id @default(cuid())
+  institutionId String
+  institution   Institution            @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  applicationId String
+  application   HrCandidateApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  refereeName   String
+  organization  String                 @default("")
+  designation   String                 @default("")
+  contactNumber String                 @default("")
+  relationship  String                 @default("")
+  feedback      String                 @default("")
+  recommendation String                @default("")
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@index([applicationId])
+}
+
+model HrRecruitmentOnboarding {
+  id                 String                 @id @default(cuid())
+  institutionId      String
+  institution        Institution            @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  applicationId      String                 @unique
+  application        HrCandidateApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  employeeCode       String                 @default("")
+  joiningDate        DateTime?              @db.Date
+  checklist          Json                   @default("[]")
+  probationStart     DateTime?              @db.Date
+  probationEnd       DateTime?              @db.Date
+  probationStatus    String                 @default("IN_PROGRESS")
+  confirmationStatus String                 @default("PENDING")
+  mentorName         String                 @default("")
+  monthlyReviews     Json                   @default("[]")
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+}
+
+model HrRecruitmentSettings {
+  id                String      @id @default(cuid())
+  institutionId     String      @unique
+  institution       Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  approvalMatrix    Json        @default("[{\"stage\":\"Department Head\",\"action\":\"Approve Requisition\"},{\"stage\":\"HR Manager\",\"action\":\"HR Review\"},{\"stage\":\"Finance\",\"action\":\"Budget Verification\"},{\"stage\":\"Principal\",\"action\":\"Academic Approval\"},{\"stage\":\"Management\",\"action\":\"Final Approval\"}]")
+  publishChannels   Json        @default("[\"Internal Portal\",\"Career Website\",\"Employee Referral\"]")
+  screeningFilters  Json        @default("{\"minQualification\":\"\",\"minExperience\":0,\"maxSalary\":0}")
+  automationRules   Json        @default("{\"autoAckEmail\":true,\"autoInterviewReminder\":true,\"autoOfferGeneration\":true}")
+  workflowStages    Json        @default("[]")
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+}
+
+// ─── Training & Development (L&D / LMS) ─────────────────────────────────────
+
+model HrTrainingCategory {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  code          String
+  name          String
+  parentGroup   String      @default("Academic")
+  description   String      @default("")
+  status        String      @default("ACTIVE")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  courses HrTrainingCourse[]
+
+  @@unique([institutionId, code])
+}
+
+model HrTrainingCourse {
+  id            String             @id @default(cuid())
+  institutionId String
+  institution   Institution        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  categoryId    String?
+  category      HrTrainingCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  code          String
+  name          String
+  description   String             @default("")
+  level         String             @default("BEGINNER")
+  durationHours Float              @default(2)
+  credits       Float              @default(1)
+  mode          String             @default("CLASSROOM")
+  language      String             @default("English")
+  validityMonths Int               @default(12)
+  passingMarks  Float              @default(70)
+  certificationRequired Boolean    @default(true)
+  isMandatory   Boolean            @default(false)
+  targetAudience String            @default("ALL")
+  deliveryModes Json               @default("[\"Classroom\"]")
+  modules       Json               @default("[]")
+  status        String             @default("ACTIVE")
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  batches HrTrainingBatch[]
+
+  @@unique([institutionId, code])
+}
+
+model HrTrainingTrainer {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  trainerType   String      @default("INTERNAL")
+  employeeId    String      @default("")
+  fullName      String
+  department    String      @default("")
+  organization  String      @default("")
+  expertise     String      @default("")
+  experienceYears Float     @default(0)
+  certification String      @default("")
+  contactEmail  String      @default("")
+  contactPhone  String      @default("")
+  feesPerSession Float      @default(0)
+  rating        Float       @default(0)
+  status        String      @default("ACTIVE")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  batches HrTrainingBatch[]
+
+  @@index([institutionId, trainerType])
+}
+
+model HrTrainingVenue {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  code          String
+  name          String
+  venueType     String      @default("CLASSROOM")
+  branch        String      @default("Main Campus")
+  capacity      Int         @default(30)
+  virtualLink   String      @default("")
+  platform      String      @default("")
+  status        String      @default("ACTIVE")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  batches HrTrainingBatch[]
+
+  @@unique([institutionId, code])
+}
+
+model HrTrainingNeed {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear  String
+  source        String      @default("ANNUAL_APPRAISAL")
+  department    String
+  designation   String      @default("")
+  subject       String      @default("")
+  employeeId    String      @default("")
+  employeeName  String      @default("")
+  skillGap      String
+  priority      String      @default("MEDIUM")
+  trainingType  String      @default("CLASSROOM")
+  expectedOutcome String    @default("")
+  budget        Float       @default(0)
+  targetDate    DateTime?   @db.Date
+  status        String      @default("IDENTIFIED")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([institutionId, academicYear])
+}
+
+model HrTrainingAnnualPlan {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear  String
+  title         String
+  description   String      @default("")
+  totalBudget   Float       @default(0)
+  workflowStage String      @default("DRAFT")
+  status        String      @default("DRAFT")
+  calendarPublished Boolean @default(false)
+  publishedAt   DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, academicYear])
+}
+
+model HrTrainingBatch {
+  id            String           @id @default(cuid())
+  institutionId String
+  institution   Institution      @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  batchCode     String
+  courseId      String
+  course        HrTrainingCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  trainerId     String?
+  trainer       HrTrainingTrainer? @relation(fields: [trainerId], references: [id], onDelete: SetNull)
+  venueId       String?
+  venue         HrTrainingVenue? @relation(fields: [venueId], references: [id], onDelete: SetNull)
+  capacity      Int              @default(30)
+  branch        String           @default("Main Campus")
+  sessionDate   DateTime         @db.Date
+  startTime     String           @default("10:00")
+  endTime       String           @default("13:00")
+  sessionType   String           @default("CLASSROOM")
+  status        String           @default("SCHEDULED")
+  virtualLink   String           @default("")
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  nominations HrTrainingNomination[]
+
+  @@unique([institutionId, batchCode])
+  @@index([institutionId, sessionDate])
+}
+
+model HrTrainingNomination {
+  id            String          @id @default(cuid())
+  institutionId String
+  institution   Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  batchId       String
+  batch         HrTrainingBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  employeeId    String
+  employee      PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  nominationMethod String       @default("HR_ASSIGNED")
+  workflowStage String          @default("EMPLOYEE")
+  status        String          @default("PENDING")
+  confirmedAt   DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  attendances  HrTrainingAttendance[]
+  assessments  HrTrainingAssessment[]
+  assignments  HrTrainingAssignment[]
+  feedbacks    HrTrainingFeedback[]
+  certificates HrTrainingCertificate[]
+
+  @@unique([batchId, employeeId])
+  @@index([institutionId, status])
+}
+
+model HrTrainingAttendance {
+  id            String             @id @default(cuid())
+  institutionId String
+  institution   Institution        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  nominationId  String
+  nomination    HrTrainingNomination @relation(fields: [nominationId], references: [id], onDelete: Cascade)
+  employeeId    String
+  employee      PayrollEmployee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  method        String             @default("QR")
+  status        String             @default("PRESENT")
+  markedAt      DateTime           @default(now())
+  syncedToHrms  Boolean            @default(false)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@index([nominationId])
+}
+
+model HrTrainingAssessment {
+  id            String             @id @default(cuid())
+  institutionId String
+  institution   Institution        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  nominationId  String
+  nomination    HrTrainingNomination @relation(fields: [nominationId], references: [id], onDelete: Cascade)
+  title         String
+  questionBank  Json               @default("[]")
+  score         Float              @default(0)
+  maxScore      Float              @default(100)
+  passed        Boolean            @default(false)
+  status        String             @default("PENDING")
+  completedAt   DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@index([nominationId])
+}
+
+model HrTrainingAssignment {
+  id            String             @id @default(cuid())
+  institutionId String
+  institution   Institution        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  nominationId  String
+  nomination    HrTrainingNomination @relation(fields: [nominationId], references: [id], onDelete: Cascade)
+  title         String
+  assignmentType String            @default("LESSON_PLAN")
+  fileName      String             @default("")
+  status        String             @default("SUBMITTED")
+  submittedAt   DateTime           @default(now())
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@index([nominationId])
+}
+
+model HrTrainingFeedback {
+  id            String             @id @default(cuid())
+  institutionId String
+  institution   Institution        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  nominationId  String
+  nomination    HrTrainingNomination @relation(fields: [nominationId], references: [id], onDelete: Cascade)
+  feedbackBy    String             @default("EMPLOYEE")
+  rating        Float              @default(0)
+  comments      String             @default("")
+  effectivenessScore Float         @default(0)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@index([nominationId])
+}
+
+model HrTrainingCompetency {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  code          String
+  name          String
+  category      String      @default("Teaching Skills")
+  description   String      @default("")
+  maxScore      Float       @default(100)
+  status        String      @default("ACTIVE")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, code])
+}
+
+model HrTrainingCertificate {
+  id            String             @id @default(cuid())
+  institutionId String
+  institution   Institution        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  nominationId  String
+  nomination    HrTrainingNomination @relation(fields: [nominationId], references: [id], onDelete: Cascade)
+  employeeId    String
+  employee      PayrollEmployee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  certificateType String           @default("COMPLETION")
+  certificateNumber String
+  issuedAt      DateTime           @default(now())
+  validUntil    DateTime?          @db.Date
+  qrVerified    Boolean            @default(true)
+  badgeName     String             @default("")
+  status        String             @default("ISSUED")
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@unique([institutionId, certificateNumber])
+  @@index([employeeId])
+}
+
+model HrTrainingBudget {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear  String
+  category      String      @default("Trainer Cost")
+  allocated     Float       @default(0)
+  utilized      Float       @default(0)
+  approvalStatus String     @default("PENDING")
+  remarks       String      @default("")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([institutionId, academicYear])
+}
+
+model HrTrainingExternal {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  vendorName    String
+  programType   String      @default("WORKSHOP")
+  employeeName  String
+  employeeId    String      @default("")
+  startDate     DateTime?   @db.Date
+  endDate       DateTime?   @db.Date
+  expenseAmount Float       @default(0)
+  approvalStatus String     @default("PENDING")
+  certificateUploaded Boolean @default(false)
+  status        String      @default("PLANNED")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([institutionId])
+}
+
+model HrTrainingIdp {
+  id            String          @id @default(cuid())
+  institutionId String
+  institution   Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  employeeId    String
+  employee      PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  academicYear  String
+  skillGaps     Json            @default("[]")
+  recommendedTraining Json      @default("[]")
+  mentorName    String          @default("")
+  timeline      String          @default("")
+  targetScore   Float           @default(80)
+  completionPct Float           @default(0)
+  nextReview    DateTime?       @db.Date
+  status        String          @default("ACTIVE")
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([institutionId, employeeId, academicYear])
+}
+
+model HrTrainingSettings {
+  id                String      @id @default(cuid())
+  institutionId     String      @unique
+  institution       Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  workflowStages    Json        @default("[]")
+  automationRules   Json        @default("{\"nominationNotify\":true,\"calendarInvite\":true,\"reminders\":[7,3,1,0.04],\"qrAttendance\":true,\"unlockAfterAttendance\":true,\"autoQuiz\":true,\"autoCertificate\":true,\"competencyUpdate\":true,\"appraisalLink\":true,\"overdueNotify\":true,\"refresherRecommend\":true}")
+  nominationWorkflow Json       @default("[\"Employee\",\"Reporting Manager\",\"HR\",\"Confirmed\"]")
+  feedbackWorkflow  Json        @default("[\"Employee Feedback\",\"Trainer Feedback\",\"Manager Feedback\",\"HR Evaluation\"]")
+  roleMatrix        Json        @default("[]")
+  mobileSyncEnabled Boolean     @default(true)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+}
+
+// ─── Employee Documents & Onboarding (EDOMS) ────────────────────────────────
+
+model HrEdomsOnboarding {
+  id                String          @id @default(cuid())
+  institutionId     String
+  institution       Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  caseNumber        String
+  candidateName     String
+  candidateEmail    String          @default("")
+  candidateMobile   String          @default("")
+  employeeId        String?
+  employee          PayrollEmployee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  recruitmentApplicationId String    @default("")
+  department        String          @default("")
+  designation       String          @default("")
+  joiningDate       DateTime?       @db.Date
+  workflowStage     String          @default("CANDIDATE_SELECTED")
+  verificationStage String          @default("CANDIDATE_UPLOAD")
+  status            String          @default("IN_PROGRESS")
+  personalInfo      Json            @default("{}")
+  reportingManager  String          @default("")
+  employeeCode      String          @default("")
+  preOnboardingActive Boolean       @default(false)
+  portalActivatedAt DateTime?
+  approvedAt        DateTime?
+  confirmedAt       DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  documents         HrEdomsDocument[]
+  qualifications    HrEdomsQualification[]
+  employmentHistory HrEdomsEmploymentHistory[]
+  verifications     HrEdomsVerification[]
+  checklists        HrEdomsChecklist[]
+  assets            HrEdomsAsset[]
+  systemAccesses    HrEdomsSystemAccess[]
+  inductions        HrEdomsInduction[]
+  probation         HrEdomsProbation?
+  employmentLetters HrEdomsEmploymentLetter[]
+  auditLogs         HrEdomsAuditLog[]
+
+  @@unique([institutionId, caseNumber])
+  @@index([institutionId, status])
+  @@index([employeeId])
+}
+
+model HrEdomsDocument {
+  id              String            @id @default(cuid())
+  institutionId   String
+  institution     Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  onboardingId    String
+  onboarding      HrEdomsOnboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  category        String            @default("Personal")
+  documentType    String
+  documentNumber  String            @default("")
+  fileName        String            @default("")
+  issueDate       DateTime?         @db.Date
+  expiryDate      DateTime?         @db.Date
+  status          String            @default("PENDING")
+  verifiedBy      String            @default("")
+  verifiedAt      DateTime?
+  version         Int               @default(1)
+  previousVersionId String          @default("")
+  remarks         String            @default("")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([onboardingId, category])
+  @@index([institutionId, status])
+  @@index([expiryDate])
+}
+
+model HrEdomsQualification {
+  id            String            @id @default(cuid())
+  institutionId String
+  institution   Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  onboardingId  String
+  onboarding    HrEdomsOnboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  qualification String
+  boardUniversity String          @default("")
+  institutionName String          @default("")
+  yearOfPassing Int               @default(0)
+  percentage    String            @default("")
+  majorSubject  String            @default("")
+  certificateFile String          @default("")
+  marksheetFile String            @default("")
+  verificationStatus String       @default("PENDING")
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([onboardingId])
+}
+
+model HrEdomsEmploymentHistory {
+  id            String            @id @default(cuid())
+  institutionId String
+  institution   Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  onboardingId  String
+  onboarding    HrEdomsOnboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  organization  String
+  designation   String            @default("")
+  department    String            @default("")
+  periodFrom    String            @default("")
+  periodTo      String            @default("")
+  lastSalary    Float             @default(0)
+  reportingManager String         @default("")
+  experienceCertificate String    @default("")
+  referenceContact String          @default("")
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([onboardingId])
+}
+
+model HrEdomsVerification {
+  id            String            @id @default(cuid())
+  institutionId String
+  institution   Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  onboardingId  String
+  onboarding    HrEdomsOnboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  checkType     String
+  status        String            @default("PENDING")
+  remarks       String            @default("")
+  completedAt   DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([onboardingId])
+}
+
+model HrEdomsChecklist {
+  id            String            @id @default(cuid())
+  institutionId String
+  institution   Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  onboardingId  String
+  onboarding    HrEdomsOnboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  department    String            @default("HR")
+  item          String
+  completed     Boolean           @default(false)
+  completedBy   String            @default("")
+  completedAt   DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([onboardingId, department])
+}
+
+model HrEdomsAsset {
+  id            String            @id @default(cuid())
+  institutionId String
+  institution   Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  onboardingId  String
+  onboarding    HrEdomsOnboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  assetType     String
+  assetId       String            @default("")
+  serialNumber  String            @default("")
+  issueDate     DateTime?         @db.Date
+  returnDate    DateTime?         @db.Date
+  condition     String            @default("GOOD")
+  agreementSigned Boolean         @default(false)
+  status        String            @default("ISSUED")
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([onboardingId])
+}
+
+model HrEdomsSystemAccess {
+  id            String            @id @default(cuid())
+  institutionId String
+  institution   Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  onboardingId  String
+  onboarding    HrEdomsOnboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  systemName    String
+  role          String            @default("")
+  permissions   Json              @default("[]")
+  emailAddress  String            @default("")
+  erpLogin      String            @default("")
+  mobileAppAccess Boolean         @default(false)
+  status        String            @default("PENDING")
+  provisionedAt DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([onboardingId])
+}
+
+model HrEdomsInduction {
+  id            String            @id @default(cuid())
+  institutionId String
+  institution   Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  onboardingId  String
+  onboarding    HrEdomsOnboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  sessionName   String
+  sessionDate   DateTime?         @db.Date
+  attended      Boolean           @default(false)
+  completedAt   DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([onboardingId])
+}
+
+model HrEdomsProbation {
+  id            String            @id @default(cuid())
+  institutionId String
+  institution   Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  onboardingId  String            @unique
+  onboarding    HrEdomsOnboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  startDate     DateTime          @db.Date
+  endDate       DateTime          @db.Date
+  mentorName    String            @default("")
+  goals         Json              @default("[]")
+  monthlyReviews Json             @default("[]")
+  status        String            @default("IN_PROGRESS")
+  action        String            @default("")
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+}
+
+model HrEdomsEmploymentLetter {
+  id            String            @id @default(cuid())
+  institutionId String
+  institution   Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  onboardingId  String
+  onboarding    HrEdomsOnboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  letterType    String
+  fileName      String            @default("")
+  qrVerified    Boolean           @default(true)
+  acknowledged  Boolean           @default(false)
+  acknowledgedAt DateTime?
+  sentAt        DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([onboardingId])
+}
+
+model HrEdomsAuditLog {
+  id            String            @id @default(cuid())
+  institutionId String
+  institution   Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  onboardingId  String
+  onboarding    HrEdomsOnboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+  action        String
+  performedBy   String            @default("System")
+  ipAddress     String            @default("")
+  device        String            @default("")
+  previousValue String            @default("")
+  currentValue  String            @default("")
+  createdAt     DateTime          @default(now())
+
+  @@index([onboardingId])
+  @@index([institutionId, createdAt])
+}
+
+model HrEdomsSettings {
+  id                String      @id @default(cuid())
+  institutionId     String      @unique
+  institution       Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  documentTypes     Json        @default("[]")
+  onboardingWorkflow Json       @default("[]")
+  verificationWorkflow Json     @default("[]")
+  moduleStructure   Json        @default("[]")
+  roleMatrix        Json        @default("[]")
+  automationRules   Json        @default("{}")
+  expiryAlertDays   Json        @default("[90,60,30,7,0]")
+  retentionPolicy   String      @default("7 years")
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+}
+
+/// Staff resignation & exit management (SEMS)
+model HrExitResignation {
+  id                       String      @id @default(cuid())
+  institutionId            String
+  institution              Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  caseNumber               String
+  employeeId               String?
+  employee                 PayrollEmployee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  employeeCode             String      @default("")
+  employeeName             String
+  department               String      @default("")
+  designation              String      @default("")
+  branch                   String      @default("Main Campus")
+  reportingManager         String      @default("")
+  dateOfResignation        DateTime?
+  requestedLastWorkingDay  DateTime?
+  noticePeriodDays         Int         @default(30)
+  noticeStartDate          DateTime?
+  noticeEndDate            DateTime?
+  resignationType          String      @default("Voluntary")
+  detailedReason           String      @default("")
+  supportingDocuments      Json        @default("[]")
+  preferredContactAfterExit String     @default("")
+  status                   String      @default("DRAFT")
+  workflowStage            String      @default("RESIGNATION_SUBMITTED")
+  approvalStage            String      @default("REPORTING_MANAGER")
+  retentionStatus          String      @default("")
+  erpDeactivated           Boolean     @default(false)
+  archivedAt               DateTime?
+  createdAt                DateTime    @default(now())
+  updatedAt                DateTime    @updatedAt
+  approvals                HrExitApproval[]
+  retentions               HrExitRetention[]
+  handovers                HrExitHandover[]
+  knowledgeTransfers       HrExitKnowledgeTransfer[]
+  clearances               HrExitClearance[]
+  assetRecoveries          HrExitAssetRecovery[]
+  fnfSettlement            HrExitFnfSettlement?
+  leaveSettlement          HrExitLeaveSettlement?
+  exitInterview            HrExitInterview?
+  documents                HrExitDocument[]
+  alumniRecord             HrExitAlumniRecord?
+  auditLogs                HrExitAuditLog[]
+
+  @@unique([institutionId, caseNumber])
+  @@index([institutionId, status])
+  @@index([institutionId, workflowStage])
+  @@index([employeeId])
+}
+
+model HrExitApproval {
+  id             String          @id @default(cuid())
+  institutionId  String
+  institution    Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  resignationId  String
+  resignation    HrExitResignation @relation(fields: [resignationId], references: [id], onDelete: Cascade)
+  approverRole   String
+  approverName   String          @default("")
+  action         String          @default("PENDING")
+  remarks        String          @default("")
+  actionDate     DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([resignationId])
+  @@index([institutionId, action])
+}
+
+model HrExitRetention {
+  id             String          @id @default(cuid())
+  institutionId  String
+  institution    Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  resignationId  String
+  resignation    HrExitResignation @relation(fields: [resignationId], references: [id], onDelete: Cascade)
+  retentionType  String
+  status         String          @default("OPEN")
+  notes          String          @default("")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([resignationId])
+}
+
+model HrExitHandover {
+  id                  String          @id @default(cuid())
+  institutionId       String
+  institution         Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  resignationId       String
+  resignation         HrExitResignation @relation(fields: [resignationId], references: [id], onDelete: Cascade)
+  category            String          @default("Administrative Staff")
+  taskType            String
+  description         String          @default("")
+  successor           String          @default("")
+  dueDate             DateTime?
+  status              String          @default("PENDING")
+  supportingDocuments Json            @default("[]")
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  @@index([resignationId])
+}
+
+model HrExitKnowledgeTransfer {
+  id             String          @id @default(cuid())
+  institutionId  String
+  institution    Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  resignationId  String
+  resignation    HrExitResignation @relation(fields: [resignationId], references: [id], onDelete: Cascade)
+  transferType   String
+  description    String          @default("")
+  status         String          @default("PENDING")
+  dueDate        DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([resignationId])
+}
+
+model HrExitClearance {
+  id             String          @id @default(cuid())
+  institutionId  String
+  institution    Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  resignationId  String
+  resignation    HrExitResignation @relation(fields: [resignationId], references: [id], onDelete: Cascade)
+  department     String
+  status         String          @default("PENDING")
+  recoveryAmount Float           @default(0)
+  pendingItems   String          @default("")
+  remarks        String          @default("")
+  clearedBy      String          @default("")
+  clearedAt      DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([resignationId])
+  @@index([institutionId, department])
+}
+
+model HrExitAssetRecovery {
+  id             String          @id @default(cuid())
+  institutionId  String
+  institution    Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  resignationId  String
+  resignation    HrExitResignation @relation(fields: [resignationId], references: [id], onDelete: Cascade)
+  assetType      String
+  assetId        String          @default("")
+  condition      String          @default("Good")
+  returnDate     DateTime?
+  damageCost     Float           @default(0)
+  recoveryAmount Float           @default(0)
+  status         String          @default("PENDING")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([resignationId])
+}
+
+model HrExitFnfSettlement {
+  id               String          @id @default(cuid())
+  institutionId    String
+  institution      Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  resignationId    String          @unique
+  resignation      HrExitResignation @relation(fields: [resignationId], references: [id], onDelete: Cascade)
+  earnings         Json            @default("[]")
+  deductions       Json            @default("[]")
+  leaveEncashment  Float           @default(0)
+  netAmount        Float           @default(0)
+  paymentDate      DateTime?
+  paymentMode      String          @default("")
+  settlementStatus String          @default("PENDING")
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+}
+
+model HrExitLeaveSettlement {
+  id                    String          @id @default(cuid())
+  institutionId         String
+  institution           Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  resignationId         String          @unique
+  resignation           HrExitResignation @relation(fields: [resignationId], references: [id], onDelete: Cascade)
+  earnedLeave           Float           @default(0)
+  casualLeave           Float           @default(0)
+  sickLeave             Float           @default(0)
+  compOff               Float           @default(0)
+  encashmentAmount      Float           @default(0)
+  negativeLeaveRecovery Float           @default(0)
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+}
+
+model HrExitInterview {
+  id             String          @id @default(cuid())
+  institutionId  String
+  institution    Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  resignationId  String          @unique
+  resignation    HrExitResignation @relation(fields: [resignationId], references: [id], onDelete: Cascade)
+  scheduledDate  DateTime?
+  responses      Json            @default("[]")
+  hrNotes        String          @default("")
+  rehireInterest String          @default("")
+  status         String          @default("SCHEDULED")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model HrExitDocument {
+  id             String          @id @default(cuid())
+  institutionId  String
+  institution    Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  resignationId  String
+  resignation    HrExitResignation @relation(fields: [resignationId], references: [id], onDelete: Cascade)
+  documentType   String
+  fileName       String          @default("")
+  qrVerified     Boolean         @default(false)
+  digitalSigned  Boolean         @default(false)
+  sentAt         DateTime?
+  status         String          @default("DRAFT")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([resignationId])
+}
+
+model HrExitAlumniRecord {
+  id                String          @id @default(cuid())
+  institutionId     String
+  institution       Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  resignationId     String          @unique
+  resignation       HrExitResignation @relation(fields: [resignationId], references: [id], onDelete: Cascade)
+  employeeId        String?
+  rehireEligibility String          @default("Eligible for Rehire")
+  employmentHistory Json            @default("[]")
+  exitDocuments     Json            @default("[]")
+  notes             String          @default("")
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+}
+
+model HrExitAuditLog {
+  id             String          @id @default(cuid())
+  institutionId  String
+  institution    Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  resignationId  String
+  resignation    HrExitResignation @relation(fields: [resignationId], references: [id], onDelete: Cascade)
+  action         String
+  performedBy    String          @default("HR Executive")
+  previousValue  String          @default("")
+  currentValue   String          @default("")
+  ipAddress      String          @default("")
+  device         String          @default("Web")
+  createdAt      DateTime        @default(now())
+
+  @@index([resignationId])
+  @@index([institutionId, createdAt])
+}
+
+model HrExitSettings {
+  id                  String      @id @default(cuid())
+  institutionId       String      @unique
+  institution         Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  exitWorkflow        Json        @default("[]")
+  moduleStructure     Json        @default("[]")
+  approvalWorkflow    Json        @default("[]")
+  clearanceWorkflow   Json        @default("[]")
+  roleMatrix          Json        @default("[]")
+  resignationReasons  Json        @default("[]")
+  noticePeriodPolicies Json       @default("[]")
+  handoverTemplates   Json        @default("[]")
+  assetCategories     Json        @default("[]")
+  interviewTemplate   Json        @default("[]")
+  documentTemplates   Json        @default("[]")
+  fnfRules            Json        @default("{}")
+  notificationRules   Json        @default("{}")
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+}
+
+/// Institution-wide attendance & payroll rules
+model HrAttendanceSettings {
+  id                   String      @id @default(cuid())
+  institutionId        String      @unique
+  institution          Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  officeStartTime      String      @default("09:00 AM")
+  officeEndTime        String      @default("05:00 PM")
+  graceMinutes         Int         @default(15)
+  monthlyAllowedLate   Int         @default(3)
+  halfDayRule          String      @default("Less than 4 hours worked = Half Day")
+  lateRule             String      @default("Deduction after grace period exceeded")
+  earlyExitRule        String      @default("Deduction if exit before 30 mins of shift end")
+  missingPunchRule     String      @default("Alert if no punch within 2 hours of shift end")
+  nightShiftRule       String      @default("10% allowance on basic for night shifts")
+  overtimeRule         String      @default("1.5x hourly rate for approved OT")
+  holidayRule          String      @default("Auto-mark from institution holiday master")
+  weeklyOffRule        String      @default("Saturday & Sunday")
+  payrollCutoffDate    Int         @default(25)
+  attendanceLockDate   Int         @default(28)
+  biometricSyncMinutes Int         @default(15)
+  mapApprovedLeave     Boolean     @default(true)
+  mapPublicHoliday     Boolean     @default(true)
+  mapRestrictedHoliday Boolean     @default(true)
+  mapWeeklyOff         Boolean     @default(true)
+  mapSchoolHoliday     Boolean     @default(true)
+  mapVacation          Boolean     @default(true)
+  autoLwpRules         Json        @default("{}")
+  deductionRules       Json        @default("{}")
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+}
+
+/// Daily HR attendance record per payroll employee
+model HrAttendanceDailyRecord {
+  id               String          @id @default(cuid())
+  institutionId    String
+  institution      Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  employeeId       String
+  employee         PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  recordDate       DateTime        @db.Date
+  shiftCode        String          @default("GEN")
+  inTime           String          @default("")
+  outTime          String          @default("")
+  workingHours     Float           @default(0)
+  status           String          @default("PRESENT")
+  overtimeHours    Float           @default(0)
+  lateMinutes      Int             @default(0)
+  earlyExitMinutes Int             @default(0)
+  isMissingPunch   Boolean         @default(false)
+  remarks          String          @default("")
+  approvalStatus   String          @default("DRAFT")
+  source           String          @default("MANUAL")
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@unique([employeeId, recordDate])
+  @@index([institutionId, recordDate])
+  @@index([institutionId, recordDate, status])
+  @@index([institutionId, approvalStatus])
+}
+
+/// Employee attendance correction request
+model HrAttendanceCorrection {
+  id               String          @id @default(cuid())
+  institutionId    String
+  institution      Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  employeeId       String
+  employee         PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  attendanceDate   DateTime        @db.Date
+  originalInTime   String          @default("")
+  originalOutTime  String          @default("")
+  correctedInTime  String          @default("")
+  correctedOutTime String          @default("")
+  reason           String
+  attachmentUrl    String          @default("")
+  workflowStatus   String          @default("PENDING_MANAGER")
+  managerRemarks   String          @default("")
+  hrRemarks        String          @default("")
+  approvedAt       DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([institutionId, workflowStatus])
+  @@index([employeeId, attendanceDate])
+}
+
+/// Monthly attendance period lock & approval workflow
+model HrAttendancePeriodLock {
+  id             String      @id @default(cuid())
+  institutionId  String
+  institution    Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  year           Int
+  month          Int
+  workflowStatus String      @default("OPEN")
+  workingDays    Float       @default(0)
+  lockedAt       DateTime?
+  lockedBy       String      @default("")
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@unique([institutionId, year, month])
+}
+
+/// HR leave policy master
+model HrLeavePolicy {
+  id              String      @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  policyCode      String
+  name            String
+  leaveCategory   String      @default("General")
+  description     String      @default("")
+  academicSession String      @default("2025-26")
+  campus          String      @default("Main Campus")
+  branch          String      @default("Main Branch")
+  employeeTypes   Json        @default("[]")
+  departments     Json        @default("[]")
+  designations    Json        @default("[]")
+  status          String      @default("ACTIVE")
+  effectiveFrom   DateTime?   @db.Date
+  applicableTo    Json        @default("{}")
+  leaveTypes      Json        @default("[]")
+  generalRules    Json        @default("{}")
+  approvalWorkflow Json       @default("[]")
+  documents       Json        @default("[]")
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  assignments HrLeavePolicyAssignment[]
+
+  @@unique([institutionId, policyCode])
+  @@index([institutionId, status])
+}
+
+/// Assign leave policy to employee for payroll leave calculations
+model HrLeavePolicyAssignment {
+  id            String          @id @default(cuid())
+  institutionId String
+  institution   Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  policyId      String
+  policy        HrLeavePolicy   @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  employeeId    String
+  employee      PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  effectiveDate DateTime        @db.Date
+  status        String          @default("ACTIVE")
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([institutionId, policyId])
+  @@index([employeeId, effectiveDate])
+}
+
+/// HR leave application (payroll employees)
+model HrLeaveApplication {
+  id                 String          @id @default(cuid())
+  institutionId      String
+  institution          Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  recordId             String
+  employeeId           String
+  employee             PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  academicYear         String          @default("2025-26")
+  leaveType            String
+  fromDate             DateTime        @db.Date
+  toDate               DateTime        @db.Date
+  totalDays            Float           @default(1)
+  session              String          @default("FULL")
+  reason               String          @default("")
+  addressDuringLeave   String          @default("")
+  emergencyContact     String          @default("")
+  attachmentUrl        String          @default("")
+  remarks              String          @default("")
+  status               String          @default("PENDING")
+  workflowLevel        String          @default("MANAGER")
+  approvedBy           String          @default("")
+  reviewerRemarks      String          @default("")
+  approvedAt           DateTime?
+  appliedDate          DateTime        @default(now())
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  @@unique([institutionId, recordId])
+  @@index([institutionId, academicYear, status])
+  @@index([employeeId, fromDate, toDate])
+}
+
+/// HR leave balance per employee
+model HrLeaveBalance {
+  id               String          @id @default(cuid())
+  institutionId    String
+  institution      Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  employeeId       String
+  employee         PayrollEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  academicYear     String          @default("2025-26")
+  leaveType        String
+  openingBalance   Float           @default(0)
+  annualAllocation Float           @default(0)
+  availed          Float           @default(0)
+  pending          Float           @default(0)
+  available        Float           @default(0)
+  carryForward     Float           @default(0)
+  encashable       Float           @default(0)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@unique([employeeId, academicYear, leaveType])
+  @@index([institutionId, academicYear])
+}
+
+/// HR leave module settings
+model HrLeaveSettings {
+  id                    String      @id @default(cuid())
+  institutionId         String      @unique
+  institution           Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  sandwichRule          Boolean     @default(true)
+  includeHolidays       Boolean     @default(false)
+  halfDayCalculation    String      @default("0.5 day per half")
+  minimumNoticeDays     Int         @default(1)
+  maxConsecutiveLeave   Int         @default(30)
+  autoApprovals         Boolean     @default(false)
+  leaveFreezePeriod     String      @default("")
+  leaveYearStart        String      @default("April")
+  carryForwardEnabled   Boolean     @default(true)
+  leaveExpiryMonths     Int         @default(12)
+  documentMandatory     Boolean     @default(false)
+  encashmentEnabled     Boolean     @default(true)
+  negativeBalanceAllowed Boolean    @default(false)
+  managerApprovalRequired Boolean   @default(true)
+  lopCalculation        String      @default("Per day salary ÷ working days × LOP days")
+  workingDays           Json        @default("[\"Monday\",\"Tuesday\",\"Wednesday\",\"Thursday\",\"Friday\"]")
+  weekendDays           Json        @default("[\"Saturday\",\"Sunday\"]")
+  calendarName          String      @default("Academic Calendar 2025-26")
+  approvalLevels        Json        @default("[\"Reporting Manager\",\"Department Head\",\"HR Manager\",\"Principal\"]")
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+}
+
+/// Reusable HR salary structure template
+model HrSalaryStructureTemplate {
+  id                    String      @id @default(cuid())
+  institutionId         String
+  institution           Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  structureCode         String
+  name                  String
+  description           String      @default("")
+  payGrade              String      @default("")
+  payFrequency          String      @default("MONTHLY")
+  effectiveFrom         DateTime    @db.Date
+  effectiveTo           DateTime?   @db.Date
+  currency              String      @default("INR")
+  status                String      @default("ACTIVE")
+  earnings              Json        @default("[]")
+  deductions            Json        @default("[]")
+  employerContributions Json        @default("[]")
+  totalEarnings         Float       @default(0)
+  totalDeductions       Float       @default(0)
+  employerContribution  Float       @default(0)
+  ctc                   Float       @default(0)
+  netSalary             Float       @default(0)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  assignments HrSalaryStructureAssignment[]
+  componentMappings HrSalaryComponentMapping[]
+
+  @@unique([institutionId, structureCode])
+  @@index([institutionId, status])
+}
+
+/// Assign salary structure template to employee
+model HrSalaryStructureAssignment {
+  id             String                  @id @default(cuid())
+  institutionId  String
+  institution    Institution             @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  templateId     String
+  template       HrSalaryStructureTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  employeeId     String
+  employee       PayrollEmployee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  effectiveDate  DateTime                @db.Date
+  annualCtc      Float                   @default(0)
+  monthlySalary  Float                   @default(0)
+  payFrequency   String                  @default("MONTHLY")
+  status         String                  @default("ACTIVE")
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  @@index([institutionId, templateId])
+  @@index([employeeId, effectiveDate])
+}
+
+/// Salary component group (Basic Pay, Allowances, Statutory, etc.)
+model HrSalaryComponentGroup {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  code          String
+  name          String
+  description   String      @default("")
+  status        String      @default("ACTIVE")
+  displayOrder  Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  components HrSalaryComponent[]
+
+  @@unique([institutionId, code])
+  @@index([institutionId, status])
+}
+
+/// Master salary component (earnings, deductions, employer contributions)
+model HrSalaryComponent {
+  id               String      @id @default(cuid())
+  institutionId    String
+  institution      Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  groupId          String?
+  group            HrSalaryComponentGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  code             String
+  name             String
+  componentType    String
+  calculationType  String      @default("FIXED")
+  formula          String      @default("")
+  percentage       Float       @default(0)
+  fixedAmount      Float       @default(0)
+  taxable          Boolean     @default(true)
+  taxability       String      @default("TAXABLE")
+  pfApplicable     Boolean     @default(false)
+  esiApplicable    Boolean     @default(false)
+  gratuity         Boolean     @default(false)
+  displayOrder     Int         @default(0)
+  status           String      @default("ACTIVE")
+  description      String      @default("")
+  advancedSettings Json        @default("{}")
+  createdBy        String      @default("")
+  updatedBy        String      @default("")
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  mappings HrSalaryComponentMapping[]
+  history  HrSalaryComponentHistory[]
+
+  @@unique([institutionId, code])
+  @@index([institutionId, componentType, status])
+  @@index([institutionId, groupId])
+}
+
+/// Map salary component to structure template or pay grade
+model HrSalaryComponentMapping {
+  id            String                  @id @default(cuid())
+  institutionId String
+  institution   Institution             @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  componentId   String
+  component     HrSalaryComponent       @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  templateId    String?
+  template      HrSalaryStructureTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  payGrade      String                  @default("")
+  effectiveFrom DateTime                @db.Date
+  effectiveTo   DateTime?               @db.Date
+  priority      Int                     @default(0)
+  status        String                  @default("ACTIVE")
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+
+  @@index([institutionId, componentId])
+  @@index([templateId])
+}
+
+/// Audit history for salary components
+model HrSalaryComponentHistory {
+  id            String            @id @default(cuid())
+  institutionId String
+  institution   Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  componentId   String
+  component     HrSalaryComponent @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  action        String
+  changedBy     String            @default("system")
+  snapshot      Json              @default("{}")
+  remarks       String            @default("")
+  createdAt     DateTime          @default(now())
+
+  @@index([componentId, createdAt])
 }
 
 /// Salary structure (earnings + statutory / other deductions) per employee
