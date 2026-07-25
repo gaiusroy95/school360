@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "nodemon",
     "dev:tsx": "tsx watch src/index.ts",
-    "build": "prisma generate && tsc",
+    "build": "node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "lint": "tsc --noEmit",
     "postinstall": "prisma generate",
@@ -39,6 +39,6 @@
     "tsx": "^4.21.0"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20 <27"
   }
 }

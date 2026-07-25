@@ -45,6 +45,12 @@ Stack: Node.js, Express, Prisma, TypeScript, Neon PostgreSQL, JWT auth.
 npm install && npm run prisma:migrate && npm run build
 ```
 
+`postinstall` runs `prisma generate` once after install. `npm run build` compiles TypeScript with an increased heap (`--max-old-space-size=4096`) to avoid OOM on large Prisma schemas.
+
+Optional: set **Environment** variable `NODE_OPTIONS=--max-old-space-size=4096` on Render if the build still runs out of memory.
+
+**Node version:** Prefer **22 LTS** (set `NODE_VERSION=22.14.0` in Render) instead of Node 26.
+
 **Start Command:**
 ```bash
 npm start
