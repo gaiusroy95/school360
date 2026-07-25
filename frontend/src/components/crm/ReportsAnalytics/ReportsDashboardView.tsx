@@ -73,7 +73,7 @@ export function ReportsDashboardView({ onNavigate }: Props) {
     }
   }, [academicYear, period]);
 
-  useEffect(() => { void load(true); }, [academicYear, period]);
+  useEffect(() => { void load(); }, [academicYear, period]);
 
   if (loading && !data) return <AcademicLoading label="Loading Reports Dashboard..." />;
 

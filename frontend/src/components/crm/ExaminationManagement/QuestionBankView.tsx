@@ -82,23 +82,13 @@ export function QuestionBankView() {
         setAcademicYear(m.defaultAcademicYear);
       }
       const yearFilter = meta ? academicYear : m.defaultAcademicYear;
-      let data = await fetchQuestionPapers({
+      const data = await fetchQuestionPapers({
         academicYear: yearFilter,
         className: className || undefined,
         sectionName: sectionName || undefined,
         subjectName: subjectName || undefined,
         purpose: purpose !== 'all' ? purpose : undefined,
       });
-      if (!data.papers.length) {
-        await seedQuestionBank(yearFilter);
-        data = await fetchQuestionPapers({
-          academicYear: yearFilter,
-          className: className || undefined,
-          sectionName: sectionName || undefined,
-          subjectName: subjectName || undefined,
-          purpose: purpose !== 'all' ? purpose : undefined,
-        });
-      }
       setPapers(data.papers);
       setSummary(data.summary);
     } catch (err) {

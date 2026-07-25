@@ -216,7 +216,7 @@ hrRouter.get(
     const q = typeof req.query.q === 'string' ? req.query.q : undefined;
     const status =
       typeof req.query.status === 'string' ? (req.query.status as FeeMasterStatus) : undefined;
-    const seed = req.query.seed === '1';
+    const seed = false;
     let records = await listEmployeeDirectory(institutionId, { q, status });
     if (records.length === 0 && seed) {
       await seedEmployeeDirectoryDemo(institutionId);
@@ -311,7 +311,7 @@ hrRouter.get(
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
     const q = typeof req.query.q === 'string' ? req.query.q : undefined;
-    const seed = req.query.seed === '1';
+    const seed = false;
     let records = await listHrDepartments(institutionId, q);
     if (records.length === 0 && seed) {
       await seedHrDepartmentsDemo(institutionId);
@@ -404,7 +404,7 @@ hrRouter.get(
   '/designations',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    const seed = req.query.seed === '1';
+    const seed = false;
     const page = typeof req.query.page === 'string' ? Number(req.query.page) : undefined;
     const pageSize = typeof req.query.pageSize === 'string' ? Number(req.query.pageSize) : undefined;
     const filters = {
@@ -493,7 +493,7 @@ hrRouter.get(
   '/attendance/meta',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    const seed = req.query.seed === '1';
+    const seed = false;
     if (seed) await seedHrAttendanceLeaveDemo(institutionId);
     const meta = await getHrAttendanceMeta(institutionId);
     return res.json(meta);
@@ -505,7 +505,7 @@ hrRouter.get(
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
     const date = typeof req.query.date === 'string' ? req.query.date : undefined;
-    const seed = req.query.seed === '1';
+    const seed = false;
     if (seed) await seedHrAttendanceLeaveDemo(institutionId);
     const data = await getHrAttendanceDashboard(institutionId, date);
     return res.json(data);
@@ -719,7 +719,7 @@ hrRouter.get(
   '/leave/dashboard',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    const seed = req.query.seed === '1';
+    const seed = false;
     if (seed) await seedHrLeaveManagementDemo(institutionId);
     const filters = await getInstitutionFilterMeta(institutionId);
     const data = await getHrLeaveDashboard(institutionId, {
@@ -843,7 +843,7 @@ hrRouter.get(
   '/payroll/dashboard',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    const seed = req.query.seed === '1';
+    const seed = false;
     if (seed) await seedHrPayrollManagementDemo(institutionId);
     const filters = await getInstitutionFilterMeta(institutionId);
     const data = await getHrPayrollDashboard(institutionId, {
@@ -916,7 +916,7 @@ hrRouter.get(
   '/salary-structures',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    const seed = req.query.seed === '1';
+    const seed = false;
     if (seed) await seedHrSalaryStructureDemo(institutionId);
     const templates = await listHrSalaryStructureTemplates(institutionId, {
       q: typeof req.query.q === 'string' ? req.query.q : undefined,
@@ -1055,7 +1055,7 @@ hrRouter.get(
   '/allowances-deductions',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    const seed = req.query.seed === '1';
+    const seed = false;
     if (seed) await seedHrAllowancesDeductionsDemo(institutionId);
     const data = await getAllowancesDeductionsDashboard(institutionId, {
       componentType: typeof req.query.componentType === 'string' ? req.query.componentType : undefined,
@@ -1264,7 +1264,7 @@ hrRouter.get(
   '/attendance-policy',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    const seed = req.query.seed === '1';
+    const seed = false;
     if (seed) await seedAttendancePolicyDemo(institutionId);
     const filters = await getInstitutionFilterMeta(institutionId);
     const academicYear = typeof req.query.academicYear === 'string' ? req.query.academicYear : filters.defaultAcademicYear;
@@ -1338,7 +1338,6 @@ hrRouter.get(
   '/shift-management',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedShiftManagementDemo(institutionId);
     const data = await getShiftManagementDashboard(institutionId);
     return res.json(data);
   }),
@@ -1475,7 +1474,6 @@ hrRouter.get(
   '/performance-appraisal',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedPerformanceAppraisalDemo(institutionId);
     const academicYear = typeof req.query.academicYear === 'string' ? req.query.academicYear : undefined;
     const quarter = typeof req.query.quarter === 'string' ? req.query.quarter : undefined;
     const data = await getPerformanceAppraisalDashboard(institutionId, { academicYear, quarter });
@@ -1581,7 +1579,6 @@ hrRouter.get(
   '/recruitment',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedRecruitmentDemo(institutionId);
     const academicYear = typeof req.query.academicYear === 'string' ? req.query.academicYear : '2025-26';
     const data = await getRecruitmentDashboard(institutionId, academicYear);
     return res.json(data);
@@ -1755,7 +1752,6 @@ hrRouter.get(
   '/training',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedTrainingDemo(institutionId);
     const academicYear = typeof req.query.academicYear === 'string' ? req.query.academicYear : '2025-26';
     const data = await getTrainingDashboard(institutionId, academicYear);
     return res.json(data);
@@ -1879,7 +1875,6 @@ hrRouter.get(
   '/edoms',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedEdomsDemo(institutionId);
     const data = await getEdomsDashboard(institutionId);
     return res.json(data);
   }),
@@ -1981,7 +1976,6 @@ hrRouter.get(
   '/exit-management',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedExitDemo(institutionId);
     const data = await getExitDashboard(institutionId);
     return res.json(data);
   }),

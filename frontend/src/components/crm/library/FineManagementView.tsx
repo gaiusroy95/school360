@@ -49,7 +49,7 @@ export function FineManagementView() {
     }
   }, [selectedMemberId]);
 
-  useEffect(() => { void load(true); }, []);
+  useEffect(() => { void load(); }, []);
 
   useEffect(() => {
     if (selectedMemberId) void load(false, selectedMemberId);

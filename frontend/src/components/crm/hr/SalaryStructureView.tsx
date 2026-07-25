@@ -244,7 +244,7 @@ export function SalaryStructureView() {
   }, []);
 
   useEffect(() => {
-    void load(true);
+    void load();
   }, []);
 
   useEffect(() => {

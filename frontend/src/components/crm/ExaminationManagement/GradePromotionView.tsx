@@ -74,19 +74,11 @@ export function GradePromotionView() {
         setToAcademicYear(m.nextAcademicYear);
       }
       const yearFilter = year || academicYear || m.defaultAcademicYear;
-      let data = await fetchEligiblePromotionStudents({
+      const data = await fetchEligiblePromotionStudents({
         academicYear: yearFilter,
         className: className || undefined,
         sectionName: sectionName || undefined,
       });
-      if (!data.students.length) {
-        await seedGradePromotion(yearFilter);
-        data = await fetchEligiblePromotionStudents({
-          academicYear: yearFilter,
-          className: className || undefined,
-          sectionName: sectionName || undefined,
-        });
-      }
       const batchData = await fetchPromotionBatches(yearFilter);
       setStudents(data.students);
       setSummary(data.summary);

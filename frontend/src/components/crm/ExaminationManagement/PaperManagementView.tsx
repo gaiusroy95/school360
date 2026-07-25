@@ -60,7 +60,7 @@ export function PaperManagementView() {
         setAcademicYear(m.defaultAcademicYear);
       }
       const yearFilter = meta ? academicYear : m.defaultAcademicYear;
-      let data = await fetchPaperManagementPapers({
+      const data = await fetchPaperManagementPapers({
         academicYear: yearFilter,
         className: className || undefined,
         sectionName: sectionName || undefined,
@@ -68,17 +68,6 @@ export function PaperManagementView() {
         purpose: purpose !== 'all' ? purpose : undefined,
         mobileStatus: mobileStatus !== 'all' ? mobileStatus : undefined,
       });
-      if (!data.papers.length) {
-        await seedPaperManagement(yearFilter);
-        data = await fetchPaperManagementPapers({
-          academicYear: yearFilter,
-          className: className || undefined,
-          sectionName: sectionName || undefined,
-          subjectName: subjectName || undefined,
-          purpose: purpose !== 'all' ? purpose : undefined,
-          mobileStatus: mobileStatus !== 'all' ? mobileStatus : undefined,
-        });
-      }
       setPapers(data.papers);
       setSummary(data.summary);
     } catch (err) {

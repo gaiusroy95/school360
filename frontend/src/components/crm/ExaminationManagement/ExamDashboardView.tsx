@@ -62,11 +62,7 @@ export function ExamDashboardView({ onNavigate }: Props) {
       const m = await fetchExamDashboardMeta();
       setMeta(m);
       setAcademicYear(m.defaultAcademicYear);
-      let dashboard = await fetchExamDashboard({ academicYear: m.defaultAcademicYear, examType });
-      if (!dashboard.examSchedule.length) {
-        await seedExamDashboardDemo(m.defaultAcademicYear);
-        dashboard = await fetchExamDashboard({ academicYear: m.defaultAcademicYear, examType });
-      }
+      const dashboard = await fetchExamDashboard({ academicYear: m.defaultAcademicYear, examType });
       setData(dashboard);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to load exam dashboard');

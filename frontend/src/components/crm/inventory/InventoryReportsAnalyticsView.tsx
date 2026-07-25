@@ -61,7 +61,7 @@ export function InventoryReportsAnalyticsView() {
     }
   }, [academicYear, userRole]);
 
-  useEffect(() => { void load(true); }, [userRole, academicYear]);
+  useEffect(() => { void load(); }, [userRole, academicYear]);
 
   const flash = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
     setMessage(msg);

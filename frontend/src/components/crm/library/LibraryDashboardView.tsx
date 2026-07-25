@@ -64,7 +64,7 @@ export function LibraryDashboardView({ onNavigate }: { onNavigate?: (view: strin
     }
   }, [academicYear, branchId]);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const nav = (target: string) => {
     if (onNavigate) onNavigate(toViewKey('Library Management', target));

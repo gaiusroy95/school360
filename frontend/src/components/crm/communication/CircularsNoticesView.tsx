@@ -69,7 +69,7 @@ export function CircularsNoticesView() {
     }
   }, []);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const flash = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
     setMessage(msg);

@@ -64,21 +64,12 @@ export function ExamAnalyticsView() {
         setAcademicYear(m.defaultAcademicYear);
       }
       const yearFilter = year || academicYear || m.defaultAcademicYear;
-      let analytics = await fetchExamAnalytics({
+      const analytics = await fetchExamAnalytics({
         academicYear: yearFilter,
         examType,
         className: className || undefined,
         sectionName: sectionName || undefined,
       });
-      if (!analytics.classAnalytics.length && !analytics.teacherWork.workItems.length) {
-        await seedExamAnalytics(yearFilter);
-        analytics = await fetchExamAnalytics({
-          academicYear: yearFilter,
-          examType,
-          className: className || undefined,
-          sectionName: sectionName || undefined,
-        });
-      }
       setData(analytics);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to load analytics');

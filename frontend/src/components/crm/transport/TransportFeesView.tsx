@@ -68,7 +68,7 @@ export function TransportFeesView() {
     finally { setLoading(false); }
   }, [academicYear]);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const structures = useMemo(() => (data?.structures ?? []) as Structure[], [data]);
   const invoices = useMemo(() => (data?.invoices ?? []) as Invoice[], [data]);

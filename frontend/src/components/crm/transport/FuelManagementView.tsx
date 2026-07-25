@@ -82,7 +82,7 @@ export function FuelManagementView() {
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const fillEntries = useMemo(() => (data?.fillEntries ?? []) as FillEntry[], [data]);
   const requests = useMemo(() => (data?.requests ?? []) as FuelRequest[], [data]);

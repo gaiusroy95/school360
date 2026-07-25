@@ -72,11 +72,7 @@ export function InvigilationManagementView() {
         if (m.upcomingExamDates.length) setExamDate(m.upcomingExamDates[0].date);
       }
       const yearFilter = year || academicYear || m.defaultAcademicYear;
-      let data = await fetchInvigilationPlans(yearFilter);
-      if (!data.plans.length) {
-        await seedInvigilation(yearFilter);
-        data = await fetchInvigilationPlans(yearFilter);
-      }
+      const data = await fetchInvigilationPlans(yearFilter);
       setPlans(data.plans);
       if (!selectedId && data.plans.length) setSelectedId(data.plans[0].id);
       else if (selectedId && !data.plans.find((p) => p.id === selectedId) && data.plans.length) {

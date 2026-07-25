@@ -53,7 +53,7 @@ export function WhatsAppManagementView() {
     }
   }, []);
 
-  useEffect(() => { void load(true); }, [academicYear, userRole]);
+  useEffect(() => { void load(); }, [academicYear, userRole]);
 
   useEffect(() => {
     if (selectedMobile) void loadConversation(selectedMobile);

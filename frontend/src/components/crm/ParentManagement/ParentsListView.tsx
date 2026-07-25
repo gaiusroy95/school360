@@ -83,21 +83,6 @@ export function ParentsListView({ onNavigate }: Props) {
       setYearOptions(meta.filters.academicYears);
       setSectionOptions(className ? meta.filters.sectionsByClass[className] || [] : []);
       if (!academicYear) setAcademicYear(meta.defaultAcademicYear);
-
-      if (meta.summary.total === 0) {
-        await seedParents();
-        const [meta2, list2, lag2, exc2] = await Promise.all([
-          fetchParentsMeta(meta.defaultAcademicYear),
-          fetchParents({ academicYear: meta.defaultAcademicYear }),
-          fetchParents({ academicYear: meta.defaultAcademicYear, engagement: 'lagging' }),
-          fetchParents({ academicYear: meta.defaultAcademicYear, engagement: 'exceptional' }),
-        ]);
-        setSummary(meta2.summary);
-        setParents(list2.parents);
-        setLaggingParents(lag2.parents);
-        setExceptionalParents(exc2.parents);
-        setMessage('Demo parent engagement data seeded.');
-      }
     } catch (e) {
       setMessage(e instanceof Error ? e.message : 'Failed to load parents');
     } finally {

@@ -154,7 +154,6 @@ transportRouter.get(
   '/dashboard',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedTransportDashboard(institutionId);
     const academicYear = String(req.query.academicYear ?? '2025-26');
     const data = await getTransportDashboard(institutionId, academicYear);
     return res.json(data);
@@ -176,7 +175,6 @@ transportRouter.get(
   '/master',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedTransportMaster(institutionId);
     const academicYear = String(req.query.academicYear ?? '2025-26');
     const data = await getTransportMaster(institutionId, academicYear);
     return res.json(data);
@@ -258,7 +256,6 @@ transportRouter.get(
   '/planning',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedTransportRoutePlanning(institutionId);
     const academicYear = String(req.query.academicYear ?? '2025-26');
     const data = await getTransportRoutePlanning(institutionId, academicYear);
     return res.json(data);
@@ -410,7 +407,6 @@ transportRouter.get(
   '/live-tracking',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedTransportLiveTracking(institutionId);
     const data = await getTransportLiveTracking(institutionId);
     return res.json(data);
   }),
@@ -494,7 +490,6 @@ transportRouter.get(
   '/student-transport',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedTransportStudentTransport(institutionId);
     const academicYear = String(req.query.academicYear ?? '2025-26');
     const data = await getTransportStudentTransport(institutionId, academicYear);
     return res.json(data);
@@ -571,7 +566,6 @@ transportRouter.get(
   '/driver-attendant',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedTransportDriverAttendant(institutionId);
     const data = await getTransportDriverAttendant(institutionId);
     return res.json(data);
   }),
@@ -637,7 +631,6 @@ transportRouter.get(
   '/trips',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedTransportTripManagement(institutionId);
     const academicYear = String(req.query.academicYear ?? '2025-26');
     const data = await getTransportTripManagement(institutionId, academicYear);
     return res.json(data);
@@ -731,7 +724,6 @@ transportRouter.get(
   '/stops-geo',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedTransportStopsGeoFencing(institutionId);
     const academicYear = String(req.query.academicYear ?? '2025-26');
     const data = await getTransportStopsGeoFencing(institutionId, academicYear);
     return res.json(data);
@@ -827,7 +819,6 @@ transportRouter.get(
   '/attendance',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedTransportAttendance(institutionId);
     const academicYear = String(req.query.academicYear ?? '2025-26');
     const data = await getTransportAttendance(institutionId, academicYear);
     return res.json(data);
@@ -912,7 +903,6 @@ transportRouter.get(
   '/fees',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedTransportFeeManagement(institutionId);
     const academicYear = String(req.query.academicYear ?? '2025-26');
     const data = await getTransportFeeManagement(institutionId, academicYear);
     return res.json(data);
@@ -1026,7 +1016,6 @@ transportRouter.get(
   '/fleet-maintenance',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedTransportFleetMaintenance(institutionId);
     const data = await getTransportFleetMaintenance(institutionId);
     return res.json(data);
   }),
@@ -1092,7 +1081,6 @@ transportRouter.get(
   '/fuel-management',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedTransportFuelManagement(institutionId);
     const data = await getTransportFuelManagement(institutionId);
     return res.json(data);
   }),
@@ -1185,7 +1173,6 @@ transportRouter.get(
   '/safety-alerts',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedTransportSafetyAlerts(institutionId);
     const data = await getTransportSafetyAlerts(institutionId);
     return res.json(data);
   }),
@@ -1270,7 +1257,6 @@ transportRouter.get(
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
     const academicYear = String(req.query.academicYear ?? '2025-26');
-    if (req.query.seed === '1') await seedTransportReportsAnalytics(institutionId, academicYear);
     const data = await getTransportReportsAnalytics(institutionId, academicYear);
     return res.json(data);
   }),

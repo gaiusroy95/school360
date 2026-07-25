@@ -58,7 +58,7 @@ export function StockVerificationView() {
     }
   }, [academicYear, newStoreId]);
 
-  useEffect(() => { void load(true); }, []);
+  useEffect(() => { void load(); }, []);
 
   useEffect(() => {
     if (session?.status === 'VARIANCE_REVIEW') setViewTab('variances');

@@ -81,7 +81,7 @@ export function TransportAttendanceView() {
     finally { setLoading(false); }
   }, [academicYear]);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const sessions = useMemo(() => (data?.sessions ?? []) as Session[], [data]);
   const records = useMemo(() => (data?.records ?? []) as Record[], [data]);

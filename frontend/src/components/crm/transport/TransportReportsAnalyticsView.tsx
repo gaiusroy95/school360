@@ -48,7 +48,7 @@ export function TransportReportsAnalyticsView() {
     finally { setLoading(false); }
   }, [academicYear]);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const exec = data?.kpis.executive ?? {};
   const ops = data?.kpis.operational ?? {};

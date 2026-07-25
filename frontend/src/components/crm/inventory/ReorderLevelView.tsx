@@ -46,7 +46,7 @@ export function ReorderLevelView() {
     }
   }, [academicYear, storeId, categoryId, itemType, search]);
 
-  useEffect(() => { void load(true); }, []);
+  useEffect(() => { void load(); }, []);
 
   const flash = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
     setMessage(msg);

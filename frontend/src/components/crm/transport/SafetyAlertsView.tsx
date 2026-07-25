@@ -75,7 +75,7 @@ export function SafetyAlertsView() {
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const alerts = useMemo(() => (data?.alerts ?? []) as Alert[], [data]);
   const reports = useMemo(() => (data?.reports ?? []) as Report[], [data]);

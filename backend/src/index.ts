@@ -38,6 +38,7 @@ import { inventoryRouter } from './routes/inventory.js';
 import { communicationRouter, communicationPublicRouter } from './routes/communication.js';
 import { websiteCmsRouter } from './routes/websiteCms.js';
 import { reportsAnalyticsRouter } from './routes/reportsAnalytics.js';
+import { systemRouter } from './routes/system.js';
 import { mobileRouter } from './routes/mobile.js';
 import { connectDatabase } from './lib/prisma.js';
 import { startInvigilationScheduler } from './lib/examInvigilationScheduler.js';
@@ -130,6 +131,7 @@ app.use('/api/communication', communicationPublicRouter);
 app.use('/api/communication', communicationRouter);
 app.use('/api/website-cms', websiteCmsRouter);
 app.use('/api/reports-analytics', reportsAnalyticsRouter);
+app.use('/api/system', systemRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);

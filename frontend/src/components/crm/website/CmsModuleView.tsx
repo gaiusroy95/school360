@@ -48,16 +48,21 @@ export function CmsModuleView({ module, title, subtitle }: CmsModuleViewProps) {
 
   const load = useCallback(async (seed = false) => {
     setLoading(true);
+    setMessage('');
     try {
       const result = await fetchCmsModule(module, seed);
       setData(result);
-      setForm(emptyForm(result.createFields));
+      setForm(emptyForm(result.createFields ?? []));
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : `Failed to load ${title.toLowerCase()}`);
+      setMessageType('error');
+      setData(null);
     } finally {
       setLoading(false);
     }
-  }, [module]);
+  }, [module, title]);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const flash = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
     setMessage(msg);
@@ -88,10 +93,21 @@ export function CmsModuleView({ module, title, subtitle }: CmsModuleViewProps) {
 
   if (loading && !data) return <AcademicLoading label={`Loading ${title.toLowerCase()}…`} />;
 
-  const canCreate = data?.permissions.canCreate ?? false;
-  const columns = data?.columns ?? [];
-  const items = data?.items ?? [];
-  const fields = data?.createFields ?? [];
+  if (!data) {
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center">
+        <p className="text-sm font-medium text-red-700">{message || `Failed to load ${title.toLowerCase()}`}</p>
+        <button type="button" onClick={() => void load()} className="mt-3 text-xs font-semibold text-blue-600 hover:underline">
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  const canCreate = data.permissions.canCreate ?? false;
+  const columns = data.columns ?? [];
+  const items = data.items ?? [];
+  const fields = data.createFields ?? [];
 
   return (
     <div className="flex flex-col h-full space-y-4">
@@ -114,9 +130,9 @@ export function CmsModuleView({ module, title, subtitle }: CmsModuleViewProps) {
 
       {message && <FeeMessage message={message} type={messageType} />}
 
-      {(data?.kpis?.length ?? 0) > 0 && (
+      {(data.kpis?.length ?? 0) > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          {data!.kpis!.map((k) => (
+          {data.kpis!.map((k) => (
             <div key={k.label} className="bg-white rounded-lg border border-slate-200 p-2 text-center">
               <div className="text-lg font-bold text-slate-800">{k.value}</div>
               <div className="text-[10px] text-slate-500">{k.label}</div>
@@ -190,7 +206,7 @@ export function CmsModuleView({ module, title, subtitle }: CmsModuleViewProps) {
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1">
         <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between">
           <span className="text-xs font-bold text-slate-700">{title} List</span>
-          <span className="text-[10px] text-slate-400">{data?.totalItems ?? items.length} items</span>
+          <span className="text-[10px] text-slate-400">{data.totalItems ?? items.length} items</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">

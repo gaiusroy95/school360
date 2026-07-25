@@ -51,7 +51,7 @@ export function HostelDashboardView({ onNavigate }: { onNavigate?: (view: string
     }
   }, [academicYear, hostelId]);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const nav = (target: string) => {
     if (onNavigate) onNavigate(toViewKey('Hostel Management', target));

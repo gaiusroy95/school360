@@ -41,7 +41,7 @@ export function LibraryAttendanceView() {
     }
   }, [academicYear, branchId, terminalId]);
 
-  useEffect(() => { void load(true); }, [academicYear]);
+  useEffect(() => { void load(); }, [academicYear]);
 
   const flash = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
     setMessage(msg);

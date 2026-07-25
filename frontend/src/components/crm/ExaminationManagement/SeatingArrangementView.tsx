@@ -87,11 +87,7 @@ export function SeatingArrangementView() {
         setSelectedRoomIds(new Set(m.suggestedRooms.map((_, i) => i)));
       }
       const yearFilter = year || academicYear || m.defaultAcademicYear;
-      let data = await fetchSeatingPlans(yearFilter);
-      if (!data.plans.length) {
-        await seedSeating(yearFilter);
-        data = await fetchSeatingPlans(yearFilter);
-      }
+      const data = await fetchSeatingPlans(yearFilter);
       setPlans(data.plans);
       if (!selectedId && data.plans.length) setSelectedId(data.plans[0].id);
       else if (selectedId && !data.plans.find((p) => p.id === selectedId) && data.plans.length) {

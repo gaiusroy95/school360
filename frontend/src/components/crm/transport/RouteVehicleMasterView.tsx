@@ -52,7 +52,7 @@ export function RouteVehicleMasterView() {
     finally { setLoading(false); }
   }, [academicYear]);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const q = search.toLowerCase();
   const filteredRoutes = useMemo(() => (data?.routes ?? []).filter((r) =>

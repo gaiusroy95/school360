@@ -73,7 +73,7 @@ export function ExamScheduleView() {
         setAcademicYear(m.defaultAcademicYear);
       }
       const yearFilter = meta ? academicYear : m.defaultAcademicYear;
-      let calendar = await fetchExamScheduleCalendar({
+      const calendar = await fetchExamScheduleCalendar({
         academicYear: yearFilter,
         year: calYear,
         month: calMonth,
@@ -82,18 +82,6 @@ export function ExamScheduleView() {
         examType: examType !== 'all' ? examType : undefined,
         eventType: eventType !== 'all' ? eventType : undefined,
       });
-      if (!calendar.events.length) {
-        await seedExamScheduleCalendar(yearFilter);
-        calendar = await fetchExamScheduleCalendar({
-          academicYear: yearFilter,
-          year: calYear,
-          month: calMonth,
-          className: className || undefined,
-          sectionName: sectionName || undefined,
-          examType: examType !== 'all' ? examType : undefined,
-          eventType: eventType !== 'all' ? eventType : undefined,
-        });
-      }
       setData(calendar);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to load exam schedule');

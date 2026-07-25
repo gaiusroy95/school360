@@ -178,7 +178,6 @@ communicationRouter.get(
   '/dashboard',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedCommunicationDashboard(institutionId);
     const data = await getCommunicationDashboard(
       institutionId,
       String(req.query.academicYear ?? '2025-26'),
@@ -197,7 +196,6 @@ communicationRouter.get(
   '/compose',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedComposeMessage(institutionId);
     const data = await getComposeMessageManagement(institutionId, {
       academicYear: req.query.academicYear ? String(req.query.academicYear) : undefined,
       userRole: req.query.role ? String(req.query.role) : 'Principal',
@@ -242,7 +240,6 @@ communicationRouter.get(
   '/templates',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedMessageTemplates(institutionId);
     const data = await getMessageTemplatesManagement(institutionId, {
       academicYear: req.query.academicYear ? String(req.query.academicYear) : undefined,
       userRole: req.query.role ? String(req.query.role) : 'Principal',
@@ -365,7 +362,6 @@ communicationRouter.get(
   '/sms',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedSmsManagement(institutionId);
     const data = await getSmsManagement(institutionId, {
       academicYear: req.query.academicYear ? String(req.query.academicYear) : undefined,
       userRole: req.query.role ? String(req.query.role) : 'Principal',
@@ -459,7 +455,6 @@ communicationRouter.get(
   '/email',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedEmailManagement(institutionId);
     const data = await getEmailManagement(institutionId, {
       academicYear: req.query.academicYear ? String(req.query.academicYear) : undefined,
       userRole: req.query.role ? String(req.query.role) : 'Principal',
@@ -519,7 +514,6 @@ communicationRouter.get(
   '/whatsapp',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedWhatsAppManagement(institutionId);
     const data = await getWhatsAppManagement(institutionId, {
       academicYear: req.query.academicYear ? String(req.query.academicYear) : undefined,
       userRole: req.query.role ? String(req.query.role) : 'Principal',
@@ -608,7 +602,6 @@ communicationRouter.get(
   '/push',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedPushManagement(institutionId);
     const data = await getPushManagement(institutionId, {
       academicYear: req.query.academicYear ? String(req.query.academicYear) : undefined,
       userRole: req.query.role ? String(req.query.role) : 'Principal',
@@ -653,7 +646,6 @@ communicationRouter.get(
   '/circulars',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedCircularsManagement(institutionId);
     const data = await getCircularsManagement(institutionId, {
       academicYear: req.query.academicYear ? String(req.query.academicYear) : undefined,
       userRole: req.query.role ? String(req.query.role) : 'Principal',
@@ -725,7 +717,6 @@ communicationRouter.get(
   '/events',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedEventInvitationsManagement(institutionId);
     const data = await getEventInvitationsManagement(institutionId, {
       academicYear: req.query.academicYear ? String(req.query.academicYear) : undefined,
       userRole: req.query.role ? String(req.query.role) : 'Principal',
@@ -806,7 +797,6 @@ communicationRouter.get(
   '/surveys',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedSurveysManagement(institutionId);
     const data = await getSurveysManagement(institutionId, {
       academicYear: req.query.academicYear ? String(req.query.academicYear) : undefined,
       userRole: req.query.role ? String(req.query.role) : 'Principal',
@@ -881,7 +871,6 @@ communicationRouter.get(
   '/auto-reminders',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedAutoRemindersManagement(institutionId);
     const data = await getAutoRemindersManagement(institutionId, {
       academicYear: req.query.academicYear ? String(req.query.academicYear) : undefined,
       userRole: req.query.role ? String(req.query.role) : 'Principal',
@@ -944,7 +933,6 @@ communicationRouter.get(
   '/message-history',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedMessageHistoryManagement(institutionId);
     const data = await getMessageHistoryManagement(institutionId, {
       academicYear: req.query.academicYear ? String(req.query.academicYear) : undefined,
       userRole: req.query.role ? String(req.query.role) : 'Super Admin',
@@ -1002,7 +990,6 @@ communicationRouter.get(
   '/reports',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedCommunicationReportsAnalytics(institutionId);
     const data = await getCommunicationReportsAnalytics(
       institutionId,
       req.query.academicYear ? String(req.query.academicYear) : '2025-26',

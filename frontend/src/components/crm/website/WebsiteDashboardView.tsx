@@ -68,39 +68,61 @@ const Sparkline = ({ color }: { color: string }) => (
 export function WebsiteDashboardView({ onNavigate }: { onNavigate?: (view: string) => void }) {
   const [data, setData] = useState<CmsDashboard | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState('This Month');
 
   const load = useCallback(async (seed = false) => {
     setLoading(true);
+    setError(null);
     try {
       const result = await fetchCmsDashboard(seed, period);
       setData(result);
       if (result.period) setPeriod(result.period);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load website dashboard');
+      setData(null);
     } finally {
       setLoading(false);
     }
   }, [period]);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const nav = (target: string) => {
     if (onNavigate) onNavigate(toViewKey('Website & CMS Management', target));
   };
 
   const kpiList = useMemo(() => {
-    if (!data) return [];
-    return KPI_META.map((m) => ({
-      ...m,
-      value: typeof data.kpis[m.key].value === 'number'
-        ? (data.kpis[m.key].value as number).toLocaleString('en-IN')
-        : String(data.kpis[m.key].value),
-      subtitle: data.kpis[m.key].subtitle,
-      noSparkline: m.noSparkline || data.kpis[m.key].noSparkline,
-      chartColor: data.kpis[m.key].chartColor || m.chartColor,
-    }));
+    if (!data?.kpis) return [];
+    return KPI_META.map((m) => {
+      const kpi = data.kpis[m.key];
+      if (!kpi) return null;
+      return {
+        ...m,
+        value: typeof kpi.value === 'number'
+          ? kpi.value.toLocaleString('en-IN')
+          : String(kpi.value),
+        subtitle: kpi.subtitle,
+        noSparkline: m.noSparkline || kpi.noSparkline,
+        chartColor: kpi.chartColor || m.chartColor,
+      };
+    }).filter((kpi): kpi is NonNullable<typeof kpi> => kpi != null);
   }, [data]);
 
   if (loading && !data) return <AcademicLoading label="Loading website dashboard…" />;
+
+  if (error && !data) {
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center">
+        <p className="text-sm font-medium text-red-700">{error}</p>
+        <button type="button" onClick={() => void load()} className="mt-3 text-xs font-semibold text-blue-600 hover:underline">
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (!data) return <AcademicLoading label="Loading website dashboard…" />;
 
   const heroImage = data?.heroImageUrl || 'https://images.unsplash.com/photo-1577896851231-70ef18881754?w=400&h=200&fit=crop&q=80';
   const periods = data?.periods ?? ['This Month', 'Last Month', 'This Year'];
@@ -248,19 +270,19 @@ export function WebsiteDashboardView({ onNavigate }: { onNavigate?: (view: strin
           </div>
           <div className="grid grid-cols-4 gap-2 text-center border-t border-slate-100 pt-3">
             <div>
-              <span className="text-[12px] font-bold text-blue-600 block">{(data?.visitorSummary.totalVisitors ?? 0).toLocaleString('en-IN')}</span>
+              <span className="text-[12px] font-bold text-blue-600 block">{(data.visitorSummary?.totalVisitors ?? 0).toLocaleString('en-IN')}</span>
               <span className="text-[7px] text-slate-500 font-medium">Total Visitors</span>
             </div>
             <div>
-              <span className="text-[12px] font-bold text-green-600 block">{(data?.visitorSummary.uniqueVisitors ?? 0).toLocaleString('en-IN')}</span>
+              <span className="text-[12px] font-bold text-green-600 block">{(data.visitorSummary?.uniqueVisitors ?? 0).toLocaleString('en-IN')}</span>
               <span className="text-[7px] text-slate-500 font-medium">Unique Visitors</span>
             </div>
             <div>
-              <span className="text-[12px] font-bold text-purple-600 block">{(data?.visitorSummary.pageViews ?? 0).toLocaleString('en-IN')}</span>
+              <span className="text-[12px] font-bold text-purple-600 block">{(data.visitorSummary?.pageViews ?? 0).toLocaleString('en-IN')}</span>
               <span className="text-[7px] text-slate-500 font-medium">Page Views</span>
             </div>
             <div>
-              <span className="text-[12px] font-bold text-slate-800 block">{data?.visitorSummary.avgSession ?? '—'}</span>
+              <span className="text-[12px] font-bold text-slate-800 block">{data.visitorSummary?.avgSession ?? '—'}</span>
               <span className="text-[7px] text-slate-500 font-medium">Avg. Session</span>
             </div>
           </div>
@@ -300,15 +322,15 @@ export function WebsiteDashboardView({ onNavigate }: { onNavigate?: (view: strin
             <div className="w-24 flex flex-col items-center shrink-0">
               <div className="w-16 h-16 rounded-full border-4 border-green-500 flex items-center justify-center mb-1 relative">
                 <div className="text-center leading-none">
-                  <span className="text-[18px] font-bold text-slate-800 block">{data?.seoOverview.score ?? 0}</span>
+                  <span className="text-[18px] font-bold text-slate-800 block">{data.seoOverview?.score ?? 0}</span>
                   <span className="text-[8px] text-slate-500">/ 100</span>
                 </div>
                 <div className="absolute inset-[-4px] rounded-full border-4 border-slate-100" style={{ clipPath: 'polygon(50% 50%, 100% 0, 100% 100%, 0 100%, 0 0, 40% 0)' }} />
               </div>
-              <span className="text-[9px] font-bold text-green-700">{data?.seoOverview.label ?? 'Excellent'}</span>
+              <span className="text-[9px] font-bold text-green-700">{data.seoOverview?.label ?? '—'}</span>
             </div>
             <div className="flex-1 flex flex-col gap-1.5 border-l border-slate-100 pl-4 ml-2">
-              {(data?.seoOverview.checklist ?? []).map((item, i) => (
+              {(data.seoOverview?.checklist ?? []).map((item, i) => (
                 <div key={i} className="flex justify-between items-center text-[8px]">
                   <div className="flex items-center gap-1.5">
                     <div className={`w-1.5 h-1.5 rounded-full ${item.name.includes('Speed') ? 'bg-yellow-500' : item.name.includes('Sitemap') ? 'bg-red-500' : 'bg-blue-500'}`} />
@@ -398,10 +420,10 @@ export function WebsiteDashboardView({ onNavigate }: { onNavigate?: (view: strin
           </div>
           <div className="grid grid-cols-4 gap-2 mb-4">
             {[
-              { label: 'Images', count: data?.mediaLibrary.images ?? 0, icon: <ImageIcon size={16} className="text-green-500 mb-1" /> },
-              { label: 'Documents', count: data?.mediaLibrary.documents ?? 0, icon: <FileText size={16} className="text-blue-500 mb-1" /> },
-              { label: 'Videos', count: data?.mediaLibrary.videos ?? 0, icon: <PlayCircle size={16} className="text-red-500 mb-1" /> },
-              { label: 'Audio', count: data?.mediaLibrary.audio ?? 0, icon: <Music size={16} className="text-purple-500 mb-1" /> },
+              { label: 'Images', count: data.mediaLibrary?.images ?? 0, icon: <ImageIcon size={16} className="text-green-500 mb-1" /> },
+              { label: 'Documents', count: data.mediaLibrary?.documents ?? 0, icon: <FileText size={16} className="text-blue-500 mb-1" /> },
+              { label: 'Videos', count: data.mediaLibrary?.videos ?? 0, icon: <PlayCircle size={16} className="text-red-500 mb-1" /> },
+              { label: 'Audio', count: data.mediaLibrary?.audio ?? 0, icon: <Music size={16} className="text-purple-500 mb-1" /> },
             ].map((item) => (
               <div key={item.label} className="border border-slate-100 rounded-lg p-2 flex flex-col items-center justify-center text-center hover:bg-slate-50 cursor-pointer transition-colors">
                 {item.icon}
@@ -414,13 +436,13 @@ export function WebsiteDashboardView({ onNavigate }: { onNavigate?: (view: strin
             <div className="flex justify-between items-end mb-1">
               <span className="text-[8px] font-bold text-slate-700">Storage Used</span>
               <span className="text-[7px] text-slate-500">
-                {data?.mediaLibrary.storageUsedGb ?? 0} GB / {data?.mediaLibrary.storageLimitGb ?? 10} GB
+                {data.mediaLibrary?.storageUsedGb ?? 0} GB / {data.mediaLibrary?.storageLimitGb ?? 10} GB
               </span>
             </div>
             <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden mb-1">
-              <div className="bg-blue-600 h-full rounded-full" style={{ width: `${data?.mediaLibrary.storagePercent ?? 0}%` }} />
+              <div className="bg-blue-600 h-full rounded-full" style={{ width: `${data.mediaLibrary?.storagePercent ?? 0}%` }} />
             </div>
-            <div className="text-right text-[7px] font-bold text-slate-700">{data?.mediaLibrary.storagePercent ?? 0}%</div>
+            <div className="text-right text-[7px] font-bold text-slate-700">{data.mediaLibrary?.storagePercent ?? 0}%</div>
           </div>
         </div>
 

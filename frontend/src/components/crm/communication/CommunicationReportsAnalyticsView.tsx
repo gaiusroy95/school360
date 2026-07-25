@@ -65,7 +65,7 @@ export function CommunicationReportsAnalyticsView() {
     }
   }, [academicYear, userRole]);
 
-  useEffect(() => { void load(true); }, [academicYear, userRole]);
+  useEffect(() => { void load(); }, [academicYear, userRole]);
 
   const flash = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
     setMessage(msg);

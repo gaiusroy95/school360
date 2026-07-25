@@ -68,7 +68,7 @@ export function InventoryDashboardView({ onNavigate }: { onNavigate?: (view: str
     }
   }, [academicYear, storeId]);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const nav = (target: string) => {
     if (onNavigate) onNavigate(toViewKey('Inventory Management', target));

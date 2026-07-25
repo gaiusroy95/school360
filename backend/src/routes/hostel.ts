@@ -144,7 +144,6 @@ hostelRouter.get(
   '/dashboard',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedHostelDashboard(institutionId);
     const academicYear = String(req.query.academicYear ?? '2025-26');
     const hostelId = req.query.hostelId ? String(req.query.hostelId) : undefined;
     const userRole = String(req.query.role ?? 'Admin');
@@ -172,7 +171,6 @@ hostelRouter.get(
   '/rooms-allotment',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedRoomsAllotment(institutionId);
     const academicYear = String(req.query.academicYear ?? '2025-26');
     const data = await getRoomsAllotment(institutionId, academicYear, {
       hostelId: req.query.hostelId ? String(req.query.hostelId) : undefined,
@@ -290,7 +288,6 @@ hostelRouter.get(
   '/students',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedHostelStudents(institutionId);
     const academicYear = String(req.query.academicYear ?? '2025-26');
     const data = await getHostelStudents(institutionId, academicYear, {
       q: req.query.q ? String(req.query.q) : undefined,
@@ -393,7 +390,6 @@ hostelRouter.get(
   '/visitors',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedVisitorManagement(institutionId);
     const data = await getVisitorManagement(institutionId, String(req.query.academicYear ?? '2025-26'), {
       hostelId: req.query.hostelId ? String(req.query.hostelId) : undefined,
       visitDate: req.query.visitDate ? String(req.query.visitDate) : undefined,
@@ -484,7 +480,6 @@ hostelRouter.get(
   '/mess',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedMessManagement(institutionId);
     const data = await getMessManagement(institutionId, String(req.query.academicYear ?? '2025-26'), {
       weekStart: req.query.weekStart ? String(req.query.weekStart) : undefined,
       userRole: req.query.role ? String(req.query.role) : 'Mess Manager',
@@ -552,7 +547,6 @@ hostelRouter.get(
   '/leave',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedLeaveManagement(institutionId);
     const data = await getLeaveManagement(institutionId, String(req.query.academicYear ?? '2025-26'), {
       status: req.query.status ? String(req.query.status) : undefined,
       userRole: req.query.role ? String(req.query.role) : 'Warden',
@@ -638,7 +632,6 @@ hostelRouter.get(
   '/gate-pass',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedGatePassManagement(institutionId);
     const data = await getGatePassManagement(institutionId, String(req.query.academicYear ?? '2025-26'), {
       status: req.query.status ? String(req.query.status) : undefined,
       userRole: req.query.role ? String(req.query.role) : 'Warden',
@@ -715,7 +708,6 @@ hostelRouter.get(
   '/complaints',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedComplaintsManagement(institutionId);
     const data = await getComplaintsManagement(institutionId, String(req.query.academicYear ?? '2025-26'), {
       status: req.query.status ? String(req.query.status) : undefined,
       category: req.query.category ? String(req.query.category) : undefined,
@@ -784,7 +776,6 @@ hostelRouter.get(
   '/maintenance',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedMaintenanceManagement(institutionId);
     const data = await getMaintenanceManagement(institutionId, String(req.query.academicYear ?? '2025-26'), {
       status: req.query.status ? String(req.query.status) : undefined,
       category: req.query.category ? String(req.query.category) : undefined,
@@ -862,7 +853,6 @@ hostelRouter.get(
   '/inventory',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedInventoryManagement(institutionId);
     const data = await getInventoryManagement(institutionId, String(req.query.academicYear ?? '2025-26'), {
       itemType: req.query.itemType ? String(req.query.itemType) : undefined,
       subCategory: req.query.subCategory ? String(req.query.subCategory) : undefined,
@@ -939,7 +929,6 @@ hostelRouter.get(
   '/laundry',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedLaundryManagement(institutionId);
     const data = await getLaundryManagement(institutionId, String(req.query.academicYear ?? '2025-26'), {
       status: req.query.status ? String(req.query.status) : undefined,
       monthLabel: req.query.month ? String(req.query.month) : undefined,
@@ -1011,7 +1000,6 @@ hostelRouter.get(
   '/discipline',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedDisciplineManagement(institutionId);
     const data = await getDisciplineManagement(institutionId, String(req.query.academicYear ?? '2025-26'), {
       status: req.query.status ? String(req.query.status) : undefined,
       severity: req.query.severity ? String(req.query.severity) : undefined,
@@ -1071,7 +1059,6 @@ hostelRouter.get(
   '/reports',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedHostelReportsAnalytics(institutionId);
     const data = await getHostelReportsAnalytics(
       institutionId,
       String(req.query.academicYear ?? '2025-26'),

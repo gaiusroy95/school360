@@ -66,7 +66,7 @@ export function DriverAttendantView() {
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const staff = useMemo(() => (data?.staff ?? []) as StaffMember[], [data]);
   const q = search.toLowerCase();

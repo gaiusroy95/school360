@@ -66,7 +66,7 @@ export function SmsManagementView() {
     setDndList(rows);
   }, []);
 
-  useEffect(() => { void load(true); void loadDnd(); }, [load, loadDnd]);
+  useEffect(() => { void load(); void loadDnd(); }, [load, loadDnd]);
 
   useEffect(() => {
     const t = setTimeout(() => {

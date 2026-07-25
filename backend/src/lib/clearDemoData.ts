@@ -161,3 +161,41 @@ export async function clearInstitutionDemoData(
       : `No demo records found for ${academicYear}`,
   };
 }
+
+const PRESERVED_TABLES = new Set(['User', 'Institution', 'InstitutionSetup', '_prisma_migrations']);
+
+/**
+ * Truncates all operational tables site-wide.
+ * Preserves admin login (User), institution record, and institution setup config.
+ */
+export async function purgeAllSiteData() {
+  const tables = await prisma.$queryRaw<{ tablename: string }[]>`
+    SELECT tablename::text AS tablename
+    FROM pg_tables
+    WHERE schemaname = 'public'
+  `;
+
+  const toTruncate = tables
+    .map((t) => t.tablename)
+    .filter((name) => !PRESERVED_TABLES.has(name))
+    .sort();
+
+  if (toTruncate.length === 0) {
+    return {
+      success: true,
+      tablesTruncated: 0,
+      tables: [] as string[],
+      message: 'No tables to purge',
+    };
+  }
+
+  const quoted = toTruncate.map((name) => `"${name.replace(/"/g, '""')}"`).join(', ');
+  await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${quoted} RESTART IDENTITY CASCADE`);
+
+  return {
+    success: true,
+    tablesTruncated: toTruncate.length,
+    tables: toTruncate,
+    message: `Purged ${toTruncate.length} tables. Preserved: User, Institution, InstitutionSetup.`,
+  };
+}

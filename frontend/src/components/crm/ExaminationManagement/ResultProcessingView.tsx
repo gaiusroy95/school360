@@ -60,11 +60,7 @@ export function ResultProcessingView() {
         setAcademicYear(m.defaultAcademicYear);
       }
       const yearFilter = year || academicYear || m.defaultAcademicYear;
-      let approvalData = await fetchPendingApprovals(yearFilter);
-      if (!approvalData.sheets.length) {
-        await seedResultProcessing(yearFilter);
-        approvalData = await fetchPendingApprovals(yearFilter);
-      }
+      const approvalData = await fetchPendingApprovals(yearFilter);
       const [batchData, auditData] = await Promise.all([
         fetchResultBatches(yearFilter),
         fetchResultAuditTrail({ limit: 30 }),

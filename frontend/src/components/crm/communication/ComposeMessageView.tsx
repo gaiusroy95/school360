@@ -163,7 +163,7 @@ export function ComposeMessageView() {
     }
   }, [academicYear, userRole, classScope]);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const flash = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
     setMessage(msg);

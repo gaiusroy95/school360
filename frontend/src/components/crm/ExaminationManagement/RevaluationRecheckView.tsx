@@ -73,11 +73,7 @@ export function RevaluationRecheckView() {
         setAcademicYear(m.defaultAcademicYear);
       }
       const yearFilter = year || academicYear || m.defaultAcademicYear;
-      let reqData = await fetchRevaluationRequests({ academicYear: yearFilter, status: statusFilter });
-      if (!reqData.requests.length) {
-        await seedRevaluation(yearFilter);
-        reqData = await fetchRevaluationRequests({ academicYear: yearFilter, status: statusFilter });
-      }
+      const reqData = await fetchRevaluationRequests({ academicYear: yearFilter, status: statusFilter });
       const [bpData, eligData, failData] = await Promise.all([
         fetchBackPaperExams({ academicYear: yearFilter }),
         fetchEligibleForRevaluation({ academicYear: yearFilter }),

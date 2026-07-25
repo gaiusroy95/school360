@@ -63,7 +63,7 @@ export function StudentTransportationView() {
     finally { setLoading(false); }
   }, [academicYear]);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const enrollments = useMemo(() => (data?.enrollments ?? []) as Enrollment[], [data]);
   const q = search.toLowerCase();

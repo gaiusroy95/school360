@@ -83,7 +83,7 @@ export function StopsGeoFencingView() {
     finally { setLoading(false); }
   }, [academicYear]);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const stops = useMemo(() => (data?.stops ?? []) as Stop[], [data]);
   const geofences = useMemo(() => (data?.geofences ?? []) as Geofence[], [data]);

@@ -160,7 +160,6 @@ inventoryRouter.get(
   '/dashboard',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedInventoryDashboard(institutionId);
     const data = await getInventoryDashboard(
       institutionId,
       String(req.query.academicYear ?? '2025-26'),
@@ -192,7 +191,6 @@ inventoryRouter.get(
   '/items',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedItemsManagement(institutionId);
     const data = await getItemsManagement(
       institutionId,
       String(req.query.academicYear ?? '2025-26'),
@@ -286,7 +284,6 @@ inventoryRouter.get(
   '/categories-units',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedCategoriesUnits(institutionId);
     const data = await getCategoriesUnits(
       institutionId,
       String(req.query.academicYear ?? '2025-26'),
@@ -409,7 +406,6 @@ inventoryRouter.get(
   '/grn',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedGrnManagement(institutionId);
     const data = await getGrnManagement(
       institutionId,
       String(req.query.academicYear ?? '2025-26'),
@@ -515,7 +511,6 @@ inventoryRouter.get(
   '/outward',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedStockOutward(institutionId);
     const data = await getStockOutwardManagement(
       institutionId,
       String(req.query.academicYear ?? '2025-26'),
@@ -575,7 +570,6 @@ inventoryRouter.get(
   '/transfers',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedTransferManagement(institutionId);
     const data = await getTransferManagement(
       institutionId,
       String(req.query.academicYear ?? '2025-26'),
@@ -672,7 +666,6 @@ inventoryRouter.get(
   '/suppliers',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedSupplierManagement(institutionId);
     const data = await getSupplierManagement(
       institutionId,
       String(req.query.academicYear ?? '2025-26'),
@@ -772,7 +765,6 @@ inventoryRouter.get(
   '/purchase-orders',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedPurchaseOrderManagement(institutionId);
     const data = await getPurchaseOrderManagement(
       institutionId,
       String(req.query.academicYear ?? '2025-26'),
@@ -886,7 +878,6 @@ inventoryRouter.get(
   '/vendor-bills',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedVendorBillManagement(institutionId);
     const data = await getVendorBillManagement(
       institutionId,
       String(req.query.academicYear ?? '2025-26'),
@@ -996,7 +987,6 @@ inventoryRouter.get(
   '/adjustments',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedStockAdjustmentManagement(institutionId);
     const data = await getStockAdjustmentManagement(
       institutionId,
       String(req.query.academicYear ?? '2025-26'),
@@ -1092,7 +1082,6 @@ inventoryRouter.get(
   '/barcodes',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedBarcodeManagement(institutionId);
     const data = await getBarcodeManagement(
       institutionId,
       String(req.query.academicYear ?? '2025-26'),
@@ -1149,7 +1138,6 @@ inventoryRouter.get(
   '/stock-verification',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedStockVerification(institutionId);
     const data = await getStockVerificationManagement(
       institutionId,
       String(req.query.academicYear ?? '2025-26'),
@@ -1263,7 +1251,6 @@ inventoryRouter.get(
   '/reorder-level',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedReorderLevel(institutionId);
     const data = await getReorderLevelManagement(
       institutionId,
       String(req.query.academicYear ?? '2025-26'),
@@ -1303,7 +1290,6 @@ inventoryRouter.get(
   '/reports',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedInventoryReports(institutionId);
     const data = await getInventoryReportsAnalytics(
       institutionId,
       String(req.query.academicYear ?? '2025-26'),

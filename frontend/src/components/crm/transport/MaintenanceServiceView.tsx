@@ -81,7 +81,7 @@ export function MaintenanceServiceView({ defaultTab }: { defaultTab?: TabId }) {
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const vehicles = useMemo(() => (data?.vehicles ?? []) as Vehicle[], [data]);
   const workOrders = useMemo(() => (data?.workOrders ?? []) as WorkOrder[], [data]);

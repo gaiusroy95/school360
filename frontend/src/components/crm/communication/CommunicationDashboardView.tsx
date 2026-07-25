@@ -64,7 +64,7 @@ export function CommunicationDashboardView({ onNavigate }: { onNavigate?: (view:
     }
   }, [academicYear, channel, userRole]);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const nav = (target: string) => {
     if (onNavigate) onNavigate(toViewKey('Communication Management', target));

@@ -81,7 +81,7 @@ export function LiveVehicleTrackingView() {
     }
   }, []);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
     if (!data?.isLive) return;

@@ -81,21 +81,6 @@ export function StudentReportsView() {
       setReports(list.reports);
       setGenYear((y) => y || meta.defaultAcademicYear);
       setFilterYear((y) => y || meta.defaultAcademicYear);
-
-      if (meta.summary.total === 0) {
-        await seedStudentReports(meta.defaultAcademicYear);
-        const refreshed = await fetchStudentReports({
-          q: search || undefined,
-          status: filterStatus || undefined,
-          reportType: filterType || undefined,
-          className: filterClass || undefined,
-          sectionName: filterSection || undefined,
-          academicYear: filterYear || meta.defaultAcademicYear,
-        });
-        setReports(refreshed.reports);
-        const meta2 = await fetchStudentReportsMeta();
-        setSummary(meta2.summary);
-      }
     } finally {
       setLoading(false);
     }

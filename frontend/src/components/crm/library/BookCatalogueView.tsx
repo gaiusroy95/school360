@@ -65,7 +65,7 @@ export function BookCatalogueView() {
     }
   }, [search, academicYear, branchId, categoryId, availability, resourceType, authorFilter, publisherFilter, tagFilter, page, memberId]);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const openDetail = async (book: CatalogueBook) => {
     setDetailLoading(true);

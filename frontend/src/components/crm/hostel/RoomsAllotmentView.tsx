@@ -60,7 +60,7 @@ export function RoomsAllotmentView() {
     }
   }, [academicYear, hostelId, blockId, floorId, roomType]);
 
-  useEffect(() => { void load(true); }, []);
+  useEffect(() => { void load(); }, []);
 
   useEffect(() => {
     if (!data) return;

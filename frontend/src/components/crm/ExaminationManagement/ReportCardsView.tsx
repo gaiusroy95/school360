@@ -81,11 +81,7 @@ export function ReportCardsView() {
         setAcademicYear(m.defaultAcademicYear);
       }
       const yearFilter = year || academicYear || m.defaultAcademicYear;
-      let statusData = await fetchClassReportCardStatuses(yearFilter);
-      if (!statusData.classes.some((c) => c.generatedCount > 0)) {
-        await seedReportCards(yearFilter);
-        statusData = await fetchClassReportCardStatuses(yearFilter);
-      }
+      const statusData = await fetchClassReportCardStatuses(yearFilter);
       const [configData, boardData] = await Promise.all([
         fetchReportCardConfig(yearFilter),
         fetchBoardMarksheetUploads({ academicYear: yearFilter }),

@@ -147,23 +147,13 @@ export function SubjectsSyllabusView() {
         setAcademicYear(m.defaultAcademicYear);
       }
       const yearFilter = meta ? academicYear : m.defaultAcademicYear;
-      let overview = await fetchExamSyllabusOverview({
+      const overview = await fetchExamSyllabusOverview({
         academicYear: yearFilter,
         className: className || undefined,
         sectionName: sectionName || undefined,
         subjectName: subjectName || undefined,
         category: category !== 'all' ? category : undefined,
       });
-      if (!overview.records.length) {
-        await seedExamSyllabus(yearFilter);
-        overview = await fetchExamSyllabusOverview({
-          academicYear: yearFilter,
-          className: className || undefined,
-          sectionName: sectionName || undefined,
-          subjectName: subjectName || undefined,
-          category: category !== 'all' ? category : undefined,
-        });
-      }
       setData(overview);
       setExpandedSubjects((prev) => {
         if (prev.size > 0) return prev;

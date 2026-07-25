@@ -129,7 +129,6 @@ libraryRouter.get(
   '/dashboard',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedLibraryDashboard(institutionId);
     const academicYear = String(req.query.academicYear ?? '2025-26');
     const branchId = req.query.branchId ? String(req.query.branchId) : undefined;
     const data = await getLibraryDashboard(institutionId, academicYear, branchId);
@@ -167,7 +166,6 @@ libraryRouter.get(
   '/catalogue',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedBookCatalogue(institutionId);
     const page = Number(req.query.page ?? 1);
     const pageSize = Number(req.query.pageSize ?? 12);
     const data = await getBookCatalogue(
@@ -230,7 +228,6 @@ libraryRouter.get(
   '/circulation',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedLibraryCirculation(institutionId);
     const academicYear = String(req.query.academicYear ?? '2025-26');
     const branchId = req.query.branchId ? String(req.query.branchId) : undefined;
     const data = await getBookIssueReturn(institutionId, academicYear, branchId);
@@ -310,7 +307,6 @@ libraryRouter.get(
   '/members',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedLibraryMembers(institutionId);
     const academicYear = String(req.query.academicYear ?? '2025-26');
     const data = await getLibraryMembers(institutionId, academicYear, {
       q: req.query.q ? String(req.query.q) : undefined,
@@ -401,7 +397,6 @@ libraryRouter.get(
   '/books',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedBookManagement(institutionId);
     const academicYear = String(req.query.academicYear ?? '2025-26');
     const data = await getBookManagement(institutionId, academicYear, {
       q: req.query.q ? String(req.query.q) : undefined,
@@ -489,7 +484,6 @@ libraryRouter.get(
   '/categories',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedCategoriesSubjects(institutionId);
     const academicYear = String(req.query.academicYear ?? '2025-26');
     const data = await getCategoriesSubjects(institutionId, academicYear);
     return res.json(data);
@@ -582,7 +576,6 @@ libraryRouter.get(
   '/racks',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedRackManagement(institutionId);
     const data = await getRackManagement(institutionId);
     return res.json(data);
   }),
@@ -779,7 +772,6 @@ libraryRouter.get(
   '/stock-verification',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedStockVerification(institutionId);
     const sessionId = req.query.sessionId ? String(req.query.sessionId) : undefined;
     const data = await getStockVerification(institutionId, sessionId);
     return res.json(data);
@@ -877,7 +869,6 @@ libraryRouter.get(
   '/fines',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedFineManagement(institutionId);
     const memberId = req.query.memberId ? String(req.query.memberId) : undefined;
     const data = await getFineManagement(institutionId, memberId);
     return res.json(data);
@@ -958,7 +949,6 @@ libraryRouter.get(
   '/attendance',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedLibraryGateAttendance(institutionId);
     const academicYear = String(req.query.academicYear ?? '2025-26');
     const branchId = req.query.branchId ? String(req.query.branchId) : undefined;
     const data = await getLibraryGateAttendance(institutionId, academicYear, branchId);
@@ -1049,7 +1039,6 @@ libraryRouter.get(
   '/reading-room',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedLibraryReadingRoom(institutionId);
     const academicYear = String(req.query.academicYear ?? '2025-26');
     const branchId = req.query.branchId ? String(req.query.branchId) : undefined;
     const data = await getLibraryReadingRoom(institutionId, academicYear, branchId);
@@ -1128,7 +1117,6 @@ libraryRouter.get(
   '/e-resources',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedLibraryEResources(institutionId);
     const academicYear = String(req.query.academicYear ?? '2025-26');
     const branchId = req.query.branchId ? String(req.query.branchId) : undefined;
     const opacOnly = req.query.opac === '1';
@@ -1238,7 +1226,6 @@ libraryRouter.get(
   '/reports',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedLibraryReportsAnalytics(institutionId);
     const academicYear = String(req.query.academicYear ?? '2025-26');
     const branchId = req.query.branchId ? String(req.query.branchId) : undefined;
     const userRole = String(req.query.role ?? 'Librarian');

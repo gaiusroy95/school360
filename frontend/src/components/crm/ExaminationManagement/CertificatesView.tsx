@@ -83,23 +83,13 @@ export function CertificatesView() {
         setAcademicYear(m.defaultAcademicYear);
       }
       const yearFilter = year || academicYear || m.defaultAcademicYear;
-      let data = await fetchCertificates({
+      const data = await fetchCertificates({
         academicYear: yearFilter,
         className: className || undefined,
         sectionName: sectionName || undefined,
         category: category !== 'all' ? category : undefined,
         status: status !== 'all' ? status : undefined,
       });
-      if (!data.certificates.length) {
-        await seedCertificates(yearFilter);
-        data = await fetchCertificates({
-          academicYear: yearFilter,
-          className: className || undefined,
-          sectionName: sectionName || undefined,
-          category: category !== 'all' ? category : undefined,
-          status: status !== 'all' ? status : undefined,
-        });
-      }
       setCertificates(data.certificates);
       setSummary(data.summary);
       setSelected(new Set());

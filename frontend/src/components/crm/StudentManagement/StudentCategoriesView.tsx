@@ -64,11 +64,6 @@ export function StudentCategoriesView() {
       setSummary(meta.summary);
       setCategories(cats.categories);
       setAssignments(asg.assignments);
-      if (cats.categories.length === 0) {
-        await seedDefaultCategories();
-        const refreshed = await fetchCategories();
-        setCategories(refreshed.categories);
-      }
     } finally {
       setLoading(false);
     }

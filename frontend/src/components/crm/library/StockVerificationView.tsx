@@ -88,7 +88,7 @@ export function StockVerificationView() {
     }
   }, [targetRackId]);
 
-  useEffect(() => { void load(true); }, []);
+  useEffect(() => { void load(); }, []);
 
   const flash = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
     setMessage(msg);

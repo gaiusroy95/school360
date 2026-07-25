@@ -404,9 +404,8 @@ export function PayrollManagementView({ onNavigate }: Props) {
   );
 
   useEffect(() => {
-    const seed = initialLoad.current;
     initialLoad.current = false;
-    void loadDashboard({ seed });
+    void loadDashboard();
   }, [academicYear, branch, payPeriod, searchDebounced, page, selectedEmployeeId, loadDashboard]);
 
   const subModules = data?.subModules ?? [...DEFAULT_SUB_MODULES];

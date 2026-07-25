@@ -70,7 +70,7 @@ export function RoutePlanningView() {
     finally { setLoading(false); }
   }, [academicYear]);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const plans = useMemo(() => (data?.plans ?? []) as Plan[], [data]);
   const q = search.toLowerCase();

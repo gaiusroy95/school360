@@ -69,7 +69,7 @@ export function TripManagementView() {
     finally { setLoading(false); }
   }, [academicYear]);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const trips = useMemo(() => (data?.trips ?? []) as Trip[], [data]);
   const q = search.toLowerCase();

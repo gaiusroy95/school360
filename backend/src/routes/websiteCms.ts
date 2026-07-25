@@ -18,7 +18,6 @@ websiteCmsRouter.get(
   '/dashboard',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedCmsManagement(institutionId);
     const period = parsePeriod(req.query.period ? String(req.query.period) : undefined);
     const data = await getCmsDashboard(institutionId, period);
     return res.json(data);

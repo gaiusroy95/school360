@@ -70,7 +70,7 @@ export function RackManagementView() {
     }
   }, [expanded.size, floorForm.branchId, bulkCategoryId]);
 
-  useEffect(() => { void load(true); }, []);
+  useEffect(() => { void load(); }, []);
 
   const flash = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
     setMessage(msg);

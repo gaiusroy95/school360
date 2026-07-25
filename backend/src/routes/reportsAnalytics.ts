@@ -24,7 +24,6 @@ reportsAnalyticsRouter.get(
   '/dashboard',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    if (req.query.seed === '1') await seedReportsAnalytics(institutionId);
     const data = await getReportsAnalyticsDashboard(institutionId, {
       academicYear: req.query.academicYear ? String(req.query.academicYear) : undefined,
       period: req.query.period ? String(req.query.period) : undefined,

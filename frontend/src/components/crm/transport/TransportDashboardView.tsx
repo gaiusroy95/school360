@@ -73,7 +73,7 @@ export function TransportDashboardView({ onNavigate }: { onNavigate?: (view: str
     }
   }, [academicYear]);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const kpiList = useMemo(() => {
     if (!data) return [];

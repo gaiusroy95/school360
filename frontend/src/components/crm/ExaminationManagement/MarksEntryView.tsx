@@ -72,11 +72,7 @@ export function MarksEntryView() {
         setAcademicYear(m.defaultAcademicYear);
       }
       const yearFilter = year || academicYear || m.defaultAcademicYear;
-      let data = await fetchSubjectTeacherAssignments(yearFilter);
-      if (!data.assignments.length) {
-        await seedMarksEntry(yearFilter);
-        data = await fetchSubjectTeacherAssignments(yearFilter);
-      }
+      const data = await fetchSubjectTeacherAssignments(yearFilter);
       setAssignments(data.assignments);
       if (!selectedAssignmentId && data.assignments.length) {
         setSelectedAssignmentId(data.assignments[0].id);

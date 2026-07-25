@@ -18,8 +18,305 @@ export type CmsModule =
 
 const VALID_MODULES = new Set<string>([
   'pages', 'blog', 'media', 'menus', 'sliders', 'testimonials',
-  'forms', 'popups', 'seo', 'backups', 'analytics',
+  'forms', 'popups', 'seo', 'backups', 'analytics', 'theme',
 ]);
+
+type CmsFieldDef = {
+  key: string;
+  label: string;
+  type: 'text' | 'textarea' | 'select' | 'number' | 'checkbox';
+  required?: boolean;
+  placeholder?: string;
+  options?: { value: string; label: string }[];
+};
+
+type CmsColumnDef = { key: string; label: string };
+
+type CmsModuleDef = {
+  title: string;
+  description: string;
+  columns: CmsColumnDef[];
+  createFields: CmsFieldDef[];
+  canCreate?: boolean;
+  buildKpis?: (rows: Array<Record<string, unknown>>) => Array<{ label: string; value: string | number }>;
+  formatRow?: (row: Record<string, unknown>) => Record<string, unknown>;
+};
+
+const PUBLISH_STATUS_OPTIONS = [
+  { value: 'DRAFT', label: 'Draft' },
+  { value: 'PUBLISHED', label: 'Published' },
+];
+
+const CMS_MODULE_DEFS: Record<string, CmsModuleDef> = {
+  pages: {
+    title: 'Pages Management',
+    description: 'Create and manage static and dynamic website pages',
+    columns: [
+      { key: 'title', label: 'Title' },
+      { key: 'slug', label: 'Slug' },
+      { key: 'pageType', label: 'Type' },
+      { key: 'status', label: 'Status' },
+      { key: 'viewCount', label: 'Views' },
+      { key: 'updatedAt', label: 'Updated' },
+    ],
+    createFields: [
+      { key: 'title', label: 'Page Title', type: 'text', required: true },
+      { key: 'slug', label: 'URL Slug', type: 'text', placeholder: 'auto-generated if empty' },
+      { key: 'pageType', label: 'Type', type: 'select', options: [
+        { value: 'STATIC', label: 'Static' },
+        { value: 'DYNAMIC', label: 'Dynamic' },
+      ] },
+      { key: 'status', label: 'Status', type: 'select', options: PUBLISH_STATUS_OPTIONS },
+      { key: 'content', label: 'Content', type: 'textarea' },
+    ],
+    buildKpis: (rows) => [
+      { label: 'Total Pages', value: rows.length },
+      { label: 'Published', value: rows.filter((r) => r.status === 'PUBLISHED').length },
+      { label: 'Drafts', value: rows.filter((r) => r.status === 'DRAFT').length },
+    ],
+  },
+  blog: {
+    title: 'Blog Management',
+    description: 'Publish news, events and articles',
+    columns: [
+      { key: 'title', label: 'Title' },
+      { key: 'author', label: 'Author' },
+      { key: 'status', label: 'Status' },
+      { key: 'viewCount', label: 'Views' },
+      { key: 'updatedAt', label: 'Updated' },
+    ],
+    createFields: [
+      { key: 'title', label: 'Post Title', type: 'text', required: true },
+      { key: 'author', label: 'Author', type: 'text' },
+      { key: 'status', label: 'Status', type: 'select', options: PUBLISH_STATUS_OPTIONS },
+      { key: 'excerpt', label: 'Excerpt', type: 'textarea' },
+      { key: 'content', label: 'Content', type: 'textarea' },
+    ],
+    buildKpis: (rows) => [
+      { label: 'Total Posts', value: rows.length },
+      { label: 'Published', value: rows.filter((r) => r.status === 'PUBLISHED').length },
+    ],
+  },
+  media: {
+    title: 'Media Library',
+    description: 'Upload and organize images, documents and videos',
+    columns: [
+      { key: 'fileName', label: 'File' },
+      { key: 'fileType', label: 'Type' },
+      { key: 'folder', label: 'Folder' },
+      { key: 'fileSizeMb', label: 'Size (MB)' },
+      { key: 'uploadedBy', label: 'Uploaded By' },
+      { key: 'createdAt', label: 'Uploaded' },
+    ],
+    createFields: [
+      { key: 'fileName', label: 'File Name', type: 'text', required: true },
+      { key: 'fileType', label: 'Type', type: 'select', options: [
+        { value: 'IMAGE', label: 'Image' },
+        { value: 'DOCUMENT', label: 'Document' },
+        { value: 'VIDEO', label: 'Video' },
+        { value: 'AUDIO', label: 'Audio' },
+      ] },
+      { key: 'fileUrl', label: 'File URL', type: 'text' },
+      { key: 'folder', label: 'Folder', type: 'text' },
+      { key: 'altText', label: 'Alt Text', type: 'text' },
+    ],
+  },
+  menus: {
+    title: 'Menus & Navigation',
+    description: 'Manage header, footer and sidebar navigation',
+    columns: [
+      { key: 'label', label: 'Label' },
+      { key: 'url', label: 'URL' },
+      { key: 'menuLocation', label: 'Location' },
+      { key: 'sortOrder', label: 'Order' },
+      { key: 'isActive', label: 'Active' },
+    ],
+    createFields: [
+      { key: 'label', label: 'Menu Label', type: 'text', required: true },
+      { key: 'url', label: 'URL', type: 'text', required: true },
+      { key: 'menuLocation', label: 'Location', type: 'select', options: [
+        { value: 'HEADER', label: 'Header' },
+        { value: 'FOOTER', label: 'Footer' },
+        { value: 'SIDEBAR', label: 'Sidebar' },
+      ] },
+    ],
+  },
+  sliders: {
+    title: 'Sliders & Banners',
+    description: 'Manage homepage and landing page sliders',
+    columns: [
+      { key: 'title', label: 'Title' },
+      { key: 'location', label: 'Location' },
+      { key: 'sortOrder', label: 'Order' },
+      { key: 'isActive', label: 'Active' },
+    ],
+    createFields: [
+      { key: 'title', label: 'Title', type: 'text', required: true },
+      { key: 'subtitle', label: 'Subtitle', type: 'text' },
+      { key: 'imageUrl', label: 'Image URL', type: 'text' },
+      { key: 'ctaLabel', label: 'Button Label', type: 'text' },
+      { key: 'ctaUrl', label: 'Button URL', type: 'text' },
+    ],
+  },
+  testimonials: {
+    title: 'Testimonials',
+    description: 'Showcase parent and student testimonials',
+    columns: [
+      { key: 'authorName', label: 'Name' },
+      { key: 'authorRole', label: 'Role' },
+      { key: 'rating', label: 'Rating' },
+      { key: 'isFeatured', label: 'Featured' },
+      { key: 'isActive', label: 'Active' },
+    ],
+    createFields: [
+      { key: 'authorName', label: 'Name', type: 'text', required: true },
+      { key: 'authorRole', label: 'Role', type: 'text' },
+      { key: 'content', label: 'Testimonial', type: 'textarea', required: true },
+      { key: 'rating', label: 'Rating (1-5)', type: 'number' },
+    ],
+  },
+  forms: {
+    title: 'Forms Management',
+    description: 'Create enquiry and contact forms',
+    columns: [
+      { key: 'formName', label: 'Form' },
+      { key: 'formCode', label: 'Code' },
+      { key: 'status', label: 'Status' },
+      { key: 'submissionCount', label: 'Submissions' },
+    ],
+    createFields: [
+      { key: 'formName', label: 'Form Name', type: 'text', required: true },
+      { key: 'description', label: 'Description', type: 'textarea' },
+      { key: 'notifyEmail', label: 'Notify Email', type: 'text' },
+    ],
+  },
+  popups: {
+    title: 'Popups & Notices',
+    description: 'Manage popups and announcement notices',
+    columns: [
+      { key: 'title', label: 'Title' },
+      { key: 'popupType', label: 'Type' },
+      { key: 'triggerType', label: 'Trigger' },
+      { key: 'isActive', label: 'Active' },
+    ],
+    createFields: [
+      { key: 'title', label: 'Title', type: 'text', required: true },
+      { key: 'content', label: 'Content', type: 'textarea' },
+      { key: 'popupType', label: 'Type', type: 'select', options: [
+        { value: 'MODAL', label: 'Modal' },
+        { value: 'BANNER', label: 'Banner' },
+      ] },
+    ],
+  },
+  seo: {
+    title: 'SEO Management',
+    description: 'Manage meta tags and SEO scores',
+    columns: [
+      { key: 'entityType', label: 'Entity' },
+      { key: 'metaTitle', label: 'Meta Title' },
+      { key: 'score', label: 'Score' },
+      { key: 'updatedAt', label: 'Updated' },
+    ],
+    createFields: [
+      { key: 'entityType', label: 'Entity Type', type: 'select', options: [
+        { value: 'SITE', label: 'Site' },
+        { value: 'PAGE', label: 'Page' },
+        { value: 'BLOG', label: 'Blog Post' },
+      ] },
+      { key: 'metaTitle', label: 'Meta Title', type: 'text', required: true },
+      { key: 'metaDescription', label: 'Meta Description', type: 'textarea' },
+      { key: 'score', label: 'SEO Score', type: 'number' },
+    ],
+  },
+  backups: {
+    title: 'Backup & Restore',
+    description: 'Create and manage website backups',
+    columns: [
+      { key: 'backupName', label: 'Backup' },
+      { key: 'backupType', label: 'Type' },
+      { key: 'fileSizeMb', label: 'Size (MB)' },
+      { key: 'status', label: 'Status' },
+      { key: 'createdAt', label: 'Created' },
+    ],
+    createFields: [
+      { key: 'backupName', label: 'Backup Name', type: 'text', required: true },
+      { key: 'backupType', label: 'Type', type: 'select', options: [
+        { value: 'FULL', label: 'Full' },
+        { value: 'PARTIAL', label: 'Partial' },
+      ] },
+    ],
+  },
+  analytics: {
+    title: 'Analytics & Reports',
+    description: 'Track visitors, page views and website performance',
+    columns: [
+      { key: 'analyticsDate', label: 'Date' },
+      { key: 'visitors', label: 'Visitors' },
+      { key: 'uniqueVisitors', label: 'Unique' },
+      { key: 'pageViews', label: 'Page Views' },
+      { key: 'avgSession', label: 'Avg Session' },
+      { key: 'desktopViews', label: 'Desktop' },
+      { key: 'mobileViews', label: 'Mobile' },
+      { key: 'tabletViews', label: 'Tablet' },
+    ],
+    createFields: [
+      { key: 'analyticsDate', label: 'Date', type: 'text', required: true, placeholder: 'YYYY-MM-DD' },
+      { key: 'visitors', label: 'Visitors', type: 'number' },
+      { key: 'uniqueVisitors', label: 'Unique Visitors', type: 'number' },
+      { key: 'pageViews', label: 'Page Views', type: 'number' },
+      { key: 'avgSessionSec', label: 'Avg Session (seconds)', type: 'number' },
+      { key: 'desktopViews', label: 'Desktop Views', type: 'number' },
+      { key: 'mobileViews', label: 'Mobile Views', type: 'number' },
+      { key: 'tabletViews', label: 'Tablet Views', type: 'number' },
+    ],
+    buildKpis: (rows) => {
+      const visitors = rows.reduce((s, r) => s + Number(r.visitors ?? 0), 0);
+      const pageViews = rows.reduce((s, r) => s + Number(r.pageViews ?? 0), 0);
+      const unique = rows.reduce((s, r) => s + Number(r.uniqueVisitors ?? 0), 0);
+      return [
+        { label: 'Total Visitors', value: visitors.toLocaleString('en-IN') },
+        { label: 'Page Views', value: pageViews.toLocaleString('en-IN') },
+        { label: 'Unique Visitors', value: unique.toLocaleString('en-IN') },
+        { label: 'Days Tracked', value: rows.length },
+      ];
+    },
+    formatRow: (row) => ({
+      ...row,
+      analyticsDate: row.analyticsDate instanceof Date
+        ? row.analyticsDate.toISOString().slice(0, 10)
+        : String(row.analyticsDate ?? '').slice(0, 10),
+      avgSession: formatDuration(Number(row.avgSessionSec ?? 0)),
+    }),
+  },
+  theme: {
+    title: 'Theme & Appearance',
+    description: 'Configure site theme, branding and hero section',
+    columns: [
+      { key: 'siteName', label: 'Site Name' },
+      { key: 'themeName', label: 'Theme' },
+      { key: 'themeVersion', label: 'Version' },
+      { key: 'publishStatus', label: 'Status' },
+      { key: 'updatedAt', label: 'Updated' },
+    ],
+    createFields: [],
+    canCreate: false,
+  },
+};
+
+function normalizeCmsModule(module: string) {
+  if (module === 'backup') return 'backups';
+  return module;
+}
+
+function serializeCmsRow(row: Record<string, unknown>) {
+  const out: Record<string, unknown> = { ...row };
+  for (const [key, value] of Object.entries(out)) {
+    if (value instanceof Date) {
+      out[key] = value.toISOString();
+    }
+  }
+  return out;
+}
 
 const MEDIA_SPLIT = [
   { fileType: 'IMAGE', label: 'Images', count: 856, color: '#10b981', icon: 'image' },
@@ -127,7 +424,7 @@ function formatDuration(seconds: number) {
 }
 
 function cacheKey(institutionId: string, period: CmsPeriod) {
-  return `${institutionId}:${period}`;
+  return `v2:${institutionId}:${period}`;
 }
 
 export async function logCmsActivity(
@@ -680,18 +977,11 @@ export async function getCmsDashboard(institutionId: string, period: CmsPeriod =
     orderBy: { viewCount: 'desc' },
     take: 8,
   });
-  const maxViews = topPagesFromDb[0]?.viewCount ?? 3500;
+  const maxViews = topPagesFromDb[0]?.viewCount ?? 1;
 
   const mediaTypeMap = new Map(mediaByType.map((m) => [m.fileType, m._count._all]));
-  const mediaBreakdown = MEDIA_SPLIT.map((m) => ({
-    label: m.label,
-    fileType: m.fileType,
-    count: mediaTypeMap.get(m.fileType) ?? m.count,
-    color: m.color,
-    icon: m.icon,
-  }));
 
-  const totalSubmissions = forms.reduce((s, f) => s + f.submissionCount, 0) || submissionCount || 254;
+  const totalSubmissions = forms.reduce((s, f) => s + f.submissionCount, 0) || submissionCount;
   const formColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
   const formOverview = forms.slice(0, 5).map((f, i) => ({
     name: f.formName,
@@ -714,11 +1004,12 @@ export async function getCmsDashboard(institutionId: string, period: CmsPeriod =
     const monthLabel = range.start.toLocaleString('en-IN', { month: 'short' });
     return {
       day: `${day} ${monthLabel}`,
-      visitors: row?.visitors ?? MAY_VISITOR_SAMPLES[day] ?? 0,
+      visitors: row?.visitors ?? 0,
     };
   });
 
   const seoScore = siteSeo?.score ?? settings.seoScore;
+  const seoLabel = seoScore >= 90 ? 'Excellent' : seoScore >= 70 ? 'Good' : 'Needs Improvement';
   const seoChecklist = SEO_CHECKLIST.map((item) => ({
     name: item.name,
     score: `${item.score}/100`,
@@ -771,46 +1062,73 @@ export async function getCmsDashboard(institutionId: string, period: CmsPeriod =
       };
     });
 
-  const navigationTargets = {
-    createPage: 'Pages',
-    addBlog: 'Blog Posts',
-    uploadMedia: 'Media Library',
-    createForm: 'Forms',
-    manageMenus: 'Menus',
-    editSliders: 'Sliders',
-    addPopup: 'Popups',
-    seoSettings: 'SEO Settings',
-    themeSettings: 'Theme Settings',
-    backupWebsite: 'Backups',
-    viewAnalytics: 'Analytics',
-    viewWebsite: settings.siteUrl,
-  };
+  const images = mediaTypeMap.get('IMAGE') ?? 0;
+  const documents = mediaTypeMap.get('DOCUMENT') ?? 0;
+  const videos = mediaTypeMap.get('VIDEO') ?? 0;
+  const audio = mediaTypeMap.get('AUDIO') ?? 0;
 
   const result = {
-    period,
-    periodLabel: range.label,
-    kpis: [
-      { title: 'Total Pages', value: String(pageCount || 58), subtitle: '↑ 12.2% this month', key: 'pages', color: 'text-blue-500', bg: 'bg-blue-100', chartColor: '#3b82f6' },
-      { title: 'Blog Posts', value: String(blogCount || 32), subtitle: '↑ 8.6% this month', key: 'blog', color: 'text-green-500', bg: 'bg-green-100', chartColor: '#10b981' },
-      { title: 'Media Files', value: (mediaCount || 1248).toLocaleString('en-IN'), subtitle: '↑ 15.3% this month', key: 'media', color: 'text-orange-500', bg: 'bg-orange-100', chartColor: '#f59e0b' },
-      { title: 'Form Submissions', value: String(totalSubmissions || 254), subtitle: '↑ 18.7% this month', key: 'forms', color: 'text-red-500', bg: 'bg-red-100', chartColor: '#ef4444' },
-      { title: 'Website Visitors', value: (totalVisitors || 12458).toLocaleString('en-IN'), subtitle: '↑ 21.5% this month', key: 'visitors', color: 'text-blue-500', bg: 'bg-blue-100', chartColor: '#3b82f6' },
-      { title: 'SEO Score', value: `${seoScore} / 100`, subtitle: seoScore >= 90 ? 'Excellent' : 'Good', key: 'seo', color: 'text-green-500', bg: 'bg-green-100', chartColor: '#10b981', noSparkline: true },
-    ],
-    analyticsSummary: {
-      totalVisitors: totalVisitors || 12458,
-      uniqueVisitors: uniqueVisitors || 10245,
-      pageViews: pageViews || 23654,
-      avgSession: formatDuration(avgSessionSec),
+    period: range.label,
+    periods: ['This Month', 'Last Month', 'This Year'],
+    siteUrl: settings.siteUrl,
+    siteName: settings.siteName,
+    heroTitle: settings.heroTitle,
+    heroImageUrl: settings.heroImageUrl,
+    publishStatus: settings.publishStatus === 'PUBLISHED' ? 'Published' : settings.publishStatus,
+    themeName: settings.themeName,
+    themeVersion: settings.themeVersion,
+    lastUpdated: formatDate(settings.lastPublishedAt ?? settings.updatedAt),
+    sslEnabled: settings.sslEnabled,
+    kpis: {
+      totalPages: {
+        value: pageCount,
+        subtitle: pageCount > 0 ? `${pageCount} page${pageCount === 1 ? '' : 's'}` : 'No pages yet',
+        chartColor: '#3b82f6',
+      },
+      blogPosts: {
+        value: blogCount,
+        subtitle: blogCount > 0 ? `${blogCount} post${blogCount === 1 ? '' : 's'}` : 'No posts yet',
+        chartColor: '#10b981',
+      },
+      mediaFiles: {
+        value: mediaCount,
+        subtitle: mediaCount > 0 ? `${mediaCount} file${mediaCount === 1 ? '' : 's'}` : 'No media yet',
+        chartColor: '#f59e0b',
+      },
+      formSubmissions: {
+        value: totalSubmissions,
+        subtitle: totalSubmissions > 0 ? `${totalSubmissions} submission${totalSubmissions === 1 ? '' : 's'}` : 'No submissions',
+        chartColor: '#ef4444',
+      },
+      websiteVisitors: {
+        value: totalVisitors,
+        subtitle: totalVisitors > 0 ? 'This period' : 'No traffic yet',
+        chartColor: '#3b82f6',
+      },
+      seoScore: {
+        value: seoScore,
+        subtitle: seoLabel,
+        noSparkline: true,
+        chartColor: '#10b981',
+      },
     },
     visitorTrends,
+    visitorSummary: {
+      totalVisitors,
+      uniqueVisitors,
+      pageViews,
+      avgSession: formatDuration(avgSessionSec),
+    },
     topPages: topPagesFromDb.map((p) => ({
       name: p.title,
       views: p.viewCount,
-      max: maxViews,
+      max: maxViews || 1,
     })),
-    seoChecklist,
-    seoScore,
+    seoOverview: {
+      score: seoScore,
+      label: seoLabel,
+      checklist: seoChecklist,
+    },
     recentPages: pages.map((p) => ({
       id: p.id,
       title: p.title,
@@ -825,65 +1143,56 @@ export async function getCmsDashboard(institutionId: string, period: CmsPeriod =
       status: b.status === 'PUBLISHED' ? 'Published' : b.status === 'DRAFT' ? 'Draft' : b.status,
       date: formatDate(b.updatedAt),
     })),
-    totalPages: pageCount || 58,
-    totalBlogPosts: blogCount || 32,
-    mediaBreakdown,
-    storage: {
-      usedGb: settings.storageUsedGb,
-      limitGb: settings.storageLimitGb,
-      percent: storagePercent,
-      label: `${settings.storageUsedGb} GB / ${settings.storageLimitGb} GB`,
+    totalPages: pageCount,
+    totalPosts: blogCount,
+    mediaLibrary: {
+      images,
+      documents,
+      videos,
+      audio,
+      storageUsedGb: settings.storageUsedGb,
+      storageLimitGb: settings.storageLimitGb,
+      storagePercent,
     },
     formOverview,
     totalFormSubmissions: totalSubmissions,
     deviceOverview,
     recentActivity,
     importantNotices,
-    siteOverview: {
-      siteUrl: settings.siteUrl,
-      siteName: settings.siteName,
-      heroTitle: settings.heroTitle,
-      heroImageUrl: settings.heroImageUrl,
-      publishStatus: settings.publishStatus === 'PUBLISHED' ? 'Published' : settings.publishStatus,
-      themeName: settings.themeName,
-      themeVersion: settings.themeVersion,
-      lastUpdated: formatDate(settings.lastPublishedAt ?? settings.updatedAt),
-      sslEnabled: settings.sslEnabled,
-    },
     quickActions: [
-      { label: 'Create New Page', target: 'createPage', iconType: 'file' },
-      { label: 'Add Blog Post', target: 'addBlog', iconType: 'edit' },
-      { label: 'Upload Media', target: 'uploadMedia', iconType: 'upload' },
-      { label: 'Create Form', target: 'createForm', iconType: 'form' },
-      { label: 'Manage Menus', target: 'manageMenus', iconType: 'layout' },
-      { label: 'Edit Sliders', target: 'editSliders', iconType: 'layers' },
-      { label: 'Add Popup', target: 'addPopup', iconType: 'popup' },
-      { label: 'SEO Settings', target: 'seoSettings', iconType: 'search' },
-      { label: 'Theme Settings', target: 'themeSettings', iconType: 'palette' },
-      { label: 'Backup Website', target: 'backupWebsite', iconType: 'database' },
+      { label: 'Create New Page', target: 'Pages Management' },
+      { label: 'Add Blog Post', target: 'Blog Management' },
+      { label: 'Upload Media', target: 'Media Library' },
+      { label: 'Create Form', target: 'Forms Management' },
+      { label: 'Manage Menus', target: 'Menus & Navigation' },
+      { label: 'Edit Sliders', target: 'Sliders & Banners' },
+      { label: 'Add Popup', target: 'Popups & Notices' },
+      { label: 'SEO Settings', target: 'SEO Management' },
+      { label: 'Theme Settings', target: 'Theme & Appearance' },
+      { label: 'Backup Website', target: 'Backup & Restore' },
     ],
     keyBenefits: [
-      { title: 'Easy Content Management', desc: 'Update pages & content without coding', iconType: 'file', bg: 'bg-green-50' },
-      { title: 'SEO Optimized', desc: 'Improve search ranking & visibility', iconType: 'search', bg: 'bg-blue-50' },
+      { title: 'Easy Content Management', desc: 'Update pages & content without coding', iconType: 'page', bg: 'bg-green-50' },
+      { title: 'SEO Optimized', desc: 'Improve search ranking & visibility', iconType: 'seo', bg: 'bg-blue-50' },
       { title: 'Mobile Responsive', desc: 'Looks perfect on all devices', iconType: 'mobile', bg: 'bg-indigo-50' },
-      { title: 'Real-time Analytics', desc: 'Track visitors and performance', iconType: 'chart', bg: 'bg-red-50' },
-      { title: 'Secure & Reliable', desc: 'SSL, backup & security for your website', iconType: 'shield', bg: 'bg-blue-50' },
-      { title: 'Engage Better', desc: 'Forms, popups & blogs to engage visitors', iconType: 'message', bg: 'bg-orange-50' },
-      { title: 'Brand Building', desc: 'Showcase your school professionally', iconType: 'globe', bg: 'bg-pink-50' },
+      { title: 'Real-time Analytics', desc: 'Track visitors and performance', iconType: 'analytics', bg: 'bg-red-50' },
+      { title: 'Secure & Reliable', desc: 'SSL, backup & security for your website', iconType: 'secure', bg: 'bg-blue-50' },
+      { title: 'Engage Better', desc: 'Forms, popups & blogs to engage visitors', iconType: 'engage', bg: 'bg-orange-50' },
+      { title: 'Brand Building', desc: 'Showcase your school professionally', iconType: 'brand', bg: 'bg-pink-50' },
     ],
-    navigationTargets,
   };
 
   dashboardCache.set(ck, { data: result, expiresAt: Date.now() + 5 * 60 * 1000 });
   return result;
 }
 
-export async function getCmsModuleList(institutionId: string, module: string) {
-  if (!VALID_MODULES.has(module)) {
+export async function fetchCmsModuleRecords(institutionId: string, module: string) {
+  const normalized = normalizeCmsModule(module);
+  if (!VALID_MODULES.has(normalized)) {
     throw new Error(`Unknown CMS module: ${module}`);
   }
 
-  switch (module) {
+  switch (normalized) {
     case 'pages':
       return prisma.cmsPage.findMany({
         where: { institutionId },
@@ -941,18 +1250,54 @@ export async function getCmsModuleList(institutionId: string, module: string) {
         orderBy: { analyticsDate: 'desc' },
         take: 365,
       });
+    case 'theme': {
+      const settings = await ensureSiteSettings(institutionId);
+      return [settings];
+    }
     default:
       return [];
   }
 }
 
-export async function createCmsModuleItem(institutionId: string, module: string, data: Record<string, unknown>) {
-  if (!VALID_MODULES.has(module)) {
+export async function getCmsModuleList(institutionId: string, module: string) {
+  const normalized = normalizeCmsModule(module);
+  const def = CMS_MODULE_DEFS[normalized];
+  if (!def) {
     throw new Error(`Unknown CMS module: ${module}`);
   }
 
+  const records = await fetchCmsModuleRecords(institutionId, normalized);
+  const rawRows = records.map((row) => serializeCmsRow(row as Record<string, unknown>));
+  const items = rawRows.map((row) => (def.formatRow ? def.formatRow(row) : row));
+
+  return {
+    module: normalized,
+    title: def.title,
+    description: def.description,
+    columns: def.columns,
+    items,
+    totalItems: items.length,
+    createFields: def.createFields,
+    permissions: {
+      canCreate: def.canCreate !== false && def.createFields.length > 0,
+      canEdit: true,
+      canDelete: normalized !== 'theme',
+    },
+    kpis: def.buildKpis?.(rawRows) ?? [],
+  };
+}
+
+export async function createCmsModuleItem(institutionId: string, module: string, data: Record<string, unknown>) {
+  const normalized = normalizeCmsModule(module);
+  if (!VALID_MODULES.has(normalized)) {
+    throw new Error(`Unknown CMS module: ${module}`);
+  }
+  if (normalized === 'theme') {
+    throw new Error('Theme settings cannot be created from this view');
+  }
+
   let created: { id: string };
-  switch (module) {
+  switch (normalized) {
     case 'pages': {
       const title = String(data.title ?? 'New Page');
       const slug = String(data.slug ?? slugify(title));
@@ -1134,13 +1479,17 @@ export async function createCmsModuleItem(institutionId: string, module: string,
   await logCmsActivity(
     institutionId,
     'CREATE',
-    `Created ${module} item`,
-    module.toUpperCase(),
+    `Created ${normalized} item`,
+    normalized.toUpperCase(),
     String(data.performedBy ?? 'Admin'),
     created.id,
   );
 
-  return created;
+  return {
+    message: 'Created successfully',
+    item: created,
+    data: await getCmsModuleList(institutionId, normalized),
+  };
 }
 
 export async function updateCmsModuleItem(
@@ -1149,7 +1498,8 @@ export async function updateCmsModuleItem(
   id: string,
   data: Record<string, unknown>,
 ) {
-  if (!VALID_MODULES.has(module)) {
+  const normalized = normalizeCmsModule(module);
+  if (!VALID_MODULES.has(normalized)) {
     throw new Error(`Unknown CMS module: ${module}`);
   }
 
@@ -1159,7 +1509,7 @@ export async function updateCmsModuleItem(
   delete strip.institutionId;
 
   let updated: { id: string };
-  switch (module) {
+  switch (normalized) {
     case 'pages':
       updated = await prisma.cmsPage.update({
         where: { id },
@@ -1329,13 +1679,17 @@ export async function updateCmsModuleItem(
   await logCmsActivity(
     institutionId,
     'UPDATE',
-    `Updated ${module} item ${id}`,
-    module.toUpperCase(),
+    `Updated ${normalized} item ${id}`,
+    normalized.toUpperCase(),
     String(data.performedBy ?? 'Admin'),
     id,
   );
 
-  return updated;
+  return {
+    message: 'Updated successfully',
+    item: updated,
+    data: await getCmsModuleList(institutionId, normalized),
+  };
 }
 
 export { parsePeriod };
