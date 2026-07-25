@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  BarChart3, BookOpen, Calendar, CheckCircle2, ChevronRight,
+  BarChart3, BookOpen, Calendar, CheckCircle2,
   RefreshCw, Smartphone, Users,
 } from 'lucide-react';
 import {
@@ -20,7 +20,6 @@ import {
 
 const TABS = [
   'Dashboard',
-  'Workflow',
   'TNA',
   'Categories',
   'Courses',
@@ -49,56 +48,6 @@ function Kpi({ label, value, sub }: { label: string; value: string | number; sub
       <p className="text-[10px] font-bold text-slate-400 uppercase">{label}</p>
       <p className="text-xl font-black text-slate-900 mt-1">{value}</p>
       {sub && <p className="text-[10px] text-slate-400 mt-0.5">{sub}</p>}
-    </div>
-  );
-}
-
-function WorkflowDiagram({ workflow }: { workflow: TrainingDashboard['workflow'] }) {
-  return (
-    <div className={`${am.card} p-6`}>
-      <h3 className="font-bold text-slate-800 mb-4 text-center">Annual Training Workflow</h3>
-      <div className="flex flex-col items-center max-w-md mx-auto">
-        {workflow.map((step, i) => (
-          <div key={step.key} className="flex flex-col items-center w-full">
-            <div className="w-full text-center px-4 py-2 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700">
-              {step.label}
-            </div>
-            {i < workflow.length - 1 && (
-              <div className="flex flex-col items-center py-1">
-                <div className="w-0.5 h-2 bg-slate-300" />
-                <span className="text-slate-400 text-xs">|</span>
-                <div className="w-0.5 h-2 bg-slate-300" />
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ModuleTree() {
-  const modules = [
-    'Training Dashboard', 'Annual Training Calendar', 'Training Need Analysis (TNA)',
-    'Training Categories', 'Course Master', 'Trainer Management', 'Training Batch Management',
-    'Nomination Management', 'Learning Management (LMS)', 'Live Training Sessions',
-    'Assessments & Quiz', 'Assignment Management', 'Attendance Management',
-    'Feedback & Evaluation', 'Certification Management', 'Competency Development',
-    'Individual Development Plan (IDP)', 'Training Budget', 'External Training',
-    'Training Reports', 'Training Analytics', 'Settings',
-  ];
-  return (
-    <div className={`${am.card} p-4`}>
-      <h3 className="font-bold text-slate-800 mb-2">Module Architecture</h3>
-      <p className="text-xs text-amber-700 font-bold mb-2">HR Management</p>
-      <div className="space-y-1 text-sm text-slate-600 pl-3 border-l-2 border-amber-200">
-        {modules.map((m) => (
-          <p key={m} className="flex items-center gap-1">
-            <ChevronRight size={12} className="text-slate-400 shrink-0" />
-            {m}
-          </p>
-        ))}
-      </div>
     </div>
   );
 }
@@ -185,9 +134,7 @@ export function TrainingDevelopmentView() {
               <Kpi label="Training Hours" value={data.kpis.trainingHours} />
               <Kpi label="Mandatory Compliance" value={`${data.kpis.mandatoryCompliancePct}%`} />
             </div>
-            <div className="grid lg:grid-cols-3 gap-4">
-              <WorkflowDiagram workflow={data.workflow} />
-              <ModuleTree />
+            <div className="grid lg:grid-cols-2 gap-4">
               <div className={`${am.card} p-4`}>
                 <h3 className="font-bold text-slate-800 mb-3">Database Masters</h3>
                 <div className="grid grid-cols-2 gap-1 text-xs text-slate-600 max-h-80 overflow-y-auto">
@@ -198,34 +145,10 @@ export function TrainingDevelopmentView() {
                   ))}
                 </div>
               </div>
-            </div>
-          </div>
-        )}
-
-        {tab === 'Workflow' && data && (
-          <div className="grid lg:grid-cols-2 gap-4">
-            <WorkflowDiagram workflow={data.workflow} />
-            <div className={`${am.card} p-4`}>
-              <h3 className="font-bold text-slate-800 mb-3">Workflow Automation</h3>
-              <div className="space-y-2 text-sm text-slate-600">
-                {[
-                  'Send nomination notifications',
-                  'Schedule calendar invites',
-                  'Send reminders (7d, 3d, 1d, 1hr before)',
-                  'Mark attendance via QR/GPS/Biometric',
-                  'Unlock content after attendance',
-                  'Trigger quizzes after completion',
-                  'Issue certificates on passing',
-                  'Update competency records',
-                  'Link training to annual appraisal',
-                  'Notify managers of overdue mandatory training',
-                  'Recommend refresher before cert expiry',
-                ].map((rule) => (
-                  <p key={rule} className="flex items-start gap-2">
-                    <CheckCircle2 size={14} className="text-green-600 shrink-0 mt-0.5" />
-                    {rule}
-                  </p>
-                ))}
+              <div className={`${am.card} p-4`}>
+                <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2"><Calendar size={16} /> Upcoming Batches</h3>
+                <p className="text-3xl font-black text-amber-700">{data.kpis.upcomingBatches}</p>
+                <p className="text-sm text-slate-500 mt-2">Scheduled training sessions in calendar</p>
               </div>
             </div>
           </div>
@@ -423,7 +346,6 @@ export function TrainingDevelopmentView() {
                 ))}
               </tbody>
             </table>
-            <p className="text-xs text-slate-500 mt-2 p-2">Nomination workflow: Employee → Reporting Manager → HR → Confirmed</p>
           </div>
         )}
 

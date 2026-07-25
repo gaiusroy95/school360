@@ -201,17 +201,7 @@ export function ShiftManagementView() {
                   <Kpi label="Attendance %" value={`${kpis.attendancePct}%`} />
                   <Kpi label="Shift Utilization" value={`${kpis.shiftUtilization}%`} />
                 </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <div className={`${am.card} ${am.cardPad}`}>
-                    <h4 className="text-xs font-bold text-slate-700 mb-2">Workflow Overview</h4>
-                    {data?.workflows && Object.entries(data.workflows).map(([key, steps]) => (
-                      <div key={key} className="mb-2">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase">{key.replace(/([A-Z])/g, ' $1')}</p>
-                        <p className="text-xs text-slate-600">{steps.join(' → ')}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <div className={`${am.card} ${am.cardPad}`}>
+                <div className={`${am.card} ${am.cardPad}`}>
                     <h4 className="text-xs font-bold text-slate-700 mb-2">Role-Based Access</h4>
                     <div className="space-y-2 max-h-48 overflow-y-auto">
                       {data?.roles.map((r) => (
@@ -222,7 +212,6 @@ export function ShiftManagementView() {
                       ))}
                     </div>
                   </div>
-                </div>
               </div>
             )}
 

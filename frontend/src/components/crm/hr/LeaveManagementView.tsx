@@ -1047,19 +1047,6 @@ export function LeaveManagementView() {
                     <div><span className="text-slate-500">Campus:</span> <span className="font-semibold">{String(policyDetail.campus)}</span></div>
                   </div>
 
-                  {Array.isArray(policyDetail.approvalWorkflow) && (
-                    <div>
-                      <p className="text-xs font-bold text-slate-700 mb-1">Approval Workflow</p>
-                      <div className="flex flex-wrap gap-1">
-                        {(policyDetail.approvalWorkflow as string[]).map((step, i) => (
-                          <span key={step} className="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-semibold">
-                            {i + 1}. {step}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
                   <div>
                     <p className="text-xs font-bold text-slate-700 mb-2">Leave Types</p>
                     <div className="overflow-x-auto">

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  CheckCircle2, ChevronRight, FileText, FolderOpen, RefreshCw,
+  CheckCircle2, FileText, FolderOpen, RefreshCw,
   Shield, UserCheck, AlertTriangle,
 } from 'lucide-react';
 import {
@@ -23,7 +23,6 @@ import {
 
 const TABS = [
   'Dashboard',
-  'Workflow',
   'Onboarding Cases',
   'Document Repository',
   'Verification',
@@ -46,57 +45,6 @@ function Kpi({ label, value }: { label: string; value: string | number }) {
     <div className={`${am.card} p-3`}>
       <p className="text-[10px] font-bold text-slate-400 uppercase">{label}</p>
       <p className="text-xl font-black text-slate-900 mt-1">{value}</p>
-    </div>
-  );
-}
-
-function OnboardingWorkflow({ workflow }: { workflow: EdomsDashboard['workflow'] }) {
-  return (
-    <div className={`${am.card} p-6`}>
-      <h3 className="font-bold text-slate-800 mb-4 text-center">End-to-End Onboarding Workflow</h3>
-      <div className="flex flex-col items-center max-w-md mx-auto">
-        {workflow.map((step, i) => (
-          <div key={step.key} className="flex flex-col items-center w-full">
-            <div className="w-full text-center px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700">
-              {step.label}
-            </div>
-            {i < workflow.length - 1 && <span className="text-slate-400 py-0.5">|</span>}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function VerificationWorkflow({ steps }: { steps: EdomsDashboard['verificationWorkflow'] }) {
-  return (
-    <div className={`${am.card} p-4`}>
-      <h3 className="font-bold text-slate-800 mb-3">HR Verification Workflow</h3>
-      <div className="flex flex-col items-center">
-        {steps.map((s, i) => (
-          <div key={s.label} className="flex flex-col items-center w-full">
-            <p className="text-sm text-slate-700 text-center py-1">{s.label}</p>
-            {i < steps.length - 1 && <span className="text-slate-400">|</span>}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ModuleStructure({ modules }: { modules: string[] }) {
-  return (
-    <div className={`${am.card} p-4`}>
-      <h3 className="font-bold text-slate-800 mb-2">Module Structure</h3>
-      <p className="text-xs text-amber-700 font-bold mb-2">HRMS</p>
-      <div className="space-y-1 text-sm text-slate-600 pl-3 border-l-2 border-amber-200 max-h-72 overflow-y-auto">
-        {modules.map((m) => (
-          <p key={m} className="flex items-center gap-1">
-            <ChevronRight size={12} className="text-slate-400 shrink-0" />
-            {m}
-          </p>
-        ))}
-      </div>
     </div>
   );
 }
@@ -157,27 +105,21 @@ export function DocumentsView() {
               <Kpi label="Expiring Soon" value={data.kpis.expiringSoon} />
               <Kpi label="Checklist %" value={`${data.kpis.checklistCompletion}%`} />
             </div>
-            <div className="grid lg:grid-cols-3 gap-4">
-              <OnboardingWorkflow workflow={data.workflow} />
-              <ModuleStructure modules={data.moduleStructure} />
-              <VerificationWorkflow steps={data.verificationWorkflow} />
-            </div>
-          </div>
-        )}
-
-        {tab === 'Workflow' && data && (
-          <div className="grid lg:grid-cols-2 gap-4">
-            <OnboardingWorkflow workflow={data.workflow} />
-            <div className="space-y-4">
-              <VerificationWorkflow steps={data.verificationWorkflow} />
-              <div className={`${am.card} p-4`}>
-                <h3 className="font-bold text-slate-800 mb-3">Workflow Automation</h3>
-                {data.automationRules.map((rule) => (
-                  <p key={rule} className="flex items-start gap-2 text-sm text-slate-600 mb-1">
-                    <CheckCircle2 size={14} className="text-green-600 shrink-0 mt-0.5" />
-                    {rule}
-                  </p>
+            <div className={`${am.card} p-4`}>
+              <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
+                <AlertTriangle size={16} className="text-amber-500" /> Recent Onboarding Cases
+              </h3>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {data.onboardings.slice(0, 6).map((o) => (
+                  <div key={String(o.id)} className="flex items-center justify-between text-sm border-b border-slate-50 pb-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-800 truncate">{String(o.candidateName)}</p>
+                      <p className="text-[10px] text-slate-500">{String(o.department)} · {String(o.workflowStage).replace(/_/g, ' ')}</p>
+                    </div>
+                    <StatusBadge status={String(o.status)} />
+                  </div>
                 ))}
+                {data.onboardings.length === 0 && <p className="text-slate-400 text-sm">No onboarding cases yet</p>}
               </div>
             </div>
           </div>
@@ -511,11 +453,22 @@ export function DocumentsView() {
                 </div>
               ))}
             </div>
-            <div className={`${am.card} p-4`}>
-              <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2"><FolderOpen size={16} /> Document Policy</h3>
+            <div className="space-y-4">
+              <div className={`${am.card} p-4`}>
+                <h3 className="font-bold text-slate-800 mb-3">Automation Rules</h3>
+                {data.automationRules.map((rule) => (
+                  <p key={rule} className="flex items-start gap-2 text-sm text-slate-600 mb-1">
+                    <CheckCircle2 size={14} className="text-green-600 shrink-0 mt-0.5" />
+                    {rule}
+                  </p>
+                ))}
+              </div>
+              <div className={`${am.card} p-4`}>
+                <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2"><FolderOpen size={16} /> Document Policy</h3>
               <p className="text-sm text-slate-600">Retention: {String(data.settings.retentionPolicy)}</p>
               <p className="text-sm text-slate-600 mt-2">Expiry alerts: {(data.settings.expiryAlertDays as number[]).join(', ')} days</p>
               <p className="text-xs text-slate-500 mt-4">Encrypted storage · Immutable audit logs · Version control · No permanent deletion</p>
+              </div>
             </div>
           </div>
         )}

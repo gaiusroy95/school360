@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  CheckCircle2, ChevronRight, DoorOpen, RefreshCw, Shield, Users,
+  CheckCircle2, DoorOpen, RefreshCw, Shield, Users,
 } from 'lucide-react';
 import {
   advanceExitWorkflow,
@@ -47,57 +47,6 @@ function Kpi({ label, value }: { label: string; value: string | number }) {
     <div className={`${am.card} p-3`}>
       <p className="text-[10px] font-bold text-slate-400 uppercase">{label}</p>
       <p className="text-xl font-black text-slate-900 mt-1">{value}</p>
-    </div>
-  );
-}
-
-function ExitWorkflow({ workflow }: { workflow: ExitDashboard['workflow'] }) {
-  return (
-    <div className={`${am.card} p-6`}>
-      <h3 className="font-bold text-slate-800 mb-4 text-center">End-to-End Exit Workflow</h3>
-      <div className="flex flex-col items-center max-w-md mx-auto">
-        {workflow.map((step, i) => (
-          <div key={step.key} className="flex flex-col items-center w-full">
-            <div className="w-full text-center px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700">
-              {step.label}
-            </div>
-            {i < workflow.length - 1 && <span className="text-slate-400 py-0.5">|</span>}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function LinearWorkflow({ title, steps }: { title: string; steps: { step: number; label: string }[] }) {
-  return (
-    <div className={`${am.card} p-4`}>
-      <h3 className="font-bold text-slate-800 mb-3">{title}</h3>
-      <div className="flex flex-col items-center">
-        {steps.map((s, i) => (
-          <div key={s.label} className="flex flex-col items-center w-full">
-            <p className="text-sm text-slate-700 text-center py-1">{s.label}</p>
-            {i < steps.length - 1 && <span className="text-slate-400">|</span>}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ModuleStructure({ modules }: { modules: string[] }) {
-  return (
-    <div className={`${am.card} p-4`}>
-      <h3 className="font-bold text-slate-800 mb-2">Module Structure</h3>
-      <p className="text-xs text-amber-700 font-bold mb-2">HRMS</p>
-      <div className="space-y-1 text-sm text-slate-600 pl-3 border-l-2 border-amber-200 max-h-72 overflow-y-auto">
-        {modules.map((m) => (
-          <p key={m} className="flex items-center gap-1">
-            <ChevronRight size={12} className="text-slate-400 shrink-0" />
-            {m}
-          </p>
-        ))}
-      </div>
     </div>
   );
 }
@@ -182,15 +131,22 @@ export function ResignationExitView() {
               <Kpi label="Attrition Rate" value={`${data.kpis.attritionRate}%`} />
               <Kpi label="Avg Notice (days)" value={data.analytics.avgNoticePeriod} />
             </div>
-            <div className="grid lg:grid-cols-3 gap-4">
-              <ExitWorkflow workflow={data.workflow} />
-              <ModuleStructure modules={data.moduleStructure} />
-              <div className="space-y-4">
-                <LinearWorkflow title="Approval Workflow" steps={data.approvalWorkflow} />
-                <LinearWorkflow title="Clearance Workflow" steps={data.clearanceWorkflow} />
+            <RoleMatrix roles={roleMatrix} />
+            <div className={`${am.card} p-4`}>
+              <h3 className="font-bold text-slate-800 mb-3">Active Exit Cases</h3>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {data.resignations.filter((r) => r.status !== 'COMPLETED').slice(0, 6).map((r) => (
+                  <div key={String(r.id)} className="flex items-center justify-between text-sm border-b border-slate-50 pb-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-800 truncate">{String(r.employeeName)}</p>
+                      <p className="text-[10px] text-slate-500">{String(r.department)} · {String(r.workflowStage).replace(/_/g, ' ')}</p>
+                    </div>
+                    <StatusBadge status={String(r.status)} />
+                  </div>
+                ))}
+                {data.resignations.length === 0 && <p className="text-slate-400 text-sm">No exit cases</p>}
               </div>
             </div>
-            <RoleMatrix roles={roleMatrix} />
           </div>
         )}
 

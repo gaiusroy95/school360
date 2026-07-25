@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  ArrowRight, Briefcase, CheckCircle2, ChevronRight, ClipboardList,
+  ArrowRight, Briefcase, CheckCircle2, ClipboardList,
   Loader2, Plus, RefreshCw, Send, UserCheck,
 } from 'lucide-react';
 import {
@@ -29,7 +29,6 @@ import {
 
 const TABS = [
   'Dashboard',
-  'Workflow',
   'Manpower Planning',
   'Job Requisition',
   'Vacancy & Posting',
@@ -50,49 +49,6 @@ function Kpi({ label, value, sub }: { label: string; value: string | number; sub
       <p className="text-[10px] font-bold text-slate-400 uppercase">{label}</p>
       <p className="text-xl font-black text-slate-900 mt-1">{value}</p>
       {sub && <p className="text-[10px] text-slate-400 mt-0.5">{sub}</p>}
-    </div>
-  );
-}
-
-function WorkflowDiagram({ workflow, pipeline }: {
-  workflow: Array<{ key: string; label: string }>;
-  pipeline: Array<{ stage: string; count: number }>;
-}) {
-  const countMap = new Map(pipeline.map((p) => [p.stage, p.count]));
-  return (
-    <div className={`${am.card} p-6`}>
-      <h3 className="font-bold text-slate-800 mb-4 text-center">Recruitment Workflow</h3>
-      <div className="flex flex-col items-center max-w-lg mx-auto">
-        {workflow.map((step, i) => {
-          const count = countMap.get(step.key) ?? 0;
-          const hasActivity = count > 0;
-          return (
-            <div key={step.key} className="flex flex-col items-center w-full">
-              <div
-                className={`w-full text-center px-4 py-2.5 rounded-lg border text-sm font-medium transition-all ${
-                  hasActivity
-                    ? 'bg-amber-50 border-amber-400 text-amber-900 shadow-sm'
-                    : 'bg-white border-slate-200 text-slate-700'
-                }`}
-              >
-                <span>{step.label}</span>
-                {hasActivity && (
-                  <span className="ml-2 text-[10px] font-bold bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-full">
-                    {count}
-                  </span>
-                )}
-              </div>
-              {i < workflow.length - 1 && (
-                <div className="flex flex-col items-center py-1">
-                  <div className="w-0.5 h-3 bg-slate-300" />
-                  <ChevronRight size={12} className="text-slate-400 rotate-90" />
-                  <div className="w-0.5 h-3 bg-slate-300" />
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }
@@ -211,33 +167,23 @@ export function RecruitmentView() {
                   )}
                 </div>
               </div>
-              <WorkflowDiagram workflow={data.workflow.slice(0, 12)} pipeline={data.pipeline} />
-            </div>
-          </div>
-        )}
-
-        {tab === 'Workflow' && data && (
-          <div className="grid lg:grid-cols-3 gap-4">
-            <div className="lg:col-span-2">
-              <WorkflowDiagram workflow={data.workflow} pipeline={data.pipeline} />
-            </div>
-            <div className={`${am.card} p-4 space-y-3`}>
-              <h3 className="font-bold text-slate-800">Approval Workflow</h3>
-              {(data.settings.approvalMatrix as Array<{ stage: string; action: string }>).map((a) => (
-                <div key={a.stage} className="flex items-center gap-2 text-sm">
-                  <CheckCircle2 size={14} className="text-green-600 shrink-0" />
-                  <span className="font-semibold">{a.stage}</span>
-                  <ArrowRight size={12} className="text-slate-300" />
-                  <span className="text-slate-500">{a.action}</span>
+              <div className={`${am.card} p-4`}>
+                <h3 className="font-bold text-slate-800 mb-3">Open Requisitions</h3>
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {data.requisitions.filter((r) => r.status !== 'CLOSED' && r.status !== 'REJECTED').slice(0, 8).map((r) => (
+                    <div key={String(r.id)} className="flex items-center justify-between text-sm border-b border-slate-50 pb-2">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-800 truncate">{String(r.positionTitle)}</p>
+                        <p className="text-[10px] text-slate-500">{String(r.department)} · {String(r.workflowStage).replace(/_/g, ' ')}</p>
+                      </div>
+                      <StatusBadge status={String(r.status)} />
+                    </div>
+                  ))}
+                  {data.requisitions.length === 0 && (
+                    <p className="text-slate-400 text-sm">No open requisitions</p>
+                  )}
                 </div>
-              ))}
-              <h3 className="font-bold text-slate-800 pt-2">Role-Based Access</h3>
-              {data.roles.map((r) => (
-                <div key={r.role} className="text-xs border-b border-slate-100 pb-2">
-                  <span className="font-bold text-slate-700">{r.role}</span>
-                  <p className="text-slate-500 mt-0.5">{r.permissions}</p>
-                </div>
-              ))}
+              </div>
             </div>
           </div>
         )}
@@ -626,6 +572,26 @@ export function RecruitmentView() {
 
         {tab === 'Settings' && data && (
           <div className={`${am.card} p-4 space-y-4`}>
+            <h3 className="font-bold text-slate-800">Approval Matrix</h3>
+            <div className="grid md:grid-cols-2 gap-2">
+              {(data.settings.approvalMatrix as Array<{ stage: string; action: string }>).map((a) => (
+                <div key={a.stage} className="flex items-center gap-2 text-sm border border-slate-100 rounded-lg px-3 py-2">
+                  <CheckCircle2 size={14} className="text-green-600 shrink-0" />
+                  <span className="font-semibold">{a.stage}</span>
+                  <ArrowRight size={12} className="text-slate-300" />
+                  <span className="text-slate-500">{a.action}</span>
+                </div>
+              ))}
+            </div>
+            <h3 className="font-bold text-slate-800">Role-Based Access</h3>
+            <div className="grid md:grid-cols-2 gap-2">
+              {data.roles.map((r) => (
+                <div key={r.role} className="text-xs border border-slate-100 rounded-lg px-3 py-2">
+                  <span className="font-bold text-slate-700">{r.role}</span>
+                  <p className="text-slate-500 mt-0.5">{r.permissions}</p>
+                </div>
+              ))}
+            </div>
             <h3 className="font-bold text-slate-800">Publish Channels</h3>
             <div className="flex flex-wrap gap-2">
               {(data.settings.publishChannels as string[]).map((ch) => (

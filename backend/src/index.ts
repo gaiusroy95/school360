@@ -31,6 +31,13 @@ import { academicRouter } from './routes/academic.js';
 import { attendanceRouter } from './routes/attendance.js';
 import { examinationRouter } from './routes/examination.js';
 import { hrRouter } from './routes/hr.js';
+import { transportRouter } from './routes/transport.js';
+import { libraryRouter } from './routes/library.js';
+import { hostelRouter } from './routes/hostel.js';
+import { inventoryRouter } from './routes/inventory.js';
+import { communicationRouter, communicationPublicRouter } from './routes/communication.js';
+import { websiteCmsRouter } from './routes/websiteCms.js';
+import { reportsAnalyticsRouter } from './routes/reportsAnalytics.js';
 import { mobileRouter } from './routes/mobile.js';
 import { connectDatabase } from './lib/prisma.js';
 import { startInvigilationScheduler } from './lib/examInvigilationScheduler.js';
@@ -115,6 +122,14 @@ app.use('/api/academic', academicRouter);
 app.use('/api/attendance', attendanceRouter);
 app.use('/api/examination', examinationRouter);
 app.use('/api/hr', hrRouter);
+app.use('/api/transport', transportRouter);
+app.use('/api/library', libraryRouter);
+app.use('/api/hostel', hostelRouter);
+app.use('/api/inventory', inventoryRouter);
+app.use('/api/communication', communicationPublicRouter);
+app.use('/api/communication', communicationRouter);
+app.use('/api/website-cms', websiteCmsRouter);
+app.use('/api/reports-analytics', reportsAnalyticsRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);

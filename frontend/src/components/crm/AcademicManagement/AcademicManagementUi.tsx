@@ -52,12 +52,13 @@ export function AcademicLoading({ label = 'Loading…' }: { label?: string }) {
 }
 
 export function AcademicModal({
-  open, onClose, title, children, large,
-}: { open: boolean; onClose: () => void; title: string; children: ReactNode; large?: boolean }) {
+  open, onClose, title, children, large, wide,
+}: { open: boolean; onClose: () => void; title: string; children: ReactNode; large?: boolean; wide?: boolean }) {
   if (!open) return null;
+  const widthClass = wide ? 'max-w-3xl' : large ? 'max-w-lg' : 'max-w-md';
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/45 backdrop-blur-[3px]" onClick={onClose}>
-      <div className={`bg-white rounded-2xl border border-slate-200/90 shadow-2xl w-full ${large ? 'max-w-lg' : 'max-w-md'} p-6 space-y-4 max-h-[85vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
+      <div className={`bg-white rounded-2xl border border-slate-200/90 shadow-2xl w-full ${widthClass} p-6 space-y-4 max-h-[85vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-bold text-slate-900">{title}</h3>
         {children}
       </div>

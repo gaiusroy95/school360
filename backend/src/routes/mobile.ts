@@ -20,6 +20,22 @@ import {
   markNotificationRead,
   registerMobileDevice,
 } from '../lib/mobileNotifications.js';
+import {
+  acknowledgeMobileCircular,
+  getMobileNoticeboard,
+  getMobileNoticeboardBlockStatus,
+  viewMobileCircular,
+} from '../lib/communicationCirculars.js';
+import {
+  getMobileEventDetail,
+  getMobileEventInvitations,
+  submitMobileEventRsvp,
+} from '../lib/communicationEventInvitations.js';
+import {
+  getMobileSurveyDetail,
+  getMobileSurveys,
+  submitMobileSurveyResponse,
+} from '../lib/communicationSurveys.js';
 import { getMobileUploadFile, listMobileUploads, saveMobileUpload } from '../lib/mobileUploads.js';
 import {
   requireMobileAuth,
@@ -271,6 +287,197 @@ mobileRouter.post(
   asyncHandler(async (req, res) => {
     const result = await markAllNotificationsRead(req.mobileUser!.accountId);
     return res.json(result);
+  }),
+);
+
+// ─── Noticeboard (Circulars) ──────────────────────────────────────────────────
+
+mobileRouter.get(
+  '/noticeboard',
+  requireMobileAuth,
+  requirePasswordChanged,
+  asyncHandler(async (req, res) => {
+    const user = req.mobileUser!;
+    const data = await getMobileNoticeboard(user.institutionId, user.accountId, user.role);
+    return res.json(data);
+  }),
+);
+
+mobileRouter.get(
+  '/noticeboard/block-status',
+  requireMobileAuth,
+  requirePasswordChanged,
+  asyncHandler(async (req, res) => {
+    const user = req.mobileUser!;
+    const data = await getMobileNoticeboardBlockStatus(user.institutionId, user.accountId, user.role);
+    return res.json(data);
+  }),
+);
+
+mobileRouter.get(
+  '/noticeboard/:id',
+  requireMobileAuth,
+  requirePasswordChanged,
+  asyncHandler(async (req, res) => {
+    const user = req.mobileUser!;
+    const ua = String(req.headers['user-agent'] ?? '');
+    const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '');
+    try {
+      const data = await viewMobileCircular(
+        user.institutionId,
+        user.accountId,
+        user.role,
+        String(req.params.id),
+        { ipAddress: ip, userAgent: ua },
+      );
+      return res.json(data);
+    } catch (e) {
+      return res.status(404).json({ error: e instanceof Error ? e.message : 'Not found' });
+    }
+  }),
+);
+
+mobileRouter.post(
+  '/noticeboard/:id/acknowledge',
+  requireMobileAuth,
+  requirePasswordChanged,
+  asyncHandler(async (req, res) => {
+    const user = req.mobileUser!;
+    const ua = String(req.headers['user-agent'] ?? '');
+    const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '');
+    try {
+      const data = await acknowledgeMobileCircular(
+        user.institutionId,
+        user.accountId,
+        user.role,
+        String(req.params.id),
+        {
+          eSignature: req.body?.eSignature ? String(req.body.eSignature) : undefined,
+          ipAddress: ip,
+          userAgent: ua,
+        },
+      );
+      return res.json(data);
+    } catch (e) {
+      return res.status(400).json({ error: e instanceof Error ? e.message : 'Acknowledgment failed' });
+    }
+  }),
+);
+
+// ─── Event Invitations (RSVP) ─────────────────────────────────────────────────
+
+mobileRouter.get(
+  '/events',
+  requireMobileAuth,
+  requirePasswordChanged,
+  asyncHandler(async (req, res) => {
+    const user = req.mobileUser!;
+    const data = await getMobileEventInvitations(user.institutionId, user.accountId, user.role);
+    return res.json(data);
+  }),
+);
+
+mobileRouter.get(
+  '/events/:id',
+  requireMobileAuth,
+  requirePasswordChanged,
+  asyncHandler(async (req, res) => {
+    const user = req.mobileUser!;
+    try {
+      const data = await getMobileEventDetail(
+        user.institutionId,
+        user.accountId,
+        user.role,
+        String(req.params.id),
+      );
+      return res.json(data);
+    } catch (e) {
+      return res.status(404).json({ error: e instanceof Error ? e.message : 'Not found' });
+    }
+  }),
+);
+
+mobileRouter.post(
+  '/events/:id/rsvp',
+  requireMobileAuth,
+  requirePasswordChanged,
+  asyncHandler(async (req, res) => {
+    const user = req.mobileUser!;
+    const response = String(req.body?.response ?? '').toUpperCase();
+    if (!['YES', 'NO', 'MAYBE'].includes(response)) {
+      return res.status(400).json({ error: 'response must be YES, NO, or MAYBE' });
+    }
+    try {
+      const data = await submitMobileEventRsvp(
+        user.institutionId,
+        user.accountId,
+        user.role,
+        String(req.params.id),
+        {
+          response: response as 'YES' | 'NO' | 'MAYBE',
+          guestCount: req.body?.guestCount != null ? Number(req.body.guestCount) : undefined,
+          notes: req.body?.notes ? String(req.body.notes) : undefined,
+        },
+      );
+      return res.json(data);
+    } catch (e) {
+      return res.status(400).json({ error: e instanceof Error ? e.message : 'RSVP failed' });
+    }
+  }),
+);
+
+// ─── Surveys & Feedback ─────────────────────────────────────────────────────────
+
+mobileRouter.get(
+  '/surveys',
+  requireMobileAuth,
+  requirePasswordChanged,
+  asyncHandler(async (req, res) => {
+    const user = req.mobileUser!;
+    const data = await getMobileSurveys(user.institutionId, user.accountId, user.role);
+    return res.json(data);
+  }),
+);
+
+mobileRouter.get(
+  '/surveys/:id',
+  requireMobileAuth,
+  requirePasswordChanged,
+  asyncHandler(async (req, res) => {
+    const user = req.mobileUser!;
+    try {
+      const data = await getMobileSurveyDetail(
+        user.institutionId,
+        user.accountId,
+        user.role,
+        String(req.params.id),
+      );
+      return res.json(data);
+    } catch (e) {
+      return res.status(404).json({ error: e instanceof Error ? e.message : 'Not found' });
+    }
+  }),
+);
+
+mobileRouter.post(
+  '/surveys/:id/submit',
+  requireMobileAuth,
+  requirePasswordChanged,
+  asyncHandler(async (req, res) => {
+    const user = req.mobileUser!;
+    const answers = Array.isArray(req.body?.answers) ? req.body.answers : [];
+    try {
+      const data = await submitMobileSurveyResponse(
+        user.institutionId,
+        user.accountId,
+        user.role,
+        String(req.params.id),
+        answers,
+      );
+      return res.json(data);
+    } catch (e) {
+      return res.status(400).json({ error: e instanceof Error ? e.message : 'Submit failed' });
+    }
   }),
 );
 

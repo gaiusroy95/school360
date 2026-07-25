@@ -96,6 +96,11 @@ export async function markNotificationRead(accountId: string, notificationId: st
     data: { readAt: row.readAt ?? new Date() },
   });
 
+  if (!row.readAt) {
+    const { recordPushReadFromNotification } = await import('./communicationPushManagement.js');
+    await recordPushReadFromNotification(notificationId).catch(() => {});
+  }
+
   return {
     id: updated.id,
     readAt: updated.readAt?.toISOString() ?? null,

@@ -176,27 +176,6 @@ function VerticalSteps({ steps, values }: { steps: string[]; values?: Array<{ st
   );
 }
 
-function WorkflowDiagram({ steps, activeIndex }: { steps: string[]; activeIndex?: number }) {
-  return (
-    <div className="flex flex-wrap items-center gap-1">
-      {steps.map((step, idx) => (
-        <div key={step} className="flex items-center gap-1">
-          <div
-            className={`px-2.5 py-1.5 rounded-lg text-[10px] font-semibold border ${
-              activeIndex !== undefined && idx <= activeIndex
-                ? 'bg-blue-50 border-blue-200 text-blue-800'
-                : 'bg-slate-50 border-slate-200 text-slate-600'
-            }`}
-          >
-            {step.replace(/_/g, ' ')}
-          </div>
-          {idx < steps.length - 1 && <span className="text-slate-300 text-xs">→</span>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 type SettingsForm = Record<string, string | number | boolean>;
 
 function settingsToForm(settings: Record<string, unknown>): SettingsForm {
@@ -549,12 +528,6 @@ export function AttendanceLeaveView() {
     }
   };
 
-  const periodLockIndex = useMemo(() => {
-    const steps = (periodLock?.workflowSteps as string[]) ?? meta?.workflowSteps ?? [];
-    const status = (periodLock?.workflowStatus as string) ?? dailyLock?.workflowStatus ?? 'OPEN';
-    return steps.indexOf(status);
-  }, [periodLock, dailyLock, meta]);
-
   const employmentTypes = useMemo(() => {
     if (!meta) return [];
     return [...new Set(meta.employees.map((e) => e.employmentType))].sort();
@@ -644,12 +617,6 @@ export function AttendanceLeaveView() {
                 </ul>
               </div>
 
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:col-span-2 xl:col-span-1">
-                <h3 className="text-sm font-bold text-slate-800 mb-3">Approval Workflow</h3>
-                <WorkflowDiagram steps={dashboard.approvalWorkflow} activeIndex={3} />
-                <h3 className="text-sm font-bold text-slate-800 mb-3 mt-5">Correction Workflow</h3>
-                <WorkflowDiagram steps={dashboard.correctionWorkflow} activeIndex={1} />
-              </div>
             </div>
           </div>
         )}
@@ -743,12 +710,6 @@ export function AttendanceLeaveView() {
                   </p>
                 </div>
               </div>
-              {periodLock && (
-                <WorkflowDiagram
-                  steps={(periodLock.workflowSteps as string[]) ?? meta?.workflowSteps ?? []}
-                  activeIndex={periodLockIndex}
-                />
-              )}
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
@@ -1054,12 +1015,6 @@ export function AttendanceLeaveView() {
               </div>
             )}
 
-            {dashboard && (
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                <h3 className="text-sm font-bold text-slate-800 mb-2">Correction Workflow</h3>
-                <WorkflowDiagram steps={dashboard.correctionWorkflow} />
-              </div>
-            )}
           </div>
         )}
 
