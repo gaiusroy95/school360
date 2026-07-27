@@ -21,7 +21,7 @@ const TABS = [
 ] as const;
 type TabId = (typeof TABS)[number];
 
-type Record = {
+type AttendanceRecord = {
   id: string; enrollmentId: string; studentName: string; classSection: string;
   pickupStopName: string; dropStopName: string; seatNumber: number | null;
   safetyStatus: string; boardingStatus: string; dropStatus: string;
@@ -42,7 +42,7 @@ type Session = {
   pendingCount: number; absentCount: number; exceptionCount: number;
   currentOccupancy: number; occupancyPct: number;
   vehicleEmptyConfirmed: boolean; attendanceLocked: boolean;
-  records?: Record[];
+  records?: AttendanceRecord[];
 };
 
 const methodIcon = (m: string) => {
@@ -73,7 +73,7 @@ export function TransportAttendanceView() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [academicYear, setAcademicYear] = useState('2025-26');
   const [message, setMessage] = useState('');
-  const [selected, setSelected] = useState<Record | null>(null);
+  const [selected, setSelected] = useState<AttendanceRecord | null>(null);
 
   const load = useCallback(async (seed = false) => {
     setLoading(true);
@@ -84,7 +84,7 @@ export function TransportAttendanceView() {
   useEffect(() => { void load(); }, [load]);
 
   const sessions = useMemo(() => (data?.sessions ?? []) as Session[], [data]);
-  const records = useMemo(() => (data?.records ?? []) as Record[], [data]);
+  const records = useMemo(() => (data?.records ?? []) as AttendanceRecord[], [data]);
   const q = search.toLowerCase();
   const filtered = useMemo(() => records.filter((r) => {
     const matchQ = !q || r.studentName.toLowerCase().includes(q) || r.classSection.toLowerCase().includes(q)

@@ -11,6 +11,11 @@ import { dispatchPushNotifications } from './notifications.js';
 import { autoRecordCommunication } from './parentCommunications.js';
 import { assertClassReadyForPublication, resolveReportCardTemplate } from './examReportCards.js';
 import { ExamReportCardStatus, ExamReportCardTemplate } from '@prisma/client';
+import {
+  assignRanks,
+  determinePassStatus,
+  getEvaluationEngine,
+} from './examEvaluationEngine.js';
 
 function computeGrade(pct: number) {
   if (pct >= 90) return 'A+';
@@ -373,6 +378,11 @@ export async function compileClassResults(
     orderBy: [{ admissionNumber: 'asc' }],
   });
 
+  const engine = await getEvaluationEngine(institutionId, academicYear);
+  const exempted = Array.isArray(engine.rankConfig?.exemptedSubjects)
+    ? (engine.rankConfig!.exemptedSubjects as string[])
+    : [];
+
   let batch = await prisma.examResultBatch.findFirst({
     where: { institutionId, academicYear, examinationName, className, sectionName },
   });
@@ -425,7 +435,7 @@ export async function compileClassResults(
         subjectName: assignment.subjectName,
         obtained: Math.round(obtained * 100) / 100,
         max,
-        grade: computeGrade(pct),
+        grade: engine.computeGrade(pct),
       });
       totalObtained += obtained;
       totalMax += max;
@@ -442,9 +452,37 @@ export async function compileClassResults(
   }
 
   studentScores.sort((a, b) => b.totalObtained - a.totalObtained);
-  const results = studentScores.map((s, idx) => {
+
+  const rankedInput = studentScores.map((s) => {
     const pct = s.totalMax > 0 ? (s.totalObtained / s.totalMax) * 100 : 0;
-    const grade = computeGrade(pct);
+    return {
+      studentId: s.studentId,
+      studentName: s.studentName,
+      admissionNumber: s.admissionNumber,
+      subjectScores: s.subjectScores,
+      totalObtained: s.totalObtained,
+      totalMax: s.totalMax,
+      percentage: Math.round(pct * 100) / 100,
+      gpa: engine.computeGpa(pct),
+    };
+  });
+
+  const ranked = assignRanks(rankedInput, {
+    rankMethod: engine.rankConfig?.rankMethod || 'Percentage',
+    tieRule: engine.rankConfig?.tieRule || 'Same Rank',
+  });
+
+  const results = ranked.map((s) => {
+    const passStatus = determinePassStatus(
+      s.percentage,
+      s.subjectScores,
+      {
+        aggregatedPassPercent: engine.gradingRule?.aggregatedPassPercent ?? 33,
+        minComponentPassPercent: engine.gradingRule?.minComponentPassPercent ?? 33,
+      },
+      exempted,
+    );
+    const grade = passStatus.passed ? engine.computeGrade(s.percentage) : (engine.gradingRule?.passGrade || 'F');
     return {
       institutionId,
       batchId: batch!.id,
@@ -453,12 +491,12 @@ export async function compileClassResults(
       admissionNumber: s.admissionNumber,
       totalObtained: s.totalObtained,
       totalMax: s.totalMax,
-      percentage: Math.round(pct * 100) / 100,
+      percentage: s.percentage,
       grade,
-      gpa: computeGpa(pct),
-      rank: idx + 1,
-      remarks: pct >= 36 ? 'Pass' : 'Fail',
-      overallPerformance: overallPerformance(pct),
+      gpa: s.gpa,
+      rank: s.rank,
+      remarks: passStatus.passed ? 'Pass' : `Fail${passStatus.failedComponents.length ? ` (${passStatus.failedComponents.join(', ')})` : ''}`,
+      overallPerformance: overallPerformance(s.percentage),
       subjectScores: s.subjectScores,
       templateType: resolveReportCardTemplate(className),
     };

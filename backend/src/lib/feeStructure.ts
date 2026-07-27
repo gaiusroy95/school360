@@ -357,6 +357,7 @@ export async function importFeeStructuresFromSetup(institutionId: string, academ
   }
 
   let created = 0;
+  let updated = 0;
   let skipped = 0;
 
   for (const schedule of schedules) {
@@ -370,7 +371,22 @@ export async function importFeeStructuresFromSetup(institutionId: string, academ
       },
     });
     if (exists) {
-      skipped += 1;
+      const amounts: FeeAmountInput = {};
+      for (const head of schedule.heads) {
+        if (FEE_HEAD_KEYS.includes(head.key)) {
+          (amounts as Record<string, number>)[head.key] = head.amount;
+        }
+      }
+      await prisma.feeStructure.update({
+        where: { id: exists.id },
+        data: {
+          frequency: schedule.frequency || exists.frequency,
+          status: FeeStructureStatus.ACTIVE,
+          ...amounts,
+          totalAmount: schedule.heads.reduce((s, h) => s + h.amount, 0),
+        },
+      });
+      updated += 1;
       continue;
     }
 
@@ -398,10 +414,11 @@ export async function importFeeStructuresFromSetup(institutionId: string, academ
 
   return {
     created,
+    updated,
     skipped,
     message:
-      created > 0
-        ? `Imported ${created} fee structure(s) from Institution Setup`
+      created > 0 || updated > 0
+        ? `Imported ${created} and updated ${updated} fee structure(s) from Institution Setup`
         : 'All class structures already exist',
   };
 }

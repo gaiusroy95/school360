@@ -6,6 +6,7 @@ import {
 } from '@prisma/client';
 import { prisma } from './prisma.js';
 import { getInstitutionFilterMeta } from './students.js';
+import { assertMarksEntryAllowed } from './examEvaluationEngine.js';
 
 export const MARKS_COLUMNS: {
   key: ExamMarksColumnKey;
@@ -604,6 +605,8 @@ export async function saveMarkingDraft(
   if (LOCKED_STATUSES.includes(sheet.status)) {
     throw new Error('Marks are locked — contact principal to reopen');
   }
+
+  await assertMarksEntryAllowed(institutionId, sheet.academicYear, sheet.examinationName);
 
   const allowed = new Set(sheet.assignment.assignedColumns);
   let updated = 0;

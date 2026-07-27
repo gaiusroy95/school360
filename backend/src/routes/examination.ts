@@ -159,6 +159,7 @@ import {
   getExamAnalyticsMeta,
   seedExamAnalyticsDemo,
 } from '../lib/examAnalytics.js';
+import { getEvaluationEngine, syncEvaluationEngineFromSetup } from '../lib/examEvaluationEngine.js';
 import { ExamMarksColumnKey } from '@prisma/client';
 import { PublicationVisibility } from '@prisma/client';
 
@@ -1748,5 +1749,31 @@ examinationRouter.post(
     const institutionId = await getDefaultInstitutionId();
     const academicYear = typeof req.body?.academicYear === 'string' ? req.body.academicYear : '2025-26';
     return res.json(await seedExamAnalyticsDemo(institutionId, academicYear));
+  }),
+);
+
+examinationRouter.get(
+  '/evaluation-engine',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const academicYear = typeof req.query.academicYear === 'string' ? req.query.academicYear : undefined;
+    const engine = await getEvaluationEngine(institutionId, academicYear);
+    return res.json({
+      academicYear: engine.academicYear,
+      marksConfig: engine.marksConfig,
+      gradingRule: engine.gradingRule,
+      gpaScale: engine.gpaScale,
+      rankConfig: engine.rankConfig,
+      examPeriods: engine.examPeriods,
+    });
+  }),
+);
+
+examinationRouter.post(
+  '/evaluation-engine/sync',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const academicYear = typeof req.body?.academicYear === 'string' ? req.body.academicYear : undefined;
+    return res.json(await syncEvaluationEngineFromSetup(institutionId, academicYear));
   }),
 );

@@ -233,7 +233,7 @@ export function CommunicationReportsAnalyticsView() {
                 cx="50%"
                 cy="50%"
                 outerRadius={55}
-                label={({ stage, value }) => `${stage}: ${value}`}
+                label={(props) => `${String(props.name ?? '')}: ${String(props.value ?? '')}`}
               >
                 {(data?.charts.engagementFunnel ?? []).map((e) => (
                   <Cell key={e.stage} fill={e.color} />

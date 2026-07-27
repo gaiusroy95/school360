@@ -1,9 +1,19 @@
 import { AdmissionRecordStatus, ApplicationStatus, SeatAllocationStatus } from '@prisma/client';
 import { prisma } from './prisma.js';
+import { allocateAdmissionNumberFromSeq } from './documentIdentityCustomFields.js';
 
 const DEFAULT_YEAR = '2025-26';
 
 export async function generateAdmissionNumber(institutionId: string): Promise<string> {
+  try {
+    const seq = await prisma.admissionNumberSequence.findUnique({ where: { institutionId } });
+    if (seq) {
+      return allocateAdmissionNumberFromSeq(institutionId);
+    }
+  } catch {
+    // fall through to legacy JSON-based generation
+  }
+
   const setup = await prisma.institutionSetup.findUnique({ where: { institutionId } });
   const numbering = (setup?.idCardNumbering || {}) as {
     sections?: {

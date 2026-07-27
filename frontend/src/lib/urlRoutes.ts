@@ -26,11 +26,11 @@ const MODULES: ModuleDef[] = [
   },
   {
     label: 'Examination Management',
-    subItems: ['Exam Dashboard', 'Exam Schedule', 'Subjects & Syllabus', 'Question Bank', 'Paper Management', 'Seating Arrangement', 'Invigilation Management', 'Marks Entry', 'Result Processing', 'Report Cards', 'Revaluation / Recheck', 'Grade & Promotion', 'Certificates', 'Exam Analytics'],
+    subItems: ['Exam Dashboard', 'Exam Schedule', 'Subjects & Syllabus', 'Question Bank', 'Paper Management', 'Seating Arrangement', 'Invigilation Management', 'Marks Entry', 'Result Processing', 'Report Cards', 'Revaluation / Recheck', 'Grade & Promotion', 'Certificates', 'Exam Analytics', 'Evaluation Engine'],
   },
   {
     label: 'Fees & Finance',
-    subItems: ['Fee Dashboard', 'Fee Masters', 'Fee Structure', 'Fee Collection', 'Invoices', 'Online Payments', 'Payment Reconciliation', 'Discounts & Concessions', 'Refunds', 'Fine / Penalties', 'Scholarship', 'Transport Fee', 'Hostel Fee', 'Other Charges', 'Accounts & Ledger', 'Expense Management', 'Bank & Cash Book', 'Payroll', 'Financial Reports'],
+    subItems: ['Fee Dashboard', 'Fee Masters', 'Fee Structure', 'Financial Operations', 'Fee Collection', 'Invoices', 'Online Payments', 'Payment Reconciliation', 'Discounts & Concessions', 'Refunds', 'Fine / Penalties', 'Scholarship', 'Transport Fee', 'Hostel Fee', 'Other Charges', 'Accounts & Ledger', 'Expense Management', 'Bank & Cash Book', 'Payroll', 'Financial Reports'],
   },
   {
     label: 'HR & Payroll Management',
@@ -74,7 +74,7 @@ const MODULES: ModuleDef[] = [
   },
   {
     label: 'Settings Management',
-    subItems: ['General Settings', 'School Settings', 'Academic Settings', 'User & Role Settings', 'Module Settings', 'System Settings', 'Notifications Settings', 'Payment Settings', 'Security Settings', 'Backup & Restore', 'API & Integrations', 'Audit Log'],
+    subItems: ['General Settings', 'School Settings', 'Academic Settings', 'User & Role Settings', 'Module Settings', 'System Settings', 'Address & Location', 'Maintenance Mode', 'System Limits', 'System Updates', 'Cache Settings', 'Performance Settings', 'Database Optimization', 'Notifications Settings', 'Payment Settings', 'Security Settings', 'Backup & Restore', 'API & Integrations', 'Audit Log', 'Security & Compliance', 'User Governance & Access Control', 'Integrations, APIs & Notifications', 'Document, Identity & Custom Fields'],
   },
   {
     label: 'System Administration',

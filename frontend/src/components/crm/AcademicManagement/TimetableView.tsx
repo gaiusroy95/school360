@@ -24,7 +24,7 @@ const TYPE_COLORS: Record<string, string> = {
 
 const EMPTY_FORM = {
   className: '', sectionName: '', dayOfWeek: 1, period: 1, periodLabel: 'P1',
-  periodType: 'THEORY' as const, startTime: '08:00', endTime: '08:40',
+  periodType: 'THEORY' as (typeof PERIOD_TYPES)[number], startTime: '08:00', endTime: '08:40',
   subjectName: '', teacherName: '', room: '', term: 'Term 1',
   effectiveFrom: '', effectiveTo: '', versionLabel: '', notes: '',
 };

@@ -2297,3 +2297,29 @@ export function accountsLedgerExportUrl(params?: {
   return `/api/fee-finance/accounts-ledger${query ? `?${query}` : ''}`;
 }
 
+export type FeeFinancialOperations = {
+  academicYear: string;
+  feeGroups: Array<{ id: string; groupCode: string; groupName: string; currency: string }>;
+  feeTypes: Array<{ id: string; code: string; name: string; glAccount: string }>;
+  installment: { installmentCount: number; scheduleType: string; scheduleJson: unknown } | null;
+  concession: { allowConcessions: boolean; maxDiscountPercent: number; approvalLevel: string } | null;
+  lateFee: { graceDays: number; fineType: string; fineAmount: number; finePercent: number } | null;
+  paymentMethods: Array<{ methodCode: string; methodName: string; isEnabled: boolean }>;
+  onlinePayment: { provider: string; isEnabled: boolean; webhookUrl: string; apiKeyMasked: string } | null;
+  refund: { requireApproval: boolean; autoCreditLedger: boolean } | null;
+  reminders: { isActive: boolean; cronSchedule: string; channels: unknown } | null;
+  schedulesCount: number;
+  enabledPaymentMethods: Array<{ methodCode: string; methodName: string }>;
+};
+
+export async function fetchFeeFinancialOperations(academicYear?: string) {
+  return api<FeeFinancialOperations>(`/api/fee-finance/financial-operations${qs({ academicYear })}`);
+}
+
+export async function syncFeeFinancialOperations(academicYear?: string) {
+  return api<{ academicYear: string; feeGroups: { created: number; updated: number } }>(
+    '/api/fee-finance/financial-operations/sync',
+    { method: 'POST', body: JSON.stringify({ academicYear }) },
+  );
+}
+

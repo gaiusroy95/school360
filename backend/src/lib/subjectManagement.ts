@@ -3,6 +3,7 @@ import { prisma } from './prisma.js';
 import { formatClassSection } from './students.js';
 import { nextAcademicRecordId, serializeSubject } from './academicManagement.js';
 import { serializeSyllabusChapter } from './curriculumHub.js';
+import { validateSubjectPayload, validateTeacherWorkload } from './academicSetupSync.js';
 
 export type TeacherAssignmentInput = {
   teacherName: string;
@@ -202,6 +203,11 @@ export async function createSubjectWithTeachers(
     teachers?: TeacherAssignmentInput[];
   },
 ) {
+  const validation = await validateSubjectPayload(institutionId, data);
+  if (!validation.valid) {
+    throw new Error(validation.errors.join('; '));
+  }
+
   const academicYear = data.academicYear || '2025-26';
   const recordId = await nextAcademicRecordId(institutionId, 'subject');
   const subject = await prisma.academicSubject.create({
@@ -309,6 +315,14 @@ export async function addTeacherToSubject(
   if (!subject) throw new Error('Subject not found');
 
   const academicYear = data.academicYear || '2025-26';
+
+  if (data.teacherName) {
+    const workload = await validateTeacherWorkload(institutionId, academicYear, data.teacherName);
+    if (!workload.valid) {
+      throw new Error(workload.message || 'Teacher workload limit exceeded');
+    }
+  }
+
   const existing = await prisma.academicSubjectAllocation.findFirst({
     where: {
       institutionId,

@@ -39,10 +39,35 @@ import { communicationRouter, communicationPublicRouter } from './routes/communi
 import { websiteCmsRouter } from './routes/websiteCms.js';
 import { reportsAnalyticsRouter } from './routes/reportsAnalytics.js';
 import { systemRouter } from './routes/system.js';
+import { settingsCoreSystemsRouter } from './routes/settingsCoreSystems.js';
+import { settingsSecurityAuditRouter } from './routes/settingsSecurityAudit.js';
+import { settingsUserGovernanceRouter } from './routes/settingsUserGovernance.js';
+import { settingsIntegrationsNotificationRouter } from './routes/settingsIntegrationsNotification.js';
+import { settingsDocumentIdentityRouter } from './routes/settingsDocumentIdentity.js';
+import { settingsDepartmentOperationsRouter } from './routes/settingsDepartmentOperations.js';
+import { settingsDataModulesUiRouter } from './routes/settingsDataModulesUi.js';
+import { settingsAdminDashboardRouter } from './routes/settingsAdminDashboard.js';
+import { settingsIntegrationsApiUpdatesRouter } from './routes/settingsIntegrationsApiUpdates.js';
+import { b2bExternalRouter } from './routes/b2bExternal.js';
+import { settingsLicenseSupportRouter } from './routes/settingsLicenseSupport.js';
+import { bootstrapLicenseSupport } from './lib/licenseSupportE2E.js';
 import { mobileRouter } from './routes/mobile.js';
 import { connectDatabase } from './lib/prisma.js';
+import { bootstrapCoreSystems } from './lib/coreSystemsSettings.js';
+import { bootstrapSecurityAudit } from './lib/securityAuditCompliance.js';
+import { bootstrapUserGovernance } from './lib/userGovernanceAccess.js';
+import { bootstrapIntegrationsNotification } from './lib/integrationsApisNotification.js';
+import { bootstrapDocumentIdentity } from './lib/documentIdentityCustomFields.js';
+import { bootstrapDepartmentOps } from './lib/departmentOperationsManagement.js';
+import { bootstrapDataModulesUi } from './lib/dataManagementModulesUi.js';
+import { bootstrapGlobalEnvironment } from './lib/globalEnvironmentSettings.js';
+import { getDefaultInstitutionId } from './lib/institution.js';
+import { maintenanceMiddleware } from './middleware/maintenance.js';
+import { apiRateLimitMiddleware } from './middleware/rateLimit.js';
 import { startInvigilationScheduler } from './lib/examInvigilationScheduler.js';
 import { startMobileReminderScheduler } from './lib/mobileReminderScheduler.js';
+import { startBackupScheduler } from './lib/backupScheduler.js';
+import { startWebhookDeliveryWorker } from './lib/webhookDeliveryWorker.js';
 import { handleRazorpayWebhook } from './lib/mobileFees.js';
 import { asyncHandler } from './lib/asyncHandler.js';
 
@@ -89,6 +114,9 @@ app.post(
 app.use('/api/mobile', express.json({ limit: '15mb' }), mobileRouter);
 app.use(express.json({ limit: '5mb' }));
 
+app.use(maintenanceMiddleware);
+app.use(apiRateLimitMiddleware);
+
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: '360schoolerp-backend' });
 });
@@ -132,6 +160,17 @@ app.use('/api/communication', communicationRouter);
 app.use('/api/website-cms', websiteCmsRouter);
 app.use('/api/reports-analytics', reportsAnalyticsRouter);
 app.use('/api/system', systemRouter);
+app.use('/api/settings/core-systems', settingsCoreSystemsRouter);
+app.use('/api/settings/security-audit', settingsSecurityAuditRouter);
+app.use('/api/settings/user-governance', settingsUserGovernanceRouter);
+app.use('/api/settings/integrations-notifications', settingsIntegrationsNotificationRouter);
+app.use('/api/settings/document-identity', settingsDocumentIdentityRouter);
+app.use('/api/settings/department-operations', settingsDepartmentOperationsRouter);
+app.use('/api/settings/data-modules-ui', settingsDataModulesUiRouter);
+app.use('/api/settings/admin-dashboard', settingsAdminDashboardRouter);
+app.use('/api/settings/integrations-api-updates', settingsIntegrationsApiUpdatesRouter);
+app.use('/api/v1', b2bExternalRouter);
+app.use('/api/settings/license-support', settingsLicenseSupportRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
@@ -147,6 +186,20 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
 async function start() {
   try {
     await connectDatabase();
+    await bootstrapCoreSystems();
+    try {
+      const institutionId = await getDefaultInstitutionId();
+      await bootstrapSecurityAudit(institutionId);
+      await bootstrapUserGovernance(institutionId);
+      await bootstrapIntegrationsNotification(institutionId);
+      await bootstrapDocumentIdentity(institutionId);
+      await bootstrapDepartmentOps(institutionId);
+      await bootstrapDataModulesUi(institutionId);
+      await bootstrapGlobalEnvironment(institutionId);
+      await bootstrapLicenseSupport(institutionId);
+    } catch (e) {
+      console.warn('Security/governance bootstrap skipped:', e);
+    }
   } catch {
     console.warn('Starting API without confirmed database connection — Neon may still be waking up.');
   }
@@ -155,6 +208,8 @@ async function start() {
     console.log(`API listening on http://localhost:${port}`);
     startInvigilationScheduler();
     startMobileReminderScheduler();
+    startBackupScheduler();
+    startWebhookDeliveryWorker();
   });
 }
 

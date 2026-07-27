@@ -274,7 +274,7 @@ export function ResignationExitView() {
                     <td className={am.td}>{String(r.noticeEndDate)}</td>
                     <td className={am.td}>
                       <span className={`font-bold ${Number(r.noticeDaysRemaining) <= 7 ? 'text-red-600' : 'text-slate-800'}`}>
-                        {r.noticeDaysRemaining ?? '—'} days
+                        {String(r.noticeDaysRemaining ?? '—')} days
                       </span>
                     </td>
                     <td className={am.td}><StatusBadge status={String(r.status)} /></td>

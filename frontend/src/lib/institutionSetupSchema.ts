@@ -302,6 +302,7 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
       { key: 'departmentName', label: 'Department Name' },
       { key: 'departmentCode', label: 'Department Code' },
       { key: 'hod', label: 'HOD / Incharge' },
+      { key: 'staffMembers', label: 'Staff Members (comma-separated)' },
       { key: 'location', label: 'Location' },
       { key: 'budget', label: 'Budget' },
     ],
@@ -389,8 +390,15 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
             key: 'holidayMasterNote',
             label: 'Holiday Master',
             type: 'text',
-            placeholder: 'Managed via Excel holiday list below',
+            placeholder: 'Managed via holiday list below',
             help: 'Use the Holiday List panel (Excel upload). Synced with HR & Payroll calendar.',
+          },
+          {
+            key: 'holidaysList',
+            label: 'Holiday List',
+            type: 'textarea',
+            placeholder: 'Republic Day: 2026-01-26\nSummer Break: 2026-05-01 to 2026-05-31',
+            help: 'One holiday per line. Format: Name: YYYY-MM-DD or Name: YYYY-MM-DD to YYYY-MM-DD',
           },
         ],
       },
@@ -398,7 +406,15 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         id: 'examinationPeriods',
         title: 'Examination Periods',
         fields: [
-          { key: 'examPeriods', label: 'Exam Periods', type: 'textarea', placeholder: 'Unit Test 1: 2025-07-01 to 2025-07-10' },
+          {
+            key: 'examPeriods',
+            label: 'Exam Periods',
+            type: 'textarea',
+            placeholder: 'Unit Test 1: 2025-07-01 to 2025-07-10\nHalf Yearly: 2025-09-15 to 2025-09-25',
+            help: 'One period per line. Format: Name: YYYY-MM-DD to YYYY-MM-DD',
+          },
+          { key: 'registrationCutoff', label: 'Registration Cutoff', type: 'date' },
+          { key: 'marksEntryDeadline', label: 'Marks Entry Deadline', type: 'date' },
         ],
       },
     ],
@@ -421,7 +437,15 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         title: 'Marks Configuration',
         fields: [
           { key: 'maxMarks', label: 'Default Max Marks', type: 'number', placeholder: '100' },
+          { key: 'graceMarks', label: 'Default Grace Marks', type: 'number', placeholder: '0' },
           { key: 'weightageEnabled', label: 'Enable Weightage', type: 'select', options: ['Yes', 'No'] },
+          {
+            key: 'componentWeightages',
+            label: 'Component Weightages (JSON)',
+            type: 'textarea',
+            placeholder: '{"UNIT_1":15,"UNIT_2":15,"UNIT_3":15,"HALF_YEARLY":25,"YEARLY":30}',
+            help: 'Must sum to 100 when weightage is enabled. Validated and locked on save.',
+          },
         ],
       },
       {
@@ -430,6 +454,8 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         fields: [
           { key: 'passMarks', label: 'Pass Marks', type: 'number', placeholder: '33' },
           { key: 'passGrade', label: 'Minimum Pass Grade', type: 'text', placeholder: 'D / 4.0' },
+          { key: 'aggregatedPassPercent', label: 'Aggregated Pass %', type: 'number', placeholder: '33' },
+          { key: 'minComponentPass', label: 'Min Component Pass %', type: 'number', placeholder: '33' },
         ],
       },
       {
@@ -438,6 +464,13 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         fields: [
           { key: 'scale', label: 'Scale', type: 'select', options: ['4 Point', '10 Point'] },
           { key: 'formulaNotes', label: 'Formula Notes', type: 'textarea' },
+          {
+            key: 'gradeMatrix',
+            label: 'Grade Matrix (JSON, optional)',
+            type: 'textarea',
+            placeholder: '[{"minPercent":90,"maxPercent":100,"grade":"A+","gpa":10}]',
+            help: 'Leave blank to use default scale mapping.',
+          },
         ],
       },
       {
@@ -446,6 +479,8 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         fields: [
           { key: 'rankMethod', label: 'Rank Method', type: 'select', options: ['Total Marks', 'Percentage', 'CGPA'] },
           { key: 'tieRule', label: 'Tie Rule', type: 'select', options: ['Same Rank', 'Skip Next', 'Break By Subject'] },
+          { key: 'rankScope', label: 'Rank Scope', type: 'select', options: ['Class', 'Section', 'Stream'] },
+          { key: 'exemptedSubjects', label: 'Exempted Subjects (comma separated)', type: 'text', placeholder: 'Physical Education, Art' },
         ],
       },
     ],
@@ -523,6 +558,7 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         title: 'Installment Setup',
         fields: [
           { key: 'defaultInstallments', label: 'Default Installment Count', type: 'number', placeholder: '4' },
+          { key: 'scheduleType', label: 'Schedule Type', type: 'select', options: ['Monthly', 'Quarterly', 'Bi-Annual', 'Annual'] },
         ],
       },
       {
@@ -531,6 +567,7 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         fields: [
           { key: 'allowConcession', label: 'Allow Concessions', type: 'select', options: ['Yes', 'No'] },
           { key: 'maxDiscountPercent', label: 'Max Discount %', type: 'number', placeholder: '50' },
+          { key: 'approvalLevel', label: 'Approval Level', type: 'select', options: ['Class Teacher', 'Accounts', 'Principal', 'Board'] },
         ],
       },
       {
@@ -538,7 +575,40 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         title: 'Late Fee Configuration',
         fields: [
           { key: 'graceDays', label: 'Grace Days', type: 'number', placeholder: '5' },
-          { key: 'lateFeeAmount', label: 'Late Fee Amount / %', type: 'text', placeholder: '50 or 2%' },
+          { key: 'lateFeeAmount', label: 'Late Fee Amount / % / daily', type: 'text', placeholder: '50 or 2%' },
+        ],
+      },
+      {
+        id: 'feePaymentMethods',
+        title: 'Fee Payment Methods',
+        fields: [
+          {
+            key: 'enabledMethods',
+            label: 'Enabled Channels',
+            type: 'text',
+            placeholder: 'Cash, UPI, Card, Cheque, Bank Transfer, Online',
+            help: 'Comma-separated list of enabled payment channels.',
+          },
+        ],
+      },
+      {
+        id: 'refundCancellation',
+        title: 'Refund & Cancellation',
+        fields: [
+          { key: 'requireApproval', label: 'Require Approval', type: 'select', options: ['Yes', 'No'] },
+          { key: 'approvalLevels', label: 'Approval Levels', type: 'text', placeholder: 'Accounts, Principal' },
+          { key: 'autoCreditLedger', label: 'Auto Credit Ledger', type: 'select', options: ['Yes', 'No'] },
+        ],
+      },
+      {
+        id: 'paymentReminders',
+        title: 'Payment Reminders',
+        fields: [
+          { key: 'remindersEnabled', label: 'Enable Reminders', type: 'select', options: ['Yes', 'No'] },
+          { key: 'channels', label: 'Channels', type: 'text', placeholder: 'Email, SMS, WhatsApp' },
+          { key: 'daysBeforeDue', label: 'Days Before Due', type: 'text', placeholder: '7,3,1' },
+          { key: 'daysAfterDue', label: 'Days After Due', type: 'text', placeholder: '1,7,15' },
+          { key: 'cronSchedule', label: 'Cron Schedule', type: 'text', placeholder: '0 9 * * *' },
         ],
       },
     ],
@@ -553,7 +623,8 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         id: 'documentCategories',
         title: 'Document Categories',
         fields: [
-          { key: 'categories', label: 'Categories', type: 'text', placeholder: 'Identity, Academic, Medical' },
+          { key: 'categories', label: 'Categories', type: 'text', placeholder: 'Identity, Academic, Medical, Legal, Financial' },
+          { key: 'privacyDefault', label: 'Default Privacy Level', type: 'select', options: ['INTERNAL', 'RESTRICTED', 'CONFIDENTIAL'] },
         ],
       },
       {
@@ -561,6 +632,7 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         title: 'Document Types',
         fields: [
           { key: 'types', label: 'Document Types', type: 'textarea', placeholder: 'Aadhaar, Birth Certificate, TC' },
+          { key: 'defaultExpiryDays', label: 'Default Expiry (Days)', type: 'number', placeholder: '365' },
         ],
       },
       {
@@ -569,7 +641,8 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         description:
           'Reference notes for blank forms (e.g. TC format). Printable template file upload can be added here later; student uploads use Admission CRM → Applications.',
         fields: [
-          { key: 'templateNotes', label: 'Template Notes', type: 'textarea' },
+          { key: 'templateNotes', label: 'Template Notes / HTML Layout', type: 'textarea' },
+          { key: 'dynamicTokens', label: 'Dynamic Tokens', type: 'text', placeholder: '{{studentName}}, {{className}}, {{admissionNumber}}' },
         ],
       },
       {
@@ -706,6 +779,7 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         title: 'Roll Number Format',
         fields: [
           { key: 'rollFormat', label: 'Roll Number Format', type: 'text', required: true, placeholder: 'CLASS-SEC-###' },
+          { key: 'sortLogic', label: 'Sorting Logic', type: 'select', options: ['ALPHA_NAME', 'GENDER', 'REG_DATE'] },
         ],
       },
       {
@@ -721,6 +795,7 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         title: 'Employee Code Format',
         fields: [
           { key: 'employeePrefix', label: 'Employee Code Prefix', type: 'text', placeholder: 'EMP-' },
+          { key: 'formatFormula', label: 'Format Formula', type: 'text', placeholder: 'EMP-{YEAR}-{SEQ}' },
           { key: 'employeeNext', label: 'Next Employee Code', type: 'number', placeholder: '1' },
         ],
       },
@@ -746,37 +821,85 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         title: 'Comprehensive View',
         description:
           'Unified calendar syncing Academic, Events, Exams, Holidays, and Custom — publish to Staff, Student, and Parent apps.',
-        fields: [],
+        fields: [
+          {
+            key: 'enabledLayers',
+            label: 'Enabled Layers',
+            type: 'text',
+            placeholder: 'ACADEMIC,EVENTS,EXAMS,HOLIDAYS,CUSTOM',
+            help: 'Comma-separated layers shown in the master calendar view.',
+          },
+        ],
       },
       {
         id: 'academicCalendar',
         title: 'Academic Calendar',
         description: 'Session milestones, PTMs, and academic milestones.',
-        fields: [],
+        fields: [
+          {
+            key: 'academicEvents',
+            label: 'Academic Calendar Entries',
+            type: 'textarea',
+            placeholder: 'Term 1 Start: 2025-04-01\nPTM: 2025-08-15',
+            help: 'One entry per line. Format: Title: YYYY-MM-DD or Title: YYYY-MM-DD to YYYY-MM-DD',
+          },
+        ],
       },
       {
         id: 'eventCalendar',
         title: 'Event Calendar',
         description: 'School events, exhibitions, and celebrations.',
-        fields: [],
+        fields: [
+          {
+            key: 'eventEntries',
+            label: 'Event Calendar Entries',
+            type: 'textarea',
+            placeholder: 'Annual Day: 2025-12-10 | ALL\nSports Meet: 2025-11-20 to 2025-11-22 | STUDENTS',
+            help: 'Optional audience after | (ALL, STAFF, STUDENTS).',
+          },
+        ],
       },
       {
         id: 'examCalendar',
         title: 'Exam Calendar',
         description: 'Unit tests, mid-terms, and board exams.',
-        fields: [],
+        fields: [
+          {
+            key: 'examCalendarNote',
+            label: 'Exam Schedule Source',
+            type: 'text',
+            placeholder: 'Synced from Session & Term → Examination Periods',
+            help: 'Exam periods are synced from Session & Term Setup. Examination module provides detailed timetables.',
+          },
+        ],
       },
       {
         id: 'holidayCalendar',
         title: 'Holiday Calendar',
         description: 'Institution holidays shared with HR & Payroll.',
-        fields: [],
+        fields: [
+          {
+            key: 'holidayExportNote',
+            label: 'Export',
+            type: 'text',
+            placeholder: 'Export iCal from Department & Operations hub',
+            help: 'Holiday calendar export is available in Settings → Department & Operations Management.',
+          },
+        ],
       },
       {
         id: 'customEvents',
         title: 'Custom Events',
         description: 'Custom institution events and reminders.',
-        fields: [],
+        fields: [
+          {
+            key: 'customEventEntries',
+            label: 'Custom Event Entries',
+            type: 'textarea',
+            placeholder: 'Dept Workshop: 2025-10-05 | DEPT-MATH | staff1@school.edu, staff2@school.edu',
+            help: 'Format: Title: date [| deptCode | invitees]',
+          },
+        ],
       },
     ],
   },
@@ -930,6 +1053,39 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         },
       },
       {
+        id: 'whatsappNotifications',
+        title: 'WhatsApp Notifications',
+        fields: [
+          { key: 'enabled', label: 'Enable WhatsApp Notifications', type: 'select', options: ['No', 'Yes'] },
+          { key: 'metaTemplateCode', label: 'Default Meta Template Code', type: 'text' },
+        ],
+      },
+      {
+        id: 'templateCategories',
+        title: 'Template Categories',
+        fields: [
+          { key: 'categories', label: 'Categories (comma separated)', type: 'text', placeholder: 'Billing, Exams, Attendance, Marketing' },
+        ],
+      },
+      {
+        id: 'dynamicFields',
+        title: 'Dynamic Fields',
+        fields: [
+          { key: 'fields', label: 'Field mappings', type: 'textarea', placeholder: 'Student_Name:Student.displayName, Balance_Due:FeeInvoice.outstanding' },
+        ],
+      },
+      {
+        id: 'templateSettings',
+        title: 'Template Settings',
+        fields: [
+          { key: 'defaultChannel', label: 'Default Channel', type: 'select', options: ['EMAIL', 'SMS', 'WHATSAPP', 'PUSH'] },
+          { key: 'fallbackChannel', label: 'Fallback Channel', type: 'select', options: ['SMS', 'EMAIL', 'WHATSAPP'] },
+          { key: 'retryMaxAttempts', label: 'Retry Max Attempts', type: 'number', placeholder: '3' },
+          { key: 'retryBackoffSeconds', label: 'Retry Backoff (seconds)', type: 'number', placeholder: '60' },
+          { key: 'throttlePerMinute', label: 'Throttle Per Minute', type: 'number', placeholder: '120' },
+        ],
+      },
+      {
         id: 'notificationPreferences',
         title: 'Notification Preferences',
         fields: [
@@ -1033,6 +1189,7 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
           { key: 'provider', label: 'Provider', type: 'select', options: ['Twilio', 'Msg91', 'Other'] },
           { key: 'apiKey', label: 'API Key', type: 'password' },
           { key: 'senderId', label: 'Sender ID', type: 'text' },
+          { key: 'apiEndpoint', label: 'API Endpoint', type: 'url', placeholder: 'https://api.twilio.com' },
         ],
       },
       {
@@ -1042,6 +1199,57 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
           { key: 'provider', label: 'Provider', type: 'select', options: ['SMTP', 'SendGrid', 'Amazon SES', 'Other'] },
           { key: 'host', label: 'SMTP Host / Endpoint', type: 'text' },
           { key: 'apiKey', label: 'API Key / Password', type: 'password' },
+          { key: 'fromEmail', label: 'From Email', type: 'email', placeholder: 'noreply@school.edu' },
+          { key: 'tlsEnabled', label: 'TLS Enabled', type: 'select', options: ['Yes', 'No'] },
+        ],
+      },
+      {
+        id: 'whatsappBusiness',
+        title: 'WhatsApp Business API',
+        fields: [
+          { key: 'provider', label: 'Provider', type: 'select', options: ['Meta', 'Gupshup', 'Other'] },
+          { key: 'phoneNumberId', label: 'Phone Number ID', type: 'text' },
+          { key: 'businessAccountId', label: 'Business Account ID', type: 'text' },
+          { key: 'apiKey', label: 'API Token', type: 'password' },
+        ],
+      },
+      {
+        id: 'thirdPartyIntegrations',
+        title: 'Third Party Integrations',
+        fields: [
+          { key: 'connectorType', label: 'Integration Type', type: 'select', options: ['LMS', 'Accounting', 'Biometric', 'Other'] },
+          { key: 'apiEndpoint', label: 'API Endpoint', type: 'url' },
+          { key: 'credentialsRef', label: 'Credentials Vault Reference', type: 'password' },
+          { key: 'dataMappings', label: 'Data Endpoint Mappings (JSON)', type: 'textarea' },
+        ],
+      },
+      {
+        id: 'webhookSettings',
+        title: 'Webhook Settings',
+        fields: [
+          { key: 'targetUrl', label: 'Target Webhook URL', type: 'url' },
+          { key: 'eventSubscriptions', label: 'Event Subscriptions', type: 'text', placeholder: 'fee.paid, student.enrolled, attendance.marked' },
+        ],
+      },
+      {
+        id: 'googleWorkspace',
+        title: 'Google Workspace',
+        fields: [
+          { key: 'clientId', label: 'OAuth Client ID', type: 'text' },
+          { key: 'clientSecret', label: 'OAuth Client Secret', type: 'password' },
+          { key: 'scopes', label: 'OAuth Scopes', type: 'text', placeholder: 'openid,email,profile,classroom' },
+          { key: 'directorySync', label: 'Sync Directory', type: 'select', options: ['Yes', 'No'] },
+        ],
+      },
+      {
+        id: 'microsoft365',
+        title: 'Microsoft 365 Integration',
+        fields: [
+          { key: 'tenantId', label: 'Azure Tenant ID', type: 'text' },
+          { key: 'clientId', label: 'App Client ID', type: 'text' },
+          { key: 'clientSecret', label: 'App Secret', type: 'password' },
+          { key: 'scopes', label: 'OAuth Scopes', type: 'text', placeholder: 'openid,profile,email,offline_access' },
+          { key: 'directorySync', label: 'Sync Entra ID Directory', type: 'select', options: ['Yes', 'No'] },
         ],
       },
       {
@@ -1103,7 +1311,9 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         title: 'Backup Location',
         fields: [
           { key: 'location', label: 'Backup Location', type: 'select', options: ['Cloud', 'Local', 'Both'] },
-          { key: 'pathOrBucket', label: 'Path / Bucket', type: 'text' },
+          { key: 'storageProvider', label: 'Storage Provider', type: 'select', options: ['S3', 'Azure Blob', 'Local NAS', 'Hybrid'] },
+          { key: 'pathOrBucket', label: 'Path / Bucket URI', type: 'text', placeholder: 's3://schoolerp-backups/prod' },
+          { key: 'accessKeyRef', label: 'Credentials Vault Reference', type: 'text', placeholder: 'vault://backup-credentials' },
         ],
       },
     ],
@@ -1114,6 +1324,18 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
     sheetName: '17 Security Settings',
     desc: 'Define access and security policies',
     sections: [
+      {
+        id: 'dataEncryption',
+        title: 'Data Encryption',
+        fields: [
+          { key: 'algorithm', label: 'Encryption Algorithm', type: 'select', options: ['AES-256', 'AES-128', 'ChaCha20-Poly1305'] },
+          { key: 'vaultProvider', label: 'Secure Vault Provider', type: 'select', options: ['INTERNAL_VAULT', 'AWS KMS', 'Azure Key Vault', 'HashiCorp Vault'] },
+          { key: 'piiFields', label: 'PII Fields (comma separated)', type: 'textarea', placeholder: 'student.mobile, student.email, parent.mobile' },
+          { key: 'keyRotationDays', label: 'Key Rotation (Days)', type: 'number', placeholder: '90' },
+          { key: 'encryptAtRest', label: 'Encrypt at Rest', type: 'select', options: ['Yes', 'No'] },
+          { key: 'encryptInTransit', label: 'Encrypt in Transit (TLS)', type: 'select', options: ['Yes', 'No'] },
+        ],
+      },
       {
         id: 'passwordPolicy',
         title: 'Password Policy',
@@ -1174,6 +1396,7 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         title: 'Import Employees',
         fields: [
           { key: 'enabled', label: 'Allow Employee Import', type: 'select', options: ['Yes', 'No'] },
+          { key: 'requiredColumns', label: 'Required Columns', type: 'textarea', placeholder: 'employeeCode, fullName, department, mobile, email' },
         ],
       },
       {
@@ -1181,6 +1404,14 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         title: 'Import Parents',
         fields: [
           { key: 'enabled', label: 'Allow Parent Import', type: 'select', options: ['Yes', 'No'] },
+          { key: 'requiredColumns', label: 'Required Columns', type: 'textarea', placeholder: 'parentName, mobile, studentAdmissionNumber, relationship' },
+        ],
+      },
+      {
+        id: 'importHistory',
+        title: 'Import History',
+        fields: [
+          { key: 'retentionDays', label: 'Log Retention (days)', type: 'number', placeholder: '90' },
         ],
       },
       {
@@ -1191,10 +1422,137 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         ],
       },
       {
+        id: 'exportHistory',
+        title: 'Export History',
+        fields: [
+          { key: 'retentionDays', label: 'Export Log Retention (days)', type: 'number', placeholder: '180' },
+        ],
+      },
+      {
+        id: 'scheduledExports',
+        title: 'Scheduled Exports',
+        fields: [
+          {
+            key: 'jobs',
+            label: 'Scheduled Export Jobs',
+            type: 'textarea',
+            placeholder: 'Nightly Ledger: 0 2 * * * | sftp://backup.school.edu/ledger\nWeekly Attendance: 0 6 * * 1 | https://analytics.school.edu/hooks/attendance',
+            help: 'Format: Job Name: cron expression | target URI',
+          },
+        ],
+      },
+      {
         id: 'dataMapping',
         title: 'Data Mapping',
         fields: [
           { key: 'mappingNotes', label: 'Default Mapping Notes', type: 'textarea' },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'modulesUiSetup',
+    title: 'Modules & UI Setup',
+    sheetName: '19 Modules UI Setup',
+    desc: 'Module activation, workflows, theme, menus and dashboards',
+    sections: [
+      {
+        id: 'moduleActivation',
+        title: 'Module Activation',
+        fields: [
+          { key: 'activeModules', label: 'Active Modules', type: 'textarea', placeholder: 'ADMISSION, STUDENT, ACADEMIC, EXAMINATION, FEE, HR, TRANSPORT, HOSTEL, LIBRARY' },
+          { key: 'licenseKey', label: 'License Key', type: 'password' },
+        ],
+      },
+      {
+        id: 'moduleConfiguration',
+        title: 'Module Configuration',
+        fields: [
+          { key: 'configNotes', label: 'Module Config Notes', type: 'textarea', placeholder: 'Fee: auto-reminder enabled\nHR: biometric attendance' },
+        ],
+      },
+      {
+        id: 'workflowSettings',
+        title: 'Workflow Settings',
+        fields: [
+          {
+            key: 'workflows',
+            label: 'Approval Workflows',
+            type: 'textarea',
+            placeholder: 'Leave Approval: 0 | HOD > HR > PRINCIPAL\nPurchase Request: 50000 | HOD > ACCOUNTS > PRINCIPAL',
+            help: 'Format: Name: threshold | approver1 > approver2',
+          },
+        ],
+      },
+      {
+        id: 'featurePermissions',
+        title: 'Feature Permissions',
+        fields: [
+          {
+            key: 'permissions',
+            label: 'Feature Access Rules',
+            type: 'textarea',
+            placeholder: 'FEE.REFUND: FULL | ADMIN\nEXAM.MARKS_OVERRIDE: READ | TEACHER',
+            help: 'Format: MODULE.FEATURE: accessLevel | roleCode',
+          },
+        ],
+      },
+      {
+        id: 'moduleOrder',
+        title: 'Module Order',
+        fields: [
+          { key: 'order', label: 'Sidebar Module Order', type: 'textarea', placeholder: 'ADMISSION, STUDENT, ACADEMIC, EXAMINATION, FEE, HR' },
+        ],
+      },
+      {
+        id: 'themeSettings',
+        title: 'Theme Settings',
+        fields: [
+          { key: 'brandName', label: 'Brand Name', type: 'text' },
+          { key: 'logoUrl', label: 'Logo URL', type: 'url' },
+          { key: 'fontFamily', label: 'Font Family', type: 'text', placeholder: 'Inter, sans-serif' },
+        ],
+      },
+      {
+        id: 'colorSchemes',
+        title: 'Color Schemes',
+        fields: [
+          { key: 'primaryColor', label: 'Primary Color', type: 'text', placeholder: '#2563eb' },
+          { key: 'secondaryColor', label: 'Secondary Color', type: 'text', placeholder: '#64748b' },
+          { key: 'accentColor', label: 'Accent Color', type: 'text', placeholder: '#0d9488' },
+        ],
+      },
+      {
+        id: 'customCss',
+        title: 'Custom CSS',
+        fields: [
+          { key: 'cssContent', label: 'Custom CSS Snippets', type: 'textarea', placeholder: '.sidebar { border-radius: 8px; }' },
+        ],
+      },
+      {
+        id: 'menuManagement',
+        title: 'Menu Management',
+        fields: [
+          {
+            key: 'menuTree',
+            label: 'Navigation Tree',
+            type: 'textarea',
+            placeholder: 'Dashboard\nStudent Management\nFee Collection',
+            help: 'One menu label per line',
+          },
+        ],
+      },
+      {
+        id: 'dashboardWidgets',
+        title: 'Dashboard Widgets',
+        fields: [
+          {
+            key: 'widgets',
+            label: 'Default Widgets',
+            type: 'textarea',
+            placeholder: 'Student Count\nFee Collection\nAttendance Today\nQuick Actions',
+            help: 'One widget per line — applied to ADMIN, TEACHER, STAFF roles',
+          },
         ],
       },
     ],

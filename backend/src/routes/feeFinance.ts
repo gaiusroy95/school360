@@ -42,6 +42,10 @@ import {
   updateFeeStructure,
 } from '../lib/feeStructure.js';
 import {
+  getFeeFinancialOperations,
+  syncFeeFinancialOperationsFromSetup,
+} from '../lib/feeFinancialOperations.js';
+import {
   exportFeeCollectionEntries,
   getFeeCollectionAnalytics,
   listFeeCollectionEntries,
@@ -2783,5 +2787,24 @@ feeFinanceRouter.get(
     }
 
     return res.json(report);
+  }),
+);
+
+feeFinanceRouter.get(
+  '/financial-operations',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const academicYear = typeof req.query.academicYear === 'string' ? req.query.academicYear : undefined;
+    return res.json(await getFeeFinancialOperations(institutionId, academicYear));
+  }),
+);
+
+feeFinanceRouter.post(
+  '/financial-operations/sync',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const academicYear = typeof req.body?.academicYear === 'string' ? req.body.academicYear : undefined;
+    const actorEmail = typeof req.body?.actorEmail === 'string' ? req.body.actorEmail : 'system';
+    return res.json(await syncFeeFinancialOperationsFromSetup(institutionId, academicYear, actorEmail));
   }),
 );

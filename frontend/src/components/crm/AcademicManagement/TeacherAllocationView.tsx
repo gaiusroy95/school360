@@ -36,7 +36,7 @@ const PRIORITY_STYLES: Record<string, string> = {
 };
 
 const EMPTY_TASK = {
-  teacherName: '', department: 'General', taskType: 'TASK' as const, title: '', description: '',
+  teacherName: '', department: 'General', taskType: 'TASK' as 'TASK' | 'PARENT_ENGAGEMENT', title: '', description: '',
   className: '', sectionName: '', subjectName: '', startDate: '', dueDate: '', endDate: '',
   priority: 'MEDIUM' as const, feedbackRequired: false, assignedBy: 'Academic Coordinator',
 };

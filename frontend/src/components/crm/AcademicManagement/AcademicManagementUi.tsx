@@ -14,9 +14,12 @@ export const am = {
   btnPrimary: 'inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 rounded-lg text-sm font-bold shadow-sm transition-colors',
   btnSecondary: 'inline-flex items-center justify-center gap-1.5 px-3 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-sm font-semibold shadow-sm transition-colors',
   btnDark: 'inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold shadow-sm transition-colors',
+  label: 'block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1',
+  table: 'w-full text-sm text-left',
   tableWrap: 'bg-white rounded-xl border border-slate-200/80 overflow-hidden',
   th: 'px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-50/95 border-b border-slate-200/80',
   td: 'px-4 py-3 text-sm text-slate-700 border-b border-slate-100',
+  tr: 'hover:bg-slate-50/80 transition-colors',
   message: 'text-xs font-medium text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2',
   filterBar: 'flex flex-wrap items-center gap-2 p-3 bg-white rounded-xl border border-slate-200/80 shadow-sm',
 };

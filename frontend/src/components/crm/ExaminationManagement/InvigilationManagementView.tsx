@@ -130,13 +130,15 @@ export function InvigilationManagementView() {
     }
   };
 
-  const runAction = async (action: () => Promise<{ message?: string }>) => {
+  const runAction = async (action: () => Promise<{ message?: string } | Record<string, unknown>>) => {
     if (!selectedId) return;
     setActionLoading(true);
     setErrorMsg(null);
     try {
       const result = await action();
-      if (result.message) setSuccessMsg(result.message);
+      if (typeof result === 'object' && result && 'message' in result && typeof result.message === 'string') {
+        setSuccessMsg(result.message);
+      }
       await loadPlans(academicYear);
       await loadDetail(selectedId);
     } catch (err) {

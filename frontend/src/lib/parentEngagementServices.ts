@@ -78,6 +78,7 @@ export async function createParentEngagementsBatch(engagements: {
 export async function updateParentEngagement(id: string, payload: Partial<{
   title: string;
   description: string;
+  engagementType: string;
   plannedAt: string;
   completedAt: string | null;
   actionsTaken: string;

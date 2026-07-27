@@ -11,10 +11,22 @@ export async function fetchInstitutionSetup() {
 }
 
 export async function updateInstitutionTile(tileKey: string, data: Record<string, unknown>) {
-  return api<{ setup: InstitutionSetup; tileKey: string }>(`/api/institution/setup/${tileKey}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ data }),
-  });
+  return api<{
+    setup: InstitutionSetup;
+    tileKey: string;
+    sync?: Record<string, unknown>;
+    examSync?: Record<string, unknown>;
+    feeSync?: Record<string, unknown>;
+    securitySync?: Record<string, unknown>;
+    integrationsSync?: Record<string, unknown>;
+    documentIdentitySync?: Record<string, unknown>;
+  }>(
+    `/api/institution/setup/${tileKey}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ data }),
+    },
+  );
 }
 
 export async function applyExpressSetup(
@@ -61,4 +73,5 @@ export const TILE_KEY_BY_TITLE: Record<string, string> = {
   'Backup & Recovery': 'backupRecovery',
   'Security Settings': 'securitySettings',
   'Data Import / Export': 'dataImportExport',
+  'Modules & UI Setup': 'modulesUiSetup',
 };

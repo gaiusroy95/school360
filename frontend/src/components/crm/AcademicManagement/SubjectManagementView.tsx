@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Plus, Trash2, Eye, Pencil, Users, BookOpen, Calendar, TrendingUp, AlertTriangle, CheckCircle2,
+  Plus, Trash2, Eye, Pencil, Users, BookOpen, Calendar, TrendingUp, AlertTriangle, CheckCircle2, RefreshCw,
 } from 'lucide-react';
 import {
   createAcademicSubject, deleteAcademicSubject, fetchAcademicMeta, fetchSubjectManagementDashboard,
-  updateSyllabusChapter, type SubjectOffering, type SubjectManagementDashboard,
+  syncAcademicSubjects, updateSyllabusChapter, type SubjectOffering, type SubjectManagementDashboard,
 } from '../../../lib/academicServices';
 import {
   AcademicLoading, AcademicModal, AcademicPageHeader, AcademicPageShell,
@@ -143,6 +143,7 @@ export function SubjectManagementView() {
   const [loading, setLoading] = useState(true);
   const [academicYear, setAcademicYear] = useState('2025-26');
   const [years, setYears] = useState<string[]>(['2025-26']);
+  const [terms, setTerms] = useState<string[]>(['Term 1', 'Term 2']);
   const [message, setMessage] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [detailOffering, setDetailOffering] = useState<SubjectOffering | null>(null);
@@ -157,6 +158,7 @@ export function SubjectManagementView() {
     try {
       const meta = await fetchAcademicMeta();
       setYears(meta.academicYears);
+      setTerms(meta.terms);
       const d = await fetchSubjectManagementDashboard(academicYear);
       setDashboard(d);
     } finally { setLoading(false); }
@@ -178,6 +180,15 @@ export function SubjectManagementView() {
   };
   const removeTeacherRow = (idx: number) => {
     setForm((f) => ({ ...f, teachers: f.teachers.filter((_, i) => i !== idx) }));
+  };
+
+  const handleSync = async () => {
+    const res = await syncAcademicSubjects();
+    const parts = [`${res.created} created`, `${res.updated ?? 0} updated`];
+    if (res.skipped) parts.push(`${res.skipped} skipped`);
+    setMessage(`Synced from Institution Setup: ${parts.join(', ')}`);
+    if (res.errors?.length) setMessage((m) => `${m}. ${res.errors!.slice(0, 3).join('; ')}`);
+    void load();
   };
 
   const saveSubject = async () => {
@@ -208,15 +219,20 @@ export function SubjectManagementView() {
         title="Subject Management"
         subtitle="Subjects with teacher assignments, course deadlines, syllabus revision schedule & progress tracking"
         actions={(
-          <button type="button" onClick={() => setShowForm(true)} className={am.btnPrimary}>
-            <Plus size={14} /> Add Subject
-          </button>
+          <>
+            <button type="button" onClick={() => void handleSync()} className={am.btnSecondary}>
+              <RefreshCw size={14} /> Sync from Setup
+            </button>
+            <button type="button" onClick={() => setShowForm(true)} className={am.btnPrimary}>
+              <Plus size={14} /> Add Subject
+            </button>
+          </>
         )}
       />
 
       <div className={am.content}>
         <AcademicYearTermFilters
-          academicYear={academicYear} term="Term 1" years={years} terms={['Term 1', 'Term 2']}
+          academicYear={academicYear} term={terms[0] || 'Term 1'} years={years} terms={terms}
           onYear={setAcademicYear} onTerm={() => {}}
         />
 

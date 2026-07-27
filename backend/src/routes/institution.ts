@@ -9,6 +9,15 @@ import {
   getPublishedCalendarForApp,
   publishInstitutionCalendar,
 } from '../lib/institutionCalendar.js';
+import { onInstitutionSetupTileSaved } from '../lib/academicSetupSync.js';
+import { onExamEvaluationTileSaved } from '../lib/examEvaluationEngine.js';
+import { onFeeFinancialTileSaved } from '../lib/feeFinancialOperations.js';
+import { onSecurityAuditTileSaved } from '../lib/securityAuditCompliance.js';
+import { onIntegrationsNotificationTileSaved } from '../lib/integrationsApisNotification.js';
+import { onDocumentIdentityTileSaved } from '../lib/documentIdentityCustomFields.js';
+import { onDepartmentOpsTileSaved } from '../lib/departmentOperationsManagement.js';
+import { onDataModulesUiTileSaved } from '../lib/dataManagementModulesUi.js';
+import { onGlobalEnvironmentTileSaved } from '../lib/globalEnvironmentSettings.js';
 
 export const institutionRouter = Router();
 
@@ -33,6 +42,7 @@ const TILE_KEYS = [
   'backupRecovery',
   'securitySettings',
   'dataImportExport',
+  'modulesUiSetup',
 ] as const;
 
 type TileKey = (typeof TILE_KEYS)[number];
@@ -90,7 +100,24 @@ institutionRouter.patch('/setup/:tileKey', async (req, res) => {
     data: { [tileKey]: parsed.data.data },
   });
 
-  return res.json({ setup, tileKey });
+  const sync = await onInstitutionSetupTileSaved(institution.id, tileKey);
+  const examSync = await onExamEvaluationTileSaved(institution.id, tileKey);
+
+  const feeSync = await onFeeFinancialTileSaved(institution.id, tileKey);
+
+  const securitySync = await onSecurityAuditTileSaved(institution.id, tileKey);
+
+  const integrationsSync = await onIntegrationsNotificationTileSaved(institution.id, tileKey);
+
+  const documentIdentitySync = await onDocumentIdentityTileSaved(institution.id, tileKey);
+
+  const departmentOpsSync = await onDepartmentOpsTileSaved(institution.id, tileKey);
+
+  const dataModulesUiSync = await onDataModulesUiTileSaved(institution.id, tileKey);
+
+  const globalEnvironmentSync = await onGlobalEnvironmentTileSaved(institution.id, tileKey);
+
+  return res.json({ setup, tileKey, sync, examSync, feeSync, securitySync, integrationsSync, documentIdentitySync, departmentOpsSync, dataModulesUiSync, globalEnvironmentSync });
 });
 
 /** Express Setup Engine: apply multiple tiles from parsed Excel payload in one request */
@@ -121,7 +148,39 @@ institutionRouter.post('/setup/express', async (req, res) => {
     data: updates,
   });
 
-  return res.json({ setup, message: 'Express setup applied successfully' });
+  const syncResults: Record<string, unknown> = {};
+  const examSyncResults: Record<string, unknown> = {};
+  const feeSyncResults: Record<string, unknown> = {};
+  const securitySyncResults: Record<string, unknown> = {};
+  const integrationsSyncResults: Record<string, unknown> = {};
+  const documentIdentitySyncResults: Record<string, unknown> = {};
+  const departmentOpsSyncResults: Record<string, unknown> = {};
+  const dataModulesUiSyncResults: Record<string, unknown> = {};
+  const globalEnvironmentSyncResults: Record<string, unknown> = {};
+  for (const key of Object.keys(parsed.data.tiles)) {
+    if (TILE_KEYS.includes(key as TileKey)) {
+      const result = await onInstitutionSetupTileSaved(institution.id, key);
+      if (result) syncResults[key] = result;
+      const examResult = await onExamEvaluationTileSaved(institution.id, key);
+      if (examResult) examSyncResults[key] = examResult;
+      const feeResult = await onFeeFinancialTileSaved(institution.id, key);
+      if (feeResult) feeSyncResults[key] = feeResult;
+      const securityResult = await onSecurityAuditTileSaved(institution.id, key);
+      if (securityResult) securitySyncResults[key] = securityResult;
+      const integrationsResult = await onIntegrationsNotificationTileSaved(institution.id, key);
+      if (integrationsResult) integrationsSyncResults[key] = integrationsResult;
+      const documentIdentityResult = await onDocumentIdentityTileSaved(institution.id, key);
+      if (documentIdentityResult) documentIdentitySyncResults[key] = documentIdentityResult;
+      const departmentOpsResult = await onDepartmentOpsTileSaved(institution.id, key);
+      if (departmentOpsResult) departmentOpsSyncResults[key] = departmentOpsResult;
+      const dataModulesUiResult = await onDataModulesUiTileSaved(institution.id, key);
+      if (dataModulesUiResult) dataModulesUiSyncResults[key] = dataModulesUiResult;
+      const globalEnvironmentResult = await onGlobalEnvironmentTileSaved(institution.id, key);
+      if (globalEnvironmentResult) globalEnvironmentSyncResults[key] = globalEnvironmentResult;
+    }
+  }
+
+  return res.json({ setup, message: 'Express setup applied successfully', sync: syncResults, examSync: examSyncResults, feeSync: feeSyncResults, securitySync: securitySyncResults, integrationsSync: integrationsSyncResults, documentIdentitySync: documentIdentitySyncResults, departmentOpsSync: departmentOpsSyncResults, dataModulesUiSync: dataModulesUiSyncResults, globalEnvironmentSync: globalEnvironmentSyncResults });
 });
 
 const TEST_MEDIUMS = ['WhatsApp', 'SMS', 'Email', 'Push', 'Voice'] as const;

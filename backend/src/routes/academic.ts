@@ -22,6 +22,14 @@ import {
   serializeSubject,
   syncClassSectionsFromInstitutionSetup,
 } from '../lib/academicManagement.js';
+import {
+  getAcademicMetaFromSetup,
+  refreshCurriculumFromSetup,
+  syncSubjectsFromInstitutionSetup,
+  validateClassSectionPayload,
+  validateSubjectPayload,
+  validateTeacherWorkload,
+} from '../lib/academicSetupSync.js';
 import { seedAcademicDemoData } from '../lib/academicSeed.js';
 import { clearInstitutionDemoData } from '../lib/clearDemoData.js';
 import { syncTeacherProfilesFromAcademic } from '../lib/teacherAttendance.js';
@@ -129,12 +137,14 @@ academicRouter.get(
   asyncHandler(async (_req, res) => {
     const institutionId = await getDefaultInstitutionId();
     const filters = await getInstitutionFilterMeta(institutionId);
+    const setupMeta = await getAcademicMetaFromSetup(institutionId);
     return res.json({
-      defaultAcademicYear: filters.defaultAcademicYear,
+      defaultAcademicYear: setupMeta.defaultAcademicYear || filters.defaultAcademicYear,
       academicYears: filters.academicYears,
       classes: filters.classes,
       sectionsByClass: filters.sectionsByClass,
-      terms: ['Term 1', 'Term 2'],
+      terms: setupMeta.terms,
+      framework: setupMeta.framework,
     });
   }),
 );
@@ -162,6 +172,25 @@ academicRouter.post(
       });
     }
     return res.json(await clearInstitutionDemoData(institutionId, year));
+  }),
+);
+
+academicRouter.post(
+  '/sync-framework',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const year = typeof req.body?.academicYear === 'string' ? req.body.academicYear : undefined;
+    const result = await refreshCurriculumFromSetup(institutionId, year);
+    return res.json(result);
+  }),
+);
+
+academicRouter.post(
+  '/sync-subjects',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const result = await syncSubjectsFromInstitutionSetup(institutionId);
+    return res.json(result);
   }),
 );
 
@@ -223,6 +252,10 @@ academicRouter.post(
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const institutionId = await getDefaultInstitutionId();
+    const policyCheck = await validateClassSectionPayload(institutionId, parsed.data);
+    if (!policyCheck.valid) {
+      return res.status(400).json({ error: 'Policy validation failed', details: policyCheck.errors });
+    }
     const recordId = await nextAcademicRecordId(institutionId, 'classSection');
     const row = await prisma.academicClassSection.create({
       data: { institutionId, recordId, ...parsed.data, capacity: parsed.data.capacity ?? 40 },
@@ -237,6 +270,14 @@ academicRouter.patch(
     const institutionId = await getDefaultInstitutionId();
     const existing = await prisma.academicClassSection.findFirst({ where: { institutionId, id: req.params.id } });
     if (!existing) return res.status(404).json({ error: 'Not found' });
+    const merged = { ...existing, ...req.body };
+    const policyCheck = await validateClassSectionPayload(institutionId, {
+      classTeacher: merged.classTeacher,
+      room: merged.room,
+    });
+    if (!policyCheck.valid) {
+      return res.status(400).json({ error: 'Policy validation failed', details: policyCheck.errors });
+    }
     const row = await prisma.academicClassSection.update({
       where: { id: existing.id },
       data: req.body,
@@ -309,6 +350,11 @@ academicRouter.post(
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const institutionId = await getDefaultInstitutionId();
+
+    const validation = await validateSubjectPayload(institutionId, parsed.data);
+    if (!validation.valid) {
+      return res.status(400).json({ error: 'Policy validation failed', details: validation.errors });
+    }
 
     if (parsed.data.teachers && parsed.data.teachers.length > 0) {
       const result = await createSubjectWithTeachers(institutionId, parsed.data);
@@ -1810,6 +1856,18 @@ academicRouter.post(
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const institutionId = await getDefaultInstitutionId();
+
+    if (parsed.data.teacherName) {
+      const workload = await validateTeacherWorkload(
+        institutionId,
+        parsed.data.academicYear,
+        parsed.data.teacherName,
+      );
+      if (!workload.valid) {
+        return res.status(400).json({ error: workload.message || 'Teacher workload limit exceeded' });
+      }
+    }
+
     const offering = await addTeacherToSubject(institutionId, parsed.data.subjectId, parsed.data);
     return res.status(201).json({ record: offering });
   }),

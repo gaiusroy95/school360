@@ -13,6 +13,7 @@ export function ClassSectionsView() {
   const [loading, setLoading] = useState(true);
   const [academicYear, setAcademicYear] = useState('2025-26');
   const [years, setYears] = useState<string[]>(['2025-26']);
+  const [terms, setTerms] = useState<string[]>(['Term 1']);
   const [showForm, setShowForm] = useState(false);
   const [message, setMessage] = useState('');
   const [form, setForm] = useState({ className: '', sectionName: '', capacity: 40, room: '', classTeacher: '', classTeacherPhone: '' });
@@ -22,6 +23,7 @@ export function ClassSectionsView() {
     try {
       const [meta, res] = await Promise.all([fetchAcademicMeta(), fetchClassSections(academicYear)]);
       setYears(meta.academicYears);
+      setTerms(meta.terms);
       setRecords(res.records);
     } finally {
       setLoading(false);
@@ -40,7 +42,10 @@ export function ClassSectionsView() {
 
   const handleSync = async () => {
     const res = await syncAcademicClasses(academicYear);
-    setMessage(`Synced ${res.created} class-section(s) from Institution Setup`);
+    const parts = [`${res.created} created`, `${res.updated ?? 0} updated`];
+    if (res.skipped) parts.push(`${res.skipped} skipped`);
+    setMessage(`Synced from Institution Setup: ${parts.join(', ')}`);
+    if (res.errors?.length) setMessage((m) => `${m}. ${res.errors!.slice(0, 3).join('; ')}`);
     void load();
   };
 
@@ -67,7 +72,7 @@ export function ClassSectionsView() {
       />
       <div className={am.content}>
         {message && <p className={am.message}>{message}</p>}
-        <AcademicYearTermFilters academicYear={academicYear} term="Term 1" years={years} terms={['Term 1']} onYear={setAcademicYear} onTerm={() => {}} />
+        <AcademicYearTermFilters academicYear={academicYear} term={terms[0] || 'Term 1'} years={years} terms={terms} onYear={setAcademicYear} onTerm={() => {}} />
         <div className={am.tableWrap}>
           <table className="w-full">
             <thead><tr>

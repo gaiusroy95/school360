@@ -28,6 +28,7 @@ import { HostelFeeView } from './FeeFinanceManagement/HostelFeeView';
 import { OtherChargesView } from './FeeFinanceManagement/OtherChargesView';
 import { PayrollView } from './FeeFinanceManagement/PayrollView';
 import { FinancialReportsView } from './FeeFinanceManagement/FinancialReportsView';
+import { FinancialOperationsView } from './FeeFinanceManagement/FinancialOperationsView';
 import { AccountsLedgerView } from './FeeFinanceManagement/AccountsLedgerView';
 import {
   fetchFeeDashboard,
@@ -779,5 +780,6 @@ export function FeeFinanceManagementCRM({
   if (currentView === 'Payroll') return <PayrollView />;
   if (currentView === 'Accounts & Ledger') return <AccountsLedgerView />;
   if (currentView === 'Financial Reports') return <FinancialReportsView />;
+  if (currentView === 'Financial Operations') return <FinancialOperationsView />;
   return <SubModuleView module="Fees & Finance" title={currentView} />;
 }

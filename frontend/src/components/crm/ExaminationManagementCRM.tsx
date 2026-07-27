@@ -13,6 +13,7 @@ import { RevaluationRecheckView } from './ExaminationManagement/RevaluationReche
 import { GradePromotionView } from './ExaminationManagement/GradePromotionView';
 import { CertificatesView } from './ExaminationManagement/CertificatesView';
 import { ExamAnalyticsView } from './ExaminationManagement/ExamAnalyticsView';
+import { EvaluationEngineView } from './ExaminationManagement/EvaluationEngineView';
 
 type Props = {
   currentView?: string;
@@ -49,6 +50,8 @@ export function ExaminationManagementCRM({ currentView = 'Exam Dashboard', onNav
       return <CertificatesView />;
     case 'Exam Analytics':
       return <ExamAnalyticsView />;
+    case 'Evaluation Engine':
+      return <EvaluationEngineView />;
     default:
       return <SubModuleView module="Examination Management" title={currentView} />;
   }

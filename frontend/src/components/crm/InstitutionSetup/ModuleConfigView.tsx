@@ -209,8 +209,53 @@ export function ModuleConfigView({
           recordColumns: activeColumns,
         };
       }
-      await updateInstitutionTile(schema.key, payload);
-      setMessage('Configuration saved to database.');
+      const res = await updateInstitutionTile(schema.key, payload);
+      let syncNote = '';
+      const sync = res.sync as Record<string, unknown> | undefined;
+      if (sync?.curriculum) {
+        const c = sync.curriculum as { created?: number; updated?: number };
+        syncNote = ` Academic framework ${c.created ? 'created' : 'updated'} in curriculum.`;
+      }
+      if (sync?.subjects) {
+        const s = sync.subjects as { created?: number; updated?: number; skipped?: number };
+        syncNote = ` ${s.created ?? 0} subject(s) created, ${s.updated ?? 0} updated${s.skipped ? `, ${s.skipped} skipped` : ''}.`;
+      }
+      if (sync?.classSections) {
+        const cs = sync.classSections as { created?: number; updated?: number; skipped?: number };
+        syncNote = ` ${cs.created ?? 0} class-section(s) created, ${cs.updated ?? 0} updated${cs.skipped ? `, ${cs.skipped} skipped` : ''}.`;
+      }
+      const examSync = res.examSync as Record<string, unknown> | undefined;
+      if (examSync?.evaluationEngine) {
+        const ee = examSync.evaluationEngine as { academicYear?: string; weightageValidation?: { valid?: boolean } };
+        syncNote += ` Evaluation engine synced for ${ee.academicYear || 'session'}${ee.weightageValidation?.valid === false ? ' (weightage validation failed)' : ''}.`;
+      }
+      const feeSync = res.feeSync as Record<string, unknown> | undefined;
+      if (feeSync?.feeFinancialOps) {
+        const ff = feeSync.feeFinancialOps as { academicYear?: string; feeGroups?: { created?: number; updated?: number } };
+        syncNote += ` Fee financial ops synced for ${ff.academicYear || 'session'}.`;
+      }
+      const securitySync = res.securitySync as Record<string, unknown> | undefined;
+      if (securitySync?.securityAudit) {
+        const sa = securitySync.securityAudit as { synced?: boolean; encryption?: { algorithm?: string } };
+        if (sa.synced) {
+          syncNote += ` Security & compliance synced (${sa.encryption?.algorithm || 'AES-256'}).`;
+        }
+      }
+      const integrationsSync = res.integrationsSync as Record<string, unknown> | undefined;
+      if (integrationsSync?.integrationsNotification) {
+        const inSync = integrationsSync.integrationsNotification as { synced?: boolean; templatesSynced?: number };
+        if (inSync.synced) {
+          syncNote += ` Integrations & notifications synced (${inSync.templatesSynced ?? 0} templates).`;
+        }
+      }
+      const documentIdentitySync = res.documentIdentitySync as Record<string, unknown> | undefined;
+      if (documentIdentitySync?.documentIdentity) {
+        const di = documentIdentitySync.documentIdentity as { synced?: boolean; documentTypes?: number; customFields?: number };
+        if (di.synced) {
+          syncNote += ` Document & identity synced (${di.documentTypes ?? 0} types, ${di.customFields ?? 0} custom fields).`;
+        }
+      }
+      setMessage(`Configuration saved to database.${syncNote}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
     } finally {

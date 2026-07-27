@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import type { StudentCategory, StudentCategoryAssignment } from './studentCategoryServices';
+import type { CategoryInput, StudentCategory, StudentCategoryAssignment } from './studentCategoryServices';
 
 export function downloadCategoriesExcel(
   categories: StudentCategory[],
@@ -42,7 +42,7 @@ export function downloadCategoriesExcel(
 }
 
 export function parseCategoriesImport(file: File): Promise<{
-  categories: Record<string, unknown>[];
+  categories: CategoryInput[];
   assignments: Record<string, unknown>[];
 }> {
   return new Promise((resolve, reject) => {
@@ -51,7 +51,7 @@ export function parseCategoriesImport(file: File): Promise<{
       try {
         const data = new Uint8Array(reader.result as ArrayBuffer);
         const wb = XLSX.read(data, { type: 'array' });
-        const categories: Record<string, unknown>[] = [];
+        const categories: CategoryInput[] = [];
         const assignments: Record<string, unknown>[] = [];
 
         const catSheet = wb.Sheets['Categories'] || wb.Sheets[wb.SheetNames[0]];

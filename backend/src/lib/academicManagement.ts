@@ -269,38 +269,7 @@ export function serializeHomework(row: {
   };
 }
 
-export async function syncClassSectionsFromInstitutionSetup(institutionId: string, academicYear: string) {
-  const setup = await prisma.institutionSetup.findUnique({ where: { institutionId } });
-  const tile = (setup?.classesSections || {}) as { records?: Record<string, string>[] };
-  const records = tile.records || [];
-  let created = 0;
-  for (const r of records) {
-    const className = r.className?.trim();
-    const sectionName = r.sectionName?.trim();
-    if (!className || !sectionName) continue;
-    const exists = await prisma.academicClassSection.findFirst({
-      where: { institutionId, academicYear, className, sectionName },
-    });
-    if (exists) continue;
-    const recordId = await nextAcademicRecordId(institutionId, 'classSection');
-    await prisma.academicClassSection.create({
-      data: {
-        institutionId,
-        recordId,
-        academicYear,
-        className,
-        sectionName,
-        capacity: Number(r.capacity) || 40,
-        room: r.room || '',
-        classTeacher: r.classTeacher || '',
-        classTeacherPhone: r.classTeacherPhone || '',
-        classTeacherEmail: r.classTeacherEmail || '',
-      },
-    });
-    created += 1;
-  }
-  return { created };
-}
+export { syncClassSectionsFromInstitutionSetup } from './academicSetupSync.js';
 
 export async function getAcademicDashboard(
   institutionId: string,

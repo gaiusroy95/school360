@@ -101,6 +101,11 @@ export type LessonPlan = {
   resources: { type: string; title: string; url: string }[];
   hasClassTest?: boolean;
   classTestId?: string | null;
+  classTest?: {
+    id: string;
+    title: string;
+    resultBuckets: { excellent: number; good: number; average: number; below: number; avgPercentage: number };
+  };
   resultBuckets?: { excellent: number; good: number; average: number; below: number } | null;
 };
 
@@ -306,7 +311,21 @@ export async function clearAcademicDemoData(academicYear?: string) {
 }
 
 export async function syncAcademicClasses(academicYear?: string) {
-  return api<{ created: number }>('/api/academic/sync-classes', {
+  return api<{ created: number; updated: number; skipped?: number; errors?: string[] }>('/api/academic/sync-classes', {
+    method: 'POST',
+    body: JSON.stringify({ academicYear }),
+  });
+}
+
+export async function syncAcademicSubjects() {
+  return api<{ created: number; updated: number; skipped?: number; errors?: string[] }>('/api/academic/sync-subjects', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export async function syncAcademicFramework(academicYear?: string) {
+  return api<{ created: number; updated: number; academicYear: string }>('/api/academic/sync-framework', {
     method: 'POST',
     body: JSON.stringify({ academicYear }),
   });

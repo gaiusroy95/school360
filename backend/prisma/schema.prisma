@@ -14,14 +14,36 @@ enum UserRole {
   STAFF
 }
 
+enum AccountStatus {
+  ACTIVE
+  LOCKED
+  INACTIVE
+  PENDING
+}
+
+enum GovernanceUserType {
+  STAFF
+  STUDENT
+  PARENT
+  ADMIN
+}
+
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  displayName  String
-  role         UserRole @default(ADMIN)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id               String              @id @default(cuid())
+  email            String              @unique
+  passwordHash     String
+  displayName      String
+  role             UserRole            @default(ADMIN)
+  accountStatus    AccountStatus       @default(ACTIVE)
+  userType         GovernanceUserType  @default(STAFF)
+  phone            String              @default("")
+  activationToken  String              @default("")
+  activationSentAt DateTime?
+  lastLoginAt      DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  roleAssignments  UserRoleAssignment[]
+  mfaEnrollment    UserMfaEnrollment?
 }
 
 /// One row per institution (tenant). Setup tiles store JSON for flexibility until Excel schema arrives.
@@ -121,6 +143,21 @@ model Institution {
   examQuestionSubjectStats ExamQuestionSubjectStat[]
   examTopPerformers ExamTopPerformer[]
   examPerformanceTrends ExamPerformanceTrend[]
+  examConfigurations ExamConfiguration[]
+  examGradingRules ExamGradingRule[]
+  examGpaScales ExamGpaScale[]
+  examRankConfigs ExamRankConfig[]
+  examPeriods ExamPeriod[]
+  feeGroupMasters FeeGroupMaster[]
+  feeTypeConfigs FeeTypeConfig[]
+  feeInstallmentRules FeeInstallmentRule[]
+  feeConcessionPolicies FeeConcessionPolicy[]
+  feeLateFeeRules FeeLateFeeRule[]
+  feePaymentMethodConfigs FeePaymentMethodConfig[]
+  feeOnlinePaymentSettings FeeOnlinePaymentSetting[]
+  feeRefundPolicies FeeRefundPolicy[]
+  feePaymentReminderRules FeePaymentReminderRule[]
+  feeFinancialAuditLogs FeeFinancialAuditLog[]
   mobileAccounts MobileAccount[]
   mobileNotifications MobileNotification[]
   mobileUploads MobileUpload[]
@@ -519,6 +556,77 @@ model Institution {
   hrExitAlumniRecords HrExitAlumniRecord[]
   hrExitAuditLogs HrExitAuditLog[]
   hrExitSettings HrExitSettings[]
+  systemLocations SystemLocation[]
+  systemCoreConfig SystemCoreConfig?
+  systemUpdateRecords SystemUpdateRecord[]
+  systemDbOptimizationRuns SystemDbOptimizationRun[]
+  systemSettingsAuditLogs SystemSettingsAuditLog[]
+  securityEncryptionPolicies SecurityEncryptionPolicy[]
+  backupDestinations BackupDestination[]
+  backupExecutions BackupExecution[]
+  securityLoginSessions SecurityLoginSession[]
+  securityUserActivityLogs SecurityUserActivityLog[]
+  securityDataChangeLogs SecurityDataChangeLog[]
+  securityLoginHistories SecurityLoginHistory[]
+  securityActionHistories SecurityActionHistory[]
+  exportLogs ExportLog[]
+  securityAuditReports SecurityAuditReport[]
+  securityPolicyConfigs SecurityPolicyConfig[]
+  governanceRoles GovernanceRole[]
+  governancePermissions GovernancePermission[]
+  rolePermissions RolePermission[]
+  userRoleAssignments UserRoleAssignment[]
+  integrationConnectors IntegrationConnector[]
+  outgoingWebhooks OutgoingWebhook[]
+  workspaceIntegrations WorkspaceIntegration[]
+  commTemplateCategories CommTemplateCategory[]
+  commDynamicFields CommDynamicField[]
+  commNotificationChannelSettings CommNotificationChannelSettings?
+  documentCategories DocumentCategory[]
+  documentTypes DocumentType[]
+  documentTemplates DocumentTemplate[]
+  applicationFormDocumentRules ApplicationFormDocumentRule[]
+  requiredDocumentRules RequiredDocumentRule[]
+  documentNumberSequences DocumentNumberSequence[]
+  idCardTemplates IdCardTemplate[]
+  rollNumberRules RollNumberRule[]
+  admissionNumberSequences AdmissionNumberSequence[]
+  employeeCodeRules EmployeeCodeRule[]
+  profileCustomFields ProfileCustomField[]
+  customFieldTypes CustomFieldType[]
+  opsDepartments OpsDepartment[]
+  departmentHeads DepartmentHead[]
+  departmentStaffMappings DepartmentStaffMapping[]
+  departmentLocations DepartmentLocation[]
+  departmentBudgets DepartmentBudget[]
+  importantDates ImportantDate[]
+  academicCalendarEntries AcademicCalendarEntry[]
+  eventCalendarEntries EventCalendarEntry[]
+  opsCustomEvents OpsCustomEvent[]
+  importLogs ImportLog[]
+  exportHistories ExportHistory[]
+  scheduledExports ScheduledExport[]
+  systemModules SystemModule[]
+  workflowRules WorkflowRule[]
+  moduleFeaturePermissions ModuleFeaturePermission[]
+  menuStructures MenuStructure[]
+  uiMenus UiMenu[]
+  dashboardPreferences DashboardPreference[]
+  themeSettings ThemeSetting[]
+  colorSchemes ColorScheme[]
+  customCssSnippets CustomCssSnippet[]
+  parentProfiles ParentProfile[]
+  studentParentLinks StudentParentLink[]
+  systemAlerts SystemAlert[]
+  globalSettings GlobalSetting[]
+  firewallRules FirewallRule[]
+  backupRestoreJobs BackupRestoreJob[]
+  forensicAuditExportJobs ForensicAuditExportJob[]
+  b2bApiKeys B2bApiKey[]
+  webhookDeliveryLogs WebhookDeliveryLog[]
+  systemReleaseChecks SystemReleaseCheck[]
+  systemLicense SystemLicense?
+  supportTickets SupportTicket[]
 }
 
 enum EnquiryStatus {
@@ -774,6 +882,7 @@ model InstitutionSetup {
   backupRecovery     Json @default("{}")
   securitySettings   Json @default("{}")
   dataImportExport   Json @default("{}")
+  modulesUiSetup     Json @default("{}")
 
   expressSetupCompletedAt DateTime?
   lastExpressImportMeta   Json?
@@ -1076,6 +1185,7 @@ model Student {
   coScholasticCertificates ExamCoScholasticCertificate[]
   transportEnrollments TransportStudentEnrollment[]
   hostelStudentProfile HostelStudentProfile?
+  parentLinks StudentParentLink[]
 
   @@unique([institutionId, admissionNumber])
   @@index([institutionId, academicYear, status])
@@ -3917,6 +4027,96 @@ model ExamPerformanceTrend {
   sortOrder     Int      @default(0)
 
   @@index([institutionId, academicYear])
+}
+
+// ─── Examination & Evaluation Engine ─────────────────────────────────────────
+
+model ExamConfiguration {
+  id                   String   @id @default(cuid())
+  institutionId        String
+  institution          Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear         String   @default("2025-26")
+  maxMarks             Int      @default(100)
+  graceMarks           Float    @default(0)
+  weightageEnabled     Boolean  @default(false)
+  componentWeightages  Json     @default("{}")
+  weightageSumValid    Boolean  @default(true)
+  rulesLocked          Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@unique([institutionId, academicYear])
+  @@map("exam_configurations")
+}
+
+model ExamGradingRule {
+  id                    String   @id @default(cuid())
+  institutionId         String
+  institution           Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear          String   @default("2025-26")
+  passMarks             Float    @default(33)
+  passGrade             String   @default("D")
+  aggregatedPassPercent Float    @default(33)
+  minComponentPassPercent Float  @default(33)
+  componentRules        Json     @default("{}")
+  rulesActive           Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([institutionId, academicYear])
+  @@map("grading_rules")
+}
+
+model ExamGpaScale {
+  id              String   @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear    String   @default("2025-26")
+  scaleType       String   @default("10 Point")
+  gradeMatrix     Json     @default("[]")
+  formulaNotes    String   @default("")
+  creditWeighting Json     @default("{}")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([institutionId, academicYear])
+  @@map("gpa_scales")
+}
+
+model ExamRankConfig {
+  id               String   @id @default(cuid())
+  institutionId    String
+  institution      Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear     String   @default("2025-26")
+  rankMethod       String   @default("Percentage")
+  tieRule          String   @default("Same Rank")
+  rankScope        String   @default("Section")
+  exemptedSubjects Json     @default("[]")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([institutionId, academicYear])
+  @@map("rank_config")
+}
+
+model ExamPeriod {
+  id                 String    @id @default(cuid())
+  institutionId      String
+  institution        Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear       String    @default("2025-26")
+  periodName         String
+  startDate          DateTime
+  endDate            DateTime
+  registrationCutoff DateTime?
+  marksEntryDeadline DateTime?
+  isPublished        Boolean   @default(false)
+  conflictNotes      String    @default("")
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([institutionId, academicYear, periodName])
+  @@index([institutionId, academicYear, isPublished])
+  @@map("exam_periods")
 }
 
 // ─── Mobile apps (Student/Parent + Staff) ─────────────────────────────────────
@@ -7194,6 +7394,169 @@ model FeeMaster {
   @@unique([institutionId, code])
   @@index([institutionId, status])
   @@index([institutionId, category])
+}
+
+// ─── Fee Management & Financial Operations ───────────────────────────────────
+
+model FeeGroupMaster {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear  String   @default("2025-26")
+  groupCode     String
+  groupName     String
+  description   String   @default("")
+  currency      String   @default("INR")
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([institutionId, academicYear, groupCode])
+  @@map("fee_groups")
+}
+
+model FeeTypeConfig {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  code          String
+  name          String
+  glAccount     String   @default("")
+  category      String   @default("OTHER")
+  isRefundable  Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([institutionId, code])
+  @@map("fee_types")
+}
+
+model FeeInstallmentRule {
+  id               String   @id @default(cuid())
+  institutionId    String
+  institution      Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear     String   @default("2025-26")
+  installmentCount Int      @default(4)
+  scheduleType     String   @default("Quarterly")
+  scheduleJson     Json     @default("[]")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([institutionId, academicYear])
+  @@map("fee_installments")
+}
+
+model FeeConcessionPolicy {
+  id                 String   @id @default(cuid())
+  institutionId      String
+  institution        Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear       String   @default("2025-26")
+  allowConcessions   Boolean  @default(true)
+  maxDiscountPercent Float    @default(50)
+  approvalLevel      String   @default("Principal")
+  discountRules      Json     @default("{}")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([institutionId, academicYear])
+  @@map("fee_concessions")
+}
+
+model FeeLateFeeRule {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear  String   @default("2025-26")
+  graceDays     Int      @default(5)
+  fineType      String   @default("flat")
+  fineAmount    Float    @default(50)
+  finePercent   Float    @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([institutionId, academicYear])
+  @@map("late_fee_rules")
+}
+
+model FeePaymentMethodConfig {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  methodCode    String
+  methodName    String
+  isEnabled     Boolean  @default(true)
+  accountParams Json     @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([institutionId, methodCode])
+  @@map("payment_methods")
+}
+
+model FeeOnlinePaymentSetting {
+  id              String   @id @default(cuid())
+  institutionId   String   @unique
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  provider        String   @default("Razorpay")
+  apiKeyMasked    String   @default("")
+  apiSecretStored String   @default("")
+  webhookUrl      String   @default("")
+  webhookSecretStored String @default("")
+  isEnabled       Boolean  @default(false)
+  testMode        Boolean  @default(true)
+  lastTestedAt    DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("fee_online_payment_settings")
+}
+
+model FeeRefundPolicy {
+  id               String   @id @default(cuid())
+  institutionId    String
+  institution      Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear     String   @default("2025-26")
+  requireApproval  Boolean  @default(true)
+  approvalLevels   Json     @default("[\"Accounts\",\"Principal\"]")
+  autoCreditLedger Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([institutionId, academicYear])
+  @@map("fee_refund_policies")
+}
+
+model FeePaymentReminderRule {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  academicYear  String   @default("2025-26")
+  channels      Json     @default("[\"Email\",\"SMS\"]")
+  daysBeforeDue Json     @default("[7,3,1]")
+  daysAfterDue  Json     @default("[1,7,15]")
+  cronSchedule  String   @default("0 9 * * *")
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([institutionId, academicYear])
+  @@map("fee_payment_reminders")
+}
+
+model FeeFinancialAuditLog {
+  id            String   @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  category      String
+  action        String
+  details       String   @default("")
+  userEmail     String   @default("system")
+  createdAt     DateTime @default(now())
+
+  @@index([institutionId, category])
+  @@map("fee_financial_audit_logs")
 }
 
 /// Class / section fee structure with itemized fee heads
@@ -12874,6 +13237,9 @@ model CommSmsGateway {
   apiEndpoint     String      @default("")
   senderId        String      @default("SCHOOL")
   apiKeyMasked    String      @default("")
+  accountSid      String      @default("")
+  encryptedAuthToken   String @default("")
+  encryptedAuthTokenIv String @default("")
   priority        Int         @default(1)
   status          String      @default("ACTIVE")
   creditsBalance  Float       @default(0)
@@ -12969,6 +13335,10 @@ model CommEmailSmtpGateway {
   fromEmail       String
   fromName        String      @default("")
   apiKeyMasked    String      @default("")
+  smtpUser        String      @default("")
+  encryptedPassword   String  @default("")
+  encryptedPasswordIv String  @default("")
+  useStartTls     Boolean     @default(true)
   priority        Int         @default(1)
   status          String      @default("ACTIVE")
   dailyLimit      Int         @default(50000)
@@ -13854,5 +14224,1297 @@ model RaActivityLog {
   createdAt     DateTime    @default(now())
 
   @@index([institutionId, createdAt])
+}
+
+model SystemLocation {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  branchCode    String
+  branchName    String
+  addressLine1  String
+  addressLine2  String      @default("")
+  city          String
+  state         String      @default("")
+  country       String      @default("India")
+  pincode       String      @default("")
+  latitude      Float?
+  longitude     Float?
+  timezone      String      @default("Asia/Kolkata")
+  isPrimary     Boolean     @default(false)
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, branchCode])
+  @@index([institutionId, isPrimary])
+  @@map("system_locations")
+}
+
+model SystemCoreConfig {
+  id                      String      @id @default(cuid())
+  institutionId           String      @unique
+  institution             Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  maintenanceEnabled      Boolean     @default(false)
+  maintenanceMessage        String      @default("System is under maintenance. Please try again later.")
+  maintenanceAllowAdmins  Boolean     @default(true)
+  maintenanceScheduledAt  DateTime?
+  maintenanceEndsAt       DateTime?
+  maxConcurrentSessions   Int         @default(500)
+  maxStorageGb            Float       @default(1000)
+  maxUploadMb             Float       @default(25)
+  maxApiRequestsPerMinute Int         @default(120)
+  cacheEnabled            Boolean     @default(true)
+  cacheTtlSeconds         Int         @default(300)
+  cacheInvalidationMode   String      @default("TTL")
+  cacheLastFlushedAt      DateTime?
+  queryTimeoutMs          Int         @default(30000)
+  workerConcurrency       Int         @default(4)
+  backgroundQueueSize     Int         @default(100)
+  apmThresholdMs          Int         @default(2000)
+  currentAppVersion       String      @default("1.0.0")
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @updatedAt
+}
+
+model SystemUpdateRecord {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  versionFrom   String
+  versionTo     String
+  updateType    String      @default("PATCH")
+  status        String      @default("PENDING")
+  packageName   String      @default("")
+  packageChecksum String    @default("")
+  packageSizeBytes Int       @default(0)
+  progressPercent Int        @default(0)
+  deploymentPhase String     @default("")
+  notes         String      @default("")
+  executedAt    DateTime?
+  executedBy    String      @default("")
+  createdAt     DateTime    @default(now())
+
+  @@index([institutionId, createdAt])
+}
+
+model SystemDbOptimizationRun {
+  id              String      @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  status          String      @default("RUNNING")
+  tablesProcessed Int         @default(0)
+  indexesRebuilt  Int         @default(0)
+  durationMs      Int         @default(0)
+  details         String      @default("")
+  triggeredBy     String      @default("Admin")
+  startedAt       DateTime    @default(now())
+  completedAt     DateTime?
+
+  @@index([institutionId, startedAt])
+}
+
+model SystemSettingsAuditLog {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  category      String
+  action        String
+  details       String      @default("")
+  userId        String      @default("")
+  userEmail     String      @default("")
+  createdAt     DateTime    @default(now())
+
+  @@index([institutionId, category, createdAt])
+}
+
+model SecurityPolicyConfig {
+  id                    String      @id @default(cuid())
+  institutionId         String      @unique
+  institution           Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  minPasswordLength     Int         @default(8)
+  requireSpecialChar    Boolean     @default(true)
+  requireNumber         Boolean     @default(true)
+  maxFailedAttempts     Int         @default(5)
+  lockoutMinutes        Int         @default(15)
+  sessionTimeoutMinutes Int         @default(60)
+  ipAllowlist           Json        @default("[]")
+  twoFactorEnabled      Boolean     @default(false)
+  twoFactorMethod       String      @default("Authenticator App")
+  requireMfaForAdmins   Boolean     @default(false)
+  requireMfaForAll      Boolean     @default(false)
+  autoBackupEnabled     Boolean     @default(false)
+  backupFrequency       String      @default("Daily")
+  backupTime            String      @default("02:00 AM")
+  retainBackupDays      Int         @default(30)
+  allowSelfRestore      Boolean     @default(false)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+}
+
+model SecurityEncryptionPolicy {
+  id               String      @id @default(cuid())
+  institutionId    String
+  institution      Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  algorithm        String      @default("AES-256")
+  piiFields        Json        @default("[]")
+  vaultProvider    String      @default("INTERNAL_VAULT")
+  vaultKeyId       String      @default("")
+  keyRotationDays  Int         @default(90)
+  lastRotatedAt    DateTime?
+  encryptAtRest    Boolean     @default(true)
+  encryptInTransit Boolean     @default(true)
+  isActive         Boolean     @default(true)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  @@index([institutionId, isActive])
+}
+
+model BackupDestination {
+  id               String            @id @default(cuid())
+  institutionId    String
+  institution      Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  destinationType  String            @default("LOCAL")
+  label            String            @default("")
+  uri              String            @default("")
+  credentialsRef   String            @default("")
+  isDefault        Boolean           @default(false)
+  isActive         Boolean           @default(true)
+  lastValidatedAt  DateTime?
+  validationStatus String            @default("PENDING")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  executions       BackupExecution[]
+
+  @@map("backup_destinations")
+  @@index([institutionId, isActive])
+}
+
+model BackupExecution {
+  id            String             @id @default(cuid())
+  institutionId String
+  institution   Institution        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  destinationId String?
+  destination   BackupDestination? @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  status        String             @default("RUNNING")
+  triggerType   String             @default("MANUAL")
+  archivePath   String             @default("")
+  checksum      String             @default("")
+  sizeBytes     BigInt             @default(0)
+  tablesCount   Int                @default(0)
+  logDetails    String             @default("")
+  startedAt     DateTime           @default(now())
+  completedAt   DateTime?
+  triggeredBy   String             @default("")
+  restoreJobs   BackupRestoreJob[]
+
+  @@index([institutionId, startedAt])
+}
+
+model SecurityLoginSession {
+  id             String      @id @default(cuid())
+  institutionId  String
+  institution    Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  userId         String
+  userEmail      String
+  userRole       String      @default("")
+  ipAddress      String      @default("")
+  userAgent      String      @default("")
+  geoLocation    String      @default("")
+  status         String      @default("ACTIVE")
+  failedAttempts Int         @default(0)
+  isSuspicious   Boolean     @default(false)
+  loginAt        DateTime    @default(now())
+  lastActivityAt DateTime    @default(now())
+  logoutAt       DateTime?
+
+  @@index([institutionId, status, loginAt])
+}
+
+model SecurityUserActivityLog {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  userId        String
+  userEmail     String
+  action        String
+  module        String      @default("")
+  entityType    String      @default("")
+  entityId      String      @default("")
+  ipAddress     String      @default("")
+  details       String      @default("")
+  createdAt     DateTime    @default(now())
+
+  @@index([institutionId, userId, createdAt])
+}
+
+model SecurityDataChangeLog {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  userId        String
+  userEmail     String
+  tableName     String
+  entityId      String      @default("")
+  operation     String
+  beforeData    Json?
+  afterData     Json?
+  integrityHash String      @default("")
+  ipAddress     String      @default("")
+  createdAt     DateTime    @default(now())
+
+  @@index([institutionId, tableName, createdAt])
+}
+
+model SecurityLoginHistory {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  userId        String      @default("")
+  userEmail     String
+  eventType     String
+  ipAddress     String      @default("")
+  userAgent     String      @default("")
+  geoLocation   String      @default("")
+  failureReason String      @default("")
+  createdAt     DateTime    @default(now())
+
+  @@index([institutionId, createdAt])
+}
+
+model SecurityActionHistory {
+  id             String      @id @default(cuid())
+  institutionId  String
+  institution    Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  userId         String
+  userEmail      String
+  actionCategory String
+  action         String
+  severity       String      @default("HIGH")
+  entityType     String      @default("")
+  entityId       String      @default("")
+  details        String      @default("")
+  ipAddress      String      @default("")
+  isAnomalous    Boolean     @default(false)
+  integrityHash  String      @default("")
+  createdAt      DateTime    @default(now())
+
+  @@index([institutionId, actionCategory, createdAt])
+}
+
+model ExportLog {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  userId        String
+  userEmail     String
+  exportFormat  String
+  fileName      String      @default("")
+  module        String      @default("")
+  rowsExported  Int         @default(0)
+  ipAddress     String      @default("")
+  createdAt     DateTime    @default(now())
+
+  @@map("export_logs")
+  @@index([institutionId, createdAt])
+}
+
+model SecurityAuditReport {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  reportType    String      @default("COMPLIANCE")
+  dateFrom      DateTime
+  dateTo        DateTime
+  modules       Json        @default("[]")
+  status        String      @default("GENERATING")
+  checksum      String      @default("")
+  summary       Json?
+  filePath      String      @default("")
+  generatedBy   String      @default("")
+  generatedAt   DateTime    @default(now())
+
+  @@index([institutionId, generatedAt])
+}
+
+model GovernanceRole {
+  id              String               @id @default(cuid())
+  institutionId   String
+  institution     Institution          @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  roleCode        String
+  roleLabel       String
+  description     String               @default("")
+  level           Int                  @default(1)
+  parentRoleId    String?
+  parent          GovernanceRole?      @relation("RoleHierarchy", fields: [parentRoleId], references: [id], onDelete: SetNull)
+  children        GovernanceRole[]     @relation("RoleHierarchy")
+  isSystem        Boolean              @default(false)
+  isActive        Boolean              @default(true)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  permissions     RolePermission[]
+  userAssignments UserRoleAssignment[]
+
+  @@unique([institutionId, roleCode])
+  @@map("roles")
+  @@index([institutionId, isActive])
+  @@index([institutionId, parentRoleId])
+}
+
+model GovernancePermission {
+  id             String           @id @default(cuid())
+  institutionId  String
+  institution    Institution      @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  featureArea    String
+  permissionCode String
+  label          String
+  canCreate      Boolean          @default(false)
+  canRead        Boolean          @default(true)
+  canUpdate      Boolean          @default(false)
+  canDelete      Boolean          @default(false)
+  canExport      Boolean          @default(false)
+  apiRoute       String           @default("")
+  menuPath       String           @default("")
+  isActive       Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  roleMappings   RolePermission[]
+
+  @@unique([institutionId, permissionCode])
+  @@map("permissions")
+  @@index([institutionId, featureArea])
+}
+
+model RolePermission {
+  id            String               @id @default(cuid())
+  institutionId String
+  institution   Institution          @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  roleId        String
+  permissionId  String
+  role          GovernanceRole       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission    GovernancePermission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  grantedAt     DateTime             @default(now())
+  grantedBy     String               @default("")
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+  @@index([institutionId, roleId])
+}
+
+model UserRoleAssignment {
+  id            String         @id @default(cuid())
+  institutionId String
+  institution   Institution    @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  userId        String
+  roleId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role          GovernanceRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  scope         String         @default("INSTITUTION")
+  scopeRef      String         @default("")
+  assignedAt    DateTime       @default(now())
+  assignedBy    String         @default("")
+  isActive      Boolean        @default(true)
+
+  @@unique([userId, roleId, scope, scopeRef])
+  @@map("user_role")
+  @@index([institutionId, userId])
+}
+
+model IntegrationConnector {
+  id              String      @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  connectorCode   String
+  connectorName   String
+  connectorType   String      @default("LMS")
+  apiEndpoint     String      @default("")
+  credentialsRef  String      @default("")
+  dataMappings    Json        @default("[]")
+  syncSchedule    String      @default("0 */6 * * *")
+  webhookValidated Boolean    @default(false)
+  isActive        Boolean     @default(true)
+  lastSyncAt      DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@unique([institutionId, connectorCode])
+  @@map("third_party_integrations")
+  @@index([institutionId, connectorType])
+}
+
+model OutgoingWebhook {
+  id              String      @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  webhookCode     String
+  targetUrl       String
+  eventSubscriptions Json     @default("[]")
+  signingKey      String      @default("")
+  isActive        Boolean     @default(true)
+  lastTestAt      DateTime?
+  lastTestStatus  String      @default("PENDING")
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  deliveries      WebhookDeliveryLog[]
+
+  @@unique([institutionId, webhookCode])
+  @@map("outgoing_webhooks")
+  @@index([institutionId, isActive])
+}
+
+model WorkspaceIntegration {
+  id              String      @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  provider        String
+  tenantId        String      @default("")
+  clientId        String      @default("")
+  credentialsRef  String      @default("")
+  oauthScopes     Json        @default("[]")
+  directorySync   Boolean     @default(false)
+  isActive        Boolean     @default(false)
+  lastSyncAt      DateTime?
+  connectionStatus String     @default("PENDING")
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@unique([institutionId, provider])
+  @@map("workspace_integrations")
+}
+
+model CommTemplateCategory {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  categoryCode  String
+  categoryLabel String
+  moduleTag     String      @default("GENERAL")
+  templateCount Int         @default(0)
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, categoryCode])
+  @@map("template_categories")
+  @@index([institutionId, moduleTag])
+}
+
+model CommDynamicField {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  fieldKey      String
+  fieldLabel    String
+  schemaTable   String      @default("")
+  schemaColumn  String      @default("")
+  placeholder   String      @default("")
+  sampleValue   String      @default("")
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, fieldKey])
+  @@map("dynamic_fields")
+  @@index([institutionId, schemaTable])
+}
+
+model CommNotificationChannelSettings {
+  id                  String      @id @default(cuid())
+  institutionId       String      @unique
+  institution         Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  defaultSmsSender    String      @default("SCHOOL")
+  defaultEmailFrom    String      @default("")
+  defaultChannel      String      @default("EMAIL")
+  retryMaxAttempts    Int         @default(3)
+  retryBackoffSeconds Int         @default(60)
+  throttlePerMinute   Int         @default(120)
+  fallbackChannel     String      @default("SMS")
+  emailEnabled        Boolean     @default(true)
+  smsEnabled          Boolean     @default(true)
+  whatsappEnabled     Boolean     @default(false)
+  pushEnabled         Boolean     @default(false)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  @@map("notification_channel_settings")
+}
+
+model DocumentCategory {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  categoryCode  String
+  categoryLabel String
+  privacyLevel  String      @default("INTERNAL")
+  encryptAtRest Boolean     @default(true)
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  documentTypes DocumentType[]
+
+  @@unique([institutionId, categoryCode])
+  @@map("document_categories")
+}
+
+model DocumentType {
+  id               String            @id @default(cuid())
+  institutionId    String
+  institution      Institution       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  categoryId       String?
+  category         DocumentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  typeCode         String
+  typeLabel        String
+  expiryDays       Int?
+  validationRules  Json              @default("{}")
+  isActive         Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([institutionId, typeCode])
+  @@map("document_types")
+}
+
+model DocumentTemplate {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  templateCode  String
+  templateName  String
+  layoutHtml    String      @default("")
+  dynamicTokens Json        @default("[]")
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, templateCode])
+  @@map("document_templates")
+}
+
+model ApplicationFormDocumentRule {
+  id              String      @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  documentName    String
+  description     String      @default("")
+  mandatory       Boolean     @default(false)
+  acceptedFormats String      @default("PDF,JPG,PNG")
+  isActive        Boolean     @default(true)
+  sortOrder       Int         @default(0)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@unique([institutionId, documentName])
+  @@map("application_form_documents")
+}
+
+model RequiredDocumentRule {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  documentName  String
+  profileType   String      @default("Admission")
+  mandatory     Boolean     @default(true)
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, documentName, profileType])
+  @@map("required_documents")
+}
+
+model DocumentNumberSequence {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  sequenceKey   String      @default("DOCUMENT")
+  prefix        String      @default("DOC-")
+  suffix        String      @default("")
+  nextNumber    Int         @default(1)
+  padLength     Int         @default(4)
+  isLocked      Boolean     @default(false)
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, sequenceKey])
+  @@map("document_number_sequences")
+}
+
+model IdCardTemplate {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  templateCode  String
+  templateName  String
+  audience      String      @default("STUDENT")
+  layoutConfig  Json        @default("{}")
+  qrEnabled     Boolean     @default(true)
+  barcodeEnabled Boolean    @default(true)
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, templateCode, audience])
+  @@map("id_card_templates")
+}
+
+model RollNumberRule {
+  id            String      @id @default(cuid())
+  institutionId String      @unique
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  formatFormula String      @default("CLASS-SEC-###")
+  sortLogic     String      @default("ALPHA_NAME")
+  isActive      Boolean     @default(true)
+  updatedAt     DateTime    @updatedAt
+
+  @@map("roll_number_rules")
+}
+
+model AdmissionNumberSequence {
+  id            String      @id @default(cuid())
+  institutionId String      @unique
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  prefix        String      @default("ADM-")
+  nextNumber    Int         @default(1)
+  padLength     Int         @default(4)
+  isLocked      Boolean     @default(false)
+  updatedAt     DateTime    @updatedAt
+
+  @@map("admission_number_seq")
+}
+
+model EmployeeCodeRule {
+  id            String      @id @default(cuid())
+  institutionId String      @unique
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  formatFormula String      @default("EMP-{YEAR}-{SEQ}")
+  prefix        String      @default("EMP-")
+  nextNumber    Int         @default(1)
+  padLength     Int         @default(3)
+  updatedAt     DateTime    @updatedAt
+
+  @@map("employee_code_rules")
+}
+
+model ProfileCustomField {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  entityType    String
+  fieldKey      String
+  fieldLabel    String
+  fieldType     String      @default("text")
+  validation    Json        @default("{}")
+  isRequired    Boolean     @default(false)
+  sortOrder     Int         @default(0)
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, entityType, fieldKey])
+  @@map("profile_custom_fields")
+}
+
+model CustomFieldType {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  typeCode      String
+  typeLabel     String
+  validationSchema Json     @default("{}")
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, typeCode])
+  @@map("custom_field_types")
+}
+
+model OpsDepartment {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  departmentCode String
+  departmentName String
+  parentId      String?
+  parent        OpsDepartment?  @relation("OpsDeptHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children      OpsDepartment[] @relation("OpsDeptHierarchy")
+  hrDepartmentId String     @default("")
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  heads         DepartmentHead[]
+  staffMappings DepartmentStaffMapping[]
+  locations     DepartmentLocation[]
+  budgets       DepartmentBudget[]
+
+  @@unique([institutionId, departmentCode])
+  @@map("departments")
+  @@index([institutionId, isActive])
+}
+
+model DepartmentHead {
+  id            String        @id @default(cuid())
+  institutionId String
+  institution   Institution   @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  departmentId  String
+  department    OpsDepartment @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  staffName     String
+  staffEmail    String        @default("")
+  tenureStart   DateTime?
+  tenureEnd     DateTime?
+  isActive      Boolean       @default(true)
+  appointedAt   DateTime      @default(now())
+  appointedBy   String        @default("")
+
+  @@map("department_heads")
+  @@index([institutionId, departmentId, isActive])
+}
+
+model DepartmentStaffMapping {
+  id            String        @id @default(cuid())
+  institutionId String
+  institution   Institution   @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  departmentId  String
+  department    OpsDepartment @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  staffName     String
+  staffEmail    String        @default("")
+  mappingType   String        @default("PRIMARY")
+  isActive      Boolean       @default(true)
+  assignedAt    DateTime      @default(now())
+
+  @@unique([institutionId, departmentId, staffName, mappingType])
+  @@map("department_staff")
+  @@index([institutionId, staffName])
+}
+
+model DepartmentLocation {
+  id            String        @id @default(cuid())
+  institutionId String
+  institution   Institution   @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  departmentId  String
+  department    OpsDepartment @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  building      String        @default("")
+  floor         String        @default("")
+  roomLabel     String        @default("")
+  campus        String        @default("Main Campus")
+  isPrimary     Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("department_locations")
+  @@index([institutionId, departmentId])
+}
+
+model DepartmentBudget {
+  id            String        @id @default(cuid())
+  institutionId String
+  institution   Institution   @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  departmentId  String
+  department    OpsDepartment @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  fiscalYear    String        @default("2025-26")
+  currency      String        @default("INR")
+  allocated     Float         @default(0)
+  spent         Float         @default(0)
+  categoryCaps  Json          @default("{}")
+  isActive      Boolean       @default(true)
+  updatedAt     DateTime      @updatedAt
+
+  @@unique([institutionId, departmentId, fiscalYear])
+  @@map("department_budgets")
+}
+
+model ImportantDate {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  title         String
+  eventDate     DateTime    @db.Date
+  endDate       DateTime?   @db.Date
+  priority      String      @default("NORMAL")
+  category      String      @default("GENERAL")
+  description   String      @default("")
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@map("important_dates")
+  @@index([institutionId, eventDate])
+}
+
+model AcademicCalendarEntry {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  title         String
+  startDate     DateTime    @db.Date
+  endDate       DateTime?   @db.Date
+  academicYear  String      @default("2025-26")
+  term          String      @default("")
+  description   String      @default("")
+  isPublished   Boolean     @default(false)
+  publishedAt   DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@map("academic_calendars")
+  @@index([institutionId, startDate])
+}
+
+model EventCalendarEntry {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  title         String
+  startDate     DateTime    @db.Date
+  endDate       DateTime?   @db.Date
+  audience      String      @default("ALL")
+  location      String      @default("")
+  description   String      @default("")
+  isPublished   Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@map("event_calendars")
+  @@index([institutionId, startDate])
+}
+
+model OpsCustomEvent {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  title         String
+  startDate     DateTime
+  endDate       DateTime?
+  departmentCode String     @default("")
+  invitees      Json        @default("[]")
+  description   String      @default("")
+  createdBy     String      @default("")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@map("custom_events")
+  @@index([institutionId, startDate])
+}
+
+model ImportLog {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  importType    String      @default("EMPLOYEE")
+  fileName      String      @default("")
+  status        String      @default("COMPLETED")
+  totalRows     Int         @default(0)
+  successCount  Int         @default(0)
+  errorCount    Int         @default(0)
+  errorMatrix   Json        @default("[]")
+  executedBy    String      @default("system")
+  createdAt     DateTime    @default(now())
+
+  @@map("import_logs")
+  @@index([institutionId, importType, createdAt])
+}
+
+model ExportHistory {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  userEmail     String      @default("")
+  exportFormat  String      @default("csv")
+  module        String      @default("")
+  queryParams   Json        @default("{}")
+  rowsExported  Int         @default(0)
+  fileName      String      @default("")
+  createdAt     DateTime    @default(now())
+
+  @@map("export_history")
+  @@index([institutionId, createdAt])
+}
+
+model ScheduledExport {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  jobName       String
+  cronExpression String     @default("0 2 * * *")
+  targetUri     String      @default("")
+  exportFormat  String      @default("xlsx")
+  module        String      @default("")
+  isActive      Boolean     @default(true)
+  lastRunAt     DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, jobName])
+  @@map("scheduled_exports")
+}
+
+model SystemModule {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  moduleCode    String
+  moduleLabel   String
+  isActive      Boolean     @default(true)
+  licenseKey    String      @default("")
+  sortOrder     Int         @default(0)
+  config        Json        @default("{}")
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, moduleCode])
+  @@map("system_modules")
+  @@index([institutionId, isActive, sortOrder])
+}
+
+model WorkflowRule {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  workflowType  String
+  ruleName      String
+  approvalSequence Json     @default("[]")
+  thresholdAmount Float     @default(0)
+  isActive      Boolean     @default(true)
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, workflowType, ruleName])
+  @@map("workflow_rules")
+}
+
+model ModuleFeaturePermission {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  moduleCode    String
+  featureCode   String
+  featureLabel  String
+  roleCode      String      @default("ADMIN")
+  accessLevel   String      @default("FULL")
+  isActive      Boolean     @default(true)
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, moduleCode, featureCode, roleCode])
+  @@map("feature_permissions")
+}
+
+model MenuStructure {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  roleCode      String      @default("ALL")
+  moduleOrder   Json        @default("[]")
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, roleCode])
+  @@map("menu_structures")
+}
+
+model UiMenu {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  roleCode      String      @default("ALL")
+  menuTree      Json        @default("[]")
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, roleCode])
+  @@map("ui_menus")
+}
+
+model DashboardPreference {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  roleCode      String
+  widgets       Json        @default("[]")
+  layout        Json        @default("{}")
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, roleCode])
+  @@map("dashboard_preferences")
+}
+
+model ThemeSetting {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  brandName     String      @default("")
+  logoUrl       String      @default("")
+  fontFamily    String      @default("Inter, sans-serif")
+  faviconUrl    String      @default("")
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId])
+  @@map("theme_settings")
+}
+
+model ColorScheme {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  schemeName    String      @default("Default")
+  primaryColor  String      @default("#2563eb")
+  secondaryColor String     @default("#64748b")
+  accentColor   String      @default("#0d9488")
+  isActive      Boolean     @default(true)
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, schemeName])
+  @@map("color_schemes")
+}
+
+model CustomCssSnippet {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  snippetName   String      @default("Global Overrides")
+  cssContent    String      @default("")
+  isActive      Boolean     @default(true)
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([institutionId, snippetName])
+  @@map("custom_css")
+}
+
+model ParentProfile {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  fullName      String
+  mobile        String      @default("")
+  email         String      @default("")
+  relationship  String      @default("GUARDIAN")
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  studentLinks  StudentParentLink[]
+
+  @@unique([institutionId, mobile, fullName])
+  @@map("parents")
+  @@index([institutionId, mobile])
+}
+
+model StudentParentLink {
+  id            String          @id @default(cuid())
+  institutionId String
+  institution   Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  parentId      String
+  parent        ParentProfile   @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  relationship  ParentRelationship @default(GUARDIAN)
+  createdAt     DateTime        @default(now())
+
+  @@unique([institutionId, parentId, studentId])
+  @@map("student_parent_links")
+  @@index([institutionId, studentId])
+}
+
+model SystemAlert {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  title         String
+  description   String      @default("")
+  severity      String      @default("WARNING")
+  category      String      @default("SYSTEM")
+  status        String      @default("ACTIVE")
+  acknowledgedBy String     @default("")
+  acknowledgedAt DateTime?
+  resolvedBy    String      @default("")
+  resolvedAt    DateTime?
+  sourceModule  String      @default("")
+  metadata      Json        @default("{}")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@map("system_alerts")
+  @@index([institutionId, status, createdAt])
+}
+
+model GlobalSetting {
+  id             String      @id @default(cuid())
+  institutionId  String      @unique
+  institution    Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  companyName    String      @default("")
+  timezone       String      @default("Asia/Kolkata")
+  currency       String      @default("INR")
+  currencySymbol String      @default("₹")
+  dateFormat     String      @default("DD/MM/YYYY")
+  language       String      @default("English")
+  weekStartsOn   String      @default("Monday")
+  brandingLogoUrl String     @default("")
+  updatedAt      DateTime    @updatedAt
+
+  @@map("global_settings")
+}
+
+model FirewallRule {
+  id             String      @id @default(cuid())
+  institutionId  String
+  institution    Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  cidr           String
+  action         String      @default("BLOCK")
+  label          String      @default("")
+  isDeployed     Boolean     @default(false)
+  deployedAt     DateTime?
+  deployDetails  String      @default("")
+  createdBy      String      @default("")
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@map("firewall_rules")
+  @@index([institutionId, isDeployed])
+}
+
+model UserMfaEnrollment {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  secret      String
+  isVerified  Boolean  @default(false)
+  enrolledAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("user_mfa_enrollments")
+}
+
+model BackupRestoreJob {
+  id                String           @id @default(cuid())
+  institutionId     String
+  institution       Institution      @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  backupExecutionId String
+  backupExecution   BackupExecution  @relation(fields: [backupExecutionId], references: [id], onDelete: Cascade)
+  status            String           @default("PENDING")
+  confirmedBy       String           @default("")
+  maintenanceUsed   Boolean          @default(true)
+  details           String           @default("")
+  startedAt         DateTime         @default(now())
+  completedAt       DateTime?
+
+  @@map("backup_restore_jobs")
+  @@index([institutionId, startedAt])
+}
+
+model ForensicAuditExportJob {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  status        String      @default("QUEUED")
+  format        String      @default("CSV")
+  filters       Json        @default("{}")
+  rowCount      Int         @default(0)
+  downloadPath  String      @default("")
+  expiresAt     DateTime?
+  requestedBy   String      @default("")
+  createdAt     DateTime    @default(now())
+  completedAt   DateTime?
+
+  @@map("forensic_audit_export_jobs")
+  @@index([institutionId, status, createdAt])
+}
+
+model B2bApiKey {
+  id            String      @id @default(cuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  keyName       String
+  keyPrefix     String
+  keyHash       String      @unique
+  scopes        Json        @default("[]")
+  expiresAt     DateTime?
+  isActive      Boolean     @default(true)
+  lastUsedAt    DateTime?
+  createdBy     String      @default("")
+  revokedAt     DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@map("b2b_api_keys")
+  @@index([institutionId, isActive])
+}
+
+model WebhookDeliveryLog {
+  id            String          @id @default(cuid())
+  institutionId String
+  institution   Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  webhookId     String
+  webhook       OutgoingWebhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  eventType     String
+  payload       Json
+  status        String          @default("PENDING")
+  httpStatus    Int?
+  responseBody  String          @default("")
+  attemptCount  Int             @default(0)
+  maxAttempts   Int             @default(5)
+  nextRetryAt   DateTime?
+  signature     String          @default("")
+  deliveredAt   DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@map("webhook_delivery_logs")
+  @@index([institutionId, status, nextRetryAt])
+  @@index([webhookId, createdAt])
+}
+
+model SystemReleaseCheck {
+  id              String      @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  localVersion    String
+  remoteVersion   String      @default("")
+  updateAvailable Boolean     @default(false)
+  changelogMd     String      @default("")
+  changelogHtml   String      @default("")
+  packageUrl      String      @default("")
+  packageChecksum String      @default("")
+  registryUrl     String      @default("")
+  checkedAt       DateTime    @default(now())
+
+  @@map("system_release_checks")
+  @@index([institutionId, checkedAt])
+}
+
+model SystemLicense {
+  id               String      @id @default(cuid())
+  institutionId    String      @unique
+  institution      Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  edition          String      @default("Enterprise")
+  licensedTo       String      @default("")
+  licenseKeyHash   String      @default("")
+  licenseKeyMasked String      @default("")
+  validFrom        DateTime    @default(now())
+  validUntil       DateTime
+  maxUsers         Int         @default(500)
+  maxStudents      Int         @default(5000)
+  status           String      @default("ACTIVE")
+  lastValidatedAt  DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  @@map("system_licenses")
+}
+
+model SupportTicket {
+  id              String      @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  ticketNumber    String
+  subject         String
+  description     String      @default("")
+  category        String      @default("GENERAL")
+  priority        String      @default("NORMAL")
+  status          String      @default("OPEN")
+  reportedBy      String      @default("")
+  assignedTo      String      @default("Support Team")
+  resolutionNotes String      @default("")
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  resolvedAt      DateTime?
+
+  @@unique([institutionId, ticketNumber])
+  @@map("support_tickets")
+  @@index([institutionId, status, createdAt])
 }
 

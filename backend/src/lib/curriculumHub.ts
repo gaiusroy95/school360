@@ -1,6 +1,7 @@
 import { prisma } from './prisma.js';
 import { formatClassSection } from './students.js';
 import { nextAcademicRecordId } from './academicManagement.js';
+import { readSubjectsSetupPolicy } from './academicSetupSync.js';
 
 type SetupSections = Record<string, Record<string, unknown>>;
 
@@ -10,9 +11,13 @@ function readSetupSections(tile: unknown): SetupSections {
   return t.sections || {};
 }
 
-function readField(sections: SetupSections, sectionId: string, key: string, fallback = '') {
-  const val = sections[sectionId]?.[key];
-  return val != null ? String(val) : fallback;
+function readField(sections: SetupSections, sectionKeys: string | string[], key: string, fallback = '') {
+  const keys = Array.isArray(sectionKeys) ? sectionKeys : [sectionKeys];
+  for (const sectionKey of keys) {
+    const val = sections[sectionKey]?.[key];
+    if (val != null && String(val) !== '') return String(val);
+  }
+  return fallback;
 }
 
 export async function loadInstitutionFramework(institutionId: string) {
@@ -22,19 +27,22 @@ export async function loadInstitutionFramework(institutionId: string) {
   const grading = readSetupSections(setup?.gradeMarksSetup);
 
   return {
-    boardName: readField(academic, 'educationBoard', 'boardName', 'CBSE'),
-    boardCode: readField(academic, 'educationBoard', 'boardCode'),
-    standardAlignment: readField(academic, 'academicStructure', 'levels', 'National'),
-    termSystem: readField(session, 'termsSemesters', 'termSystem', 'Terms'),
-    terms: readField(session, 'termsSemesters', 'terms', 'Term 1, Term 2'),
-    gradingSystem: readField(grading, 'gradingSystem', 'systemType', 'Percentage'),
-    maxMarks: Number(readField(grading, 'marksConfiguration', 'maxMarks', '100')) || 100,
-    passMarks: Number(readField(grading, 'passFail', 'passMarks', '33')) || 33,
-    weightageEnabled: readField(grading, 'marksConfiguration', 'weightageEnabled') === 'Yes',
-    levels: readField(academic, 'academicStructure', 'levels'),
-    classFrom: readField(academic, 'academicStructure', 'classFrom'),
-    classTo: readField(academic, 'academicStructure', 'classTo'),
-    streams: readField(academic, 'streamGroup', 'streams'),
+    boardName: readField(academic, ['Education Board', 'educationBoard'], 'boardName', 'CBSE'),
+    boardCode: readField(academic, ['Education Board', 'educationBoard'], 'boardCode'),
+    standardAlignment: readField(academic, ['Academic Structure', 'academicStructure'], 'levels', 'National'),
+    termSystem: readField(session, ['Terms / Semesters', 'termsSemesters'], 'termSystem', 'Terms'),
+    terms: readField(session, ['Terms / Semesters', 'termsSemesters'], 'terms', 'Term 1, Term 2'),
+    gradingSystem: readField(grading, ['Grading System', 'gradingSystem'], 'systemType', 'Percentage'),
+    maxMarks: Number(readField(grading, ['Marks Configuration', 'marksConfiguration'], 'maxMarks', '100')) || 100,
+    passMarks: Number(readField(grading, ['Pass / Fail Criteria', 'passFail'], 'passMarks', '33')) || 33,
+    weightageEnabled: readField(grading, ['Marks Configuration', 'marksConfiguration'], 'weightageEnabled') === 'Yes',
+    levels: readField(academic, ['Academic Structure', 'academicStructure'], 'levels'),
+    classFrom: readField(academic, ['Academic Structure', 'academicStructure'], 'classFrom'),
+    classTo: readField(academic, ['Academic Structure', 'academicStructure'], 'classTo'),
+    streams: readField(academic, ['Stream & Group', 'streamGroup'], 'streams'),
+    groups: readField(academic, ['Stream & Group', 'streamGroup'], 'groups'),
+    defaultMedium: readField(academic, ['Medium of Instruction', 'medium'], 'defaultMedium', 'English'),
+    supportedMediums: readField(academic, ['Medium of Instruction', 'medium'], 'supportedMediums'),
   };
 }
 
@@ -399,6 +407,8 @@ export async function bulkAssignElectives(
     studentIds: string[];
   },
 ) {
+  const setup = await prisma.institutionSetup.findUnique({ where: { institutionId } });
+  const policy = readSubjectsSetupPolicy(setup);
   let created = 0;
   let skipped = 0;
   for (const studentId of data.studentIds) {
@@ -414,6 +424,15 @@ export async function bulkAssignElectives(
       skipped += 1;
       continue;
     }
+
+    const currentElectives = await prisma.studentSubjectElective.count({
+      where: { institutionId, academicYear: data.academicYear, studentId },
+    });
+    if (currentElectives >= policy.maxElectivesPerStudent) {
+      skipped += 1;
+      continue;
+    }
+
     const recordId = `ELE-${studentId.slice(-4)}-${data.subjectId.slice(-4)}-${Date.now().toString().slice(-4)}`;
     await prisma.studentSubjectElective.create({
       data: {
@@ -428,5 +447,5 @@ export async function bulkAssignElectives(
     });
     created += 1;
   }
-  return { created, skipped };
+  return { created, skipped, maxElectivesPerStudent: policy.maxElectivesPerStudent };
 }

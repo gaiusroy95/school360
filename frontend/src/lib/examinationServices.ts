@@ -1,10 +1,10 @@
 import { api } from './api';
 
-function qs(params?: Record<string, string | undefined>) {
+function qs(params?: Record<string, string | number | undefined>) {
   if (!params) return '';
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== '') q.set(k, v);
+    if (v !== undefined && v !== '') q.set(k, String(v));
   }
   const s = q.toString();
   return s ? `?${s}` : '';
@@ -1156,6 +1156,7 @@ export async function fetchResultBatch(batchId: string) {
   return api<{
     batch: ResultBatch;
     results: {
+      id: string;
       studentName: string;
       admissionNumber: string;
       totalObtained: number;
@@ -2026,4 +2027,57 @@ export async function seedExamAnalytics(academicYear?: string) {
     '/api/examination/analytics/seed',
     { method: 'POST', body: JSON.stringify({ academicYear }) },
   );
+}
+
+export type EvaluationEngineOverview = {
+  academicYear: string;
+  marksConfig: {
+    maxMarks: number;
+    graceMarks: number;
+    weightageEnabled: boolean;
+    componentWeightages: Record<string, number>;
+    weightageSumValid: boolean;
+    rulesLocked: boolean;
+  } | null;
+  gradingRule: {
+    passMarks: number;
+    passGrade: string;
+    aggregatedPassPercent: number;
+    minComponentPassPercent: number;
+    rulesActive: boolean;
+  } | null;
+  gpaScale: {
+    scaleType: string;
+    formulaNotes: string;
+    gradeMatrix: unknown;
+    resolvedMatrix?: unknown[];
+  } | null;
+  rankConfig: {
+    rankMethod: string;
+    tieRule: string;
+    rankScope: string;
+    exemptedSubjects: unknown;
+  } | null;
+  examPeriods: Array<{
+    id: string;
+    periodName: string;
+    startDate: string;
+    endDate: string;
+    marksEntryDeadline: string | null;
+    isPublished: boolean;
+  }>;
+};
+
+export async function fetchEvaluationEngine(academicYear?: string) {
+  return api<EvaluationEngineOverview>(`/api/examination/evaluation-engine${qs({ academicYear })}`);
+}
+
+export async function syncEvaluationEngine(academicYear?: string) {
+  return api<{
+    academicYear: string;
+    weightageValidation: { valid: boolean; sum: number; errors: string[] };
+  }>('/api/examination/evaluation-engine/sync', {
+    method: 'POST',
+    body: JSON.stringify({ academicYear }),
+  });
 }

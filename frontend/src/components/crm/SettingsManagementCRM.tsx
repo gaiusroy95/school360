@@ -11,16 +11,66 @@ import {
   FileText, Sliders, Wallet, RefreshCcw, AlertOctagon, UploadCloud, 
   History, CalendarClock, Link, GitPullRequest, Layout, Folder, 
   Braces, Code, Menu, LayoutDashboard, FileBarChart, Upload, Map,
-  CheckCircle2, CloudBackup
+  CheckCircle2,
 } from 'lucide-react';
+import type { ComponentType } from 'react';
+import { toViewKey } from '../../lib/navigation';
+import { SubModuleView } from './shared/SubModuleView';
+import { AddressLocationView } from './settings/AddressLocationView';
+import { MaintenanceModeView } from './settings/MaintenanceModeView';
+import { SystemLimitsView } from './settings/SystemLimitsView';
+import { SystemUpdatesView } from './settings/SystemUpdatesView';
+import { CacheSettingsView } from './settings/CacheSettingsView';
+import { PerformanceSettingsView } from './settings/PerformanceSettingsView';
+import { DatabaseOptimizationView } from './settings/DatabaseOptimizationView';
+import { SecurityAuditComplianceView } from './settings/SecurityAuditComplianceView';
+import { UserGovernanceView } from './settings/UserGovernanceView';
+import { IntegrationsNotificationsView } from './settings/IntegrationsNotificationsView';
+import { DocumentIdentityView } from './settings/DocumentIdentityView';
+import { DepartmentOperationsView } from './settings/DepartmentOperationsView';
+import { DataModulesUiView } from './settings/DataModulesUiView';
+
+const CORE_SYSTEM_VIEWS: Record<string, ComponentType> = {
+  'Address & Location': AddressLocationView,
+  'Maintenance Mode': MaintenanceModeView,
+  'System Limits': SystemLimitsView,
+  'System Updates': SystemUpdatesView,
+  'Cache Settings': CacheSettingsView,
+  'Performance Settings': PerformanceSettingsView,
+  'Database Optimization': DatabaseOptimizationView,
+};
+
+const SECURITY_AUDIT_VIEW = 'Security & Compliance';
+const USER_GOVERNANCE_VIEW = 'User Governance & Access Control';
+const INTEGRATIONS_NOTIFICATIONS_VIEW = 'Integrations, APIs & Notifications';
+const DOCUMENT_IDENTITY_VIEW = 'Document, Identity & Custom Fields';
+const DEPARTMENT_OPERATIONS_VIEW = 'Department & Operations Management';
+const DATA_MODULES_UI_VIEW = 'Data Management, Modules & UI';
+
+/** Sidebar / card labels that should open an existing live view instead of a placeholder. */
+const SETTINGS_VIEW_ALIASES: Record<string, string> = {
+  'School Settings': 'General Settings',
+  'Academic Settings': 'General Settings',
+  'User & Role Settings': USER_GOVERNANCE_VIEW,
+  'Module Settings': DATA_MODULES_UI_VIEW,
+  'System Settings': 'Maintenance Mode',
+  'Notifications Settings': INTEGRATIONS_NOTIFICATIONS_VIEW,
+  'Security Settings': SECURITY_AUDIT_VIEW,
+  'Backup & Restore': SECURITY_AUDIT_VIEW,
+  'API & Integrations': INTEGRATIONS_NOTIFICATIONS_VIEW,
+  'Audit Log': SECURITY_AUDIT_VIEW,
+  'Theme & Appearance': DATA_MODULES_UI_VIEW,
+  'Email / SMS Templates': INTEGRATIONS_NOTIFICATIONS_VIEW,
+  'Import / Export': DATA_MODULES_UI_VIEW,
+};
 
 const kpis = [
   { title: 'System Status', value: 'Healthy', subtitle: 'All systems operational', subtitleColor: 'text-green-600', icon: <ShieldCheck size={20} />, color: 'text-green-600', bg: 'bg-green-100', valueColor: 'text-green-600' },
-  { title: 'Active Users', value: '156', subtitle: 'Currently Online', subtitleColor: 'text-slate-500', icon: <Users size={20} />, color: 'text-blue-600', bg: 'bg-blue-100', valueColor: 'text-slate-900' },
-  { title: 'Modules Active', value: '24 / 28', subtitle: 'Modules Enabled', subtitleColor: 'text-slate-500', icon: <Package size={20} />, color: 'text-purple-600', bg: 'bg-purple-100', valueColor: 'text-slate-900' },
-  { title: 'Last Backup', value: '16 May 2025, 11:45 PM', subtitle: 'Automated Backup', subtitleColor: 'text-slate-500', icon: <Cloud size={20} />, color: 'text-orange-600', bg: 'bg-orange-100', valueColor: 'text-slate-900' },
-  { title: 'Storage Used', value: '245.6 GB / 1 TB', subtitle: '24.56% Used', subtitleColor: 'text-slate-500', icon: <Database size={20} />, color: 'text-teal-600', bg: 'bg-teal-100', valueColor: 'text-slate-900' },
-  { title: 'Security Score', value: '95 / 100', subtitle: 'Excellent', subtitleColor: 'text-green-600', icon: <Lock size={20} />, color: 'text-red-600', bg: 'bg-red-100', valueColor: 'text-slate-900' },
+  { title: 'Active Users', value: '—', subtitle: 'Currently Online', subtitleColor: 'text-slate-500', icon: <Users size={20} />, color: 'text-blue-600', bg: 'bg-blue-100', valueColor: 'text-slate-900' },
+  { title: 'Modules Active', value: '—', subtitle: 'Modules Enabled', subtitleColor: 'text-slate-500', icon: <Package size={20} />, color: 'text-purple-600', bg: 'bg-purple-100', valueColor: 'text-slate-900' },
+  { title: 'Last Backup', value: '—', subtitle: 'Automated Backup', subtitleColor: 'text-slate-500', icon: <Cloud size={20} />, color: 'text-orange-600', bg: 'bg-orange-100', valueColor: 'text-slate-900' },
+  { title: 'Storage Used', value: '—', subtitle: 'Configure in System Limits', subtitleColor: 'text-slate-500', icon: <Database size={20} />, color: 'text-teal-600', bg: 'bg-teal-100', valueColor: 'text-slate-900' },
+  { title: 'Security Score', value: '—', subtitle: 'Security Settings', subtitleColor: 'text-slate-500', icon: <Lock size={20} />, color: 'text-red-600', bg: 'bg-red-100', valueColor: 'text-slate-900' },
 ];
 
 const configCards = [
@@ -30,7 +80,7 @@ const configCards = [
     desc: 'Configure basic system settings and preferences.',
     links: [
       { label: 'School / Institute Details', icon: <Building size={12} /> },
-      { label: 'Session & Academic Year', icon: <Calendar size={12} /> },
+      { label: 'Session & Academic Year', icon: <Calendar size={12} />, view: DEPARTMENT_OPERATIONS_VIEW },
       { label: 'Date Format & Time Zone', icon: <Clock size={12} /> },
       { label: 'Language Settings', icon: <Globe size={12} /> },
       { label: 'Currency Settings', icon: <IndianRupee size={12} /> },
@@ -45,7 +95,7 @@ const configCards = [
       { label: 'School Profile', icon: <Building2 size={12} /> },
       { label: 'Logo & Branding', icon: <ImageIcon size={12} /> },
       { label: 'Contact Information', icon: <Phone size={12} /> },
-      { label: 'Address & Location', icon: <MapPin size={12} /> },
+      { label: 'Address & Location', icon: <MapPin size={12} />, view: 'Address & Location' },
       { label: 'Social Media Links', icon: <Link2 size={12} /> },
       { label: 'About Us / Description', icon: <Info size={12} /> },
     ]
@@ -58,6 +108,8 @@ const configCards = [
       { label: 'Classes / Grades Setup', icon: <Layers size={12} /> },
       { label: 'Sections / Groups', icon: <Users size={12} /> },
       { label: 'Subjects Management', icon: <Book size={12} /> },
+      { label: 'Departments', icon: <Building size={12} />, view: DEPARTMENT_OPERATIONS_VIEW },
+      { label: 'Academic Calendar', icon: <Calendar size={12} />, view: DEPARTMENT_OPERATIONS_VIEW },
       { label: 'Subject Allocation', icon: <List size={12} /> },
       { label: 'Promotion Criteria', icon: <TrendingUp size={12} /> },
       { label: 'Grading System', icon: <CheckSquare size={12} /> },
@@ -68,12 +120,12 @@ const configCards = [
     title: 'User & Role Settings',
     desc: 'Manage users, roles and permissions.',
     links: [
-      { label: 'User Management', icon: <Users size={12} /> },
-      { label: 'Role Management', icon: <Shield size={12} /> },
-      { label: 'Permissions & Access Control', icon: <Key size={12} /> },
-      { label: 'Role Permissions Mapping', icon: <Network size={12} /> },
-      { label: 'User Role Assignment', icon: <UserPlus size={12} /> },
-      { label: 'Login Activity', icon: <Activity size={12} /> },
+      { label: 'User Management', icon: <Users size={12} />, view: USER_GOVERNANCE_VIEW },
+      { label: 'Role Management', icon: <Shield size={12} />, view: USER_GOVERNANCE_VIEW },
+      { label: 'Permissions & Access Control', icon: <Key size={12} />, view: USER_GOVERNANCE_VIEW },
+      { label: 'Role Permissions Mapping', icon: <Network size={12} />, view: USER_GOVERNANCE_VIEW },
+      { label: 'User Role Assignment', icon: <UserPlus size={12} />, view: USER_GOVERNANCE_VIEW },
+      { label: 'Login Activity', icon: <Activity size={12} />, view: SECURITY_AUDIT_VIEW },
     ]
   },
   {
@@ -81,25 +133,26 @@ const configCards = [
     title: 'Module Settings',
     desc: 'Enable / disable and configure modules.',
     links: [
-      { label: 'Module Activation', icon: <Power size={12} /> },
-      { label: 'Module Configuration', icon: <Settings2 size={12} /> },
-      { label: 'Custom Fields', icon: <PlusSquare size={12} /> },
-      { label: 'Workflow Settings', icon: <GitMerge size={12} /> },
-      { label: 'Feature Permissions', icon: <ToggleRight size={12} /> },
-      { label: 'Module Order', icon: <ListOrdered size={12} /> },
+      { label: 'Module Activation', icon: <Power size={12} />, view: DATA_MODULES_UI_VIEW },
+      { label: 'Module Configuration', icon: <Settings2 size={12} />, view: DATA_MODULES_UI_VIEW },
+      { label: 'Custom Fields', icon: <PlusSquare size={12} />, view: DOCUMENT_IDENTITY_VIEW },
+      { label: 'Workflow Settings', icon: <GitMerge size={12} />, view: DATA_MODULES_UI_VIEW },
+      { label: 'Feature Permissions', icon: <ToggleRight size={12} />, view: DATA_MODULES_UI_VIEW },
+      { label: 'Module Order', icon: <ListOrdered size={12} />, view: DATA_MODULES_UI_VIEW },
     ]
   },
   {
     icon: <Laptop size={20} className="text-blue-600" />,
-    title: 'System Settings',
-    desc: 'Configure system behavior and performance.',
+    title: 'Core Systems & Performance',
+    desc: 'Configure system behavior, cache, updates and database performance.',
     links: [
-      { label: 'System Preferences', icon: <Settings size={12} /> },
-      { label: 'Maintenance Mode', icon: <Wrench size={12} /> },
-      { label: 'System Limits', icon: <Maximize size={12} /> },
-      { label: 'Cache Settings', icon: <Database size={12} /> },
-      { label: 'Performance Settings', icon: <Zap size={12} /> },
-      { label: 'System Updates', icon: <DownloadCloud size={12} /> },
+      { label: 'Address & Location', icon: <MapPin size={12} />, view: 'Address & Location' },
+      { label: 'Maintenance Mode', icon: <Wrench size={12} />, view: 'Maintenance Mode' },
+      { label: 'System Limits', icon: <Maximize size={12} />, view: 'System Limits' },
+      { label: 'Cache Settings', icon: <Database size={12} />, view: 'Cache Settings' },
+      { label: 'Performance Settings', icon: <Zap size={12} />, view: 'Performance Settings' },
+      { label: 'System Updates', icon: <DownloadCloud size={12} />, view: 'System Updates' },
+      { label: 'Database Optimization', icon: <Database size={12} />, view: 'Database Optimization' },
     ]
   },
   {
@@ -107,10 +160,10 @@ const configCards = [
     title: 'Notifications Settings',
     desc: 'Manage all notification preferences.',
     links: [
-      { label: 'Email Notifications', icon: <Mail size={12} /> },
-      { label: 'SMS Notifications', icon: <MessageSquare size={12} /> },
+      { label: 'Email Notifications', icon: <Mail size={12} />, view: INTEGRATIONS_NOTIFICATIONS_VIEW },
+      { label: 'SMS Notifications', icon: <MessageSquare size={12} />, view: INTEGRATIONS_NOTIFICATIONS_VIEW },
       { label: 'Push Notifications', icon: <Bell size={12} /> },
-      { label: 'WhatsApp Notifications', icon: <MessageCircle size={12} /> },
+      { label: 'WhatsApp Notifications', icon: <MessageCircle size={12} />, view: INTEGRATIONS_NOTIFICATIONS_VIEW },
       { label: 'Notification Templates', icon: <FileText size={12} /> },
       { label: 'Notification Preferences', icon: <Sliders size={12} /> },
     ]
@@ -138,7 +191,7 @@ const configCards = [
       { label: 'IP Restrictions', icon: <MapPin size={12} /> },
       { label: 'Login Attempts Limit', icon: <AlertOctagon size={12} /> },
       { label: 'Session Management', icon: <Clock size={12} /> },
-      { label: 'Data Encryption', icon: <Lock size={12} /> },
+      { label: 'Data Encryption', icon: <Lock size={12} />, view: SECURITY_AUDIT_VIEW },
     ]
   },
   {
@@ -146,12 +199,12 @@ const configCards = [
     title: 'Backup & Restore',
     desc: 'Backup your data and restore when needed.',
     links: [
-      { label: 'Create Backup', icon: <UploadCloud size={12} /> },
-      { label: 'Backup History', icon: <History size={12} /> },
-      { label: 'Schedule Backup', icon: <Calendar size={12} /> },
+      { label: 'Create Backup', icon: <UploadCloud size={12} />, view: SECURITY_AUDIT_VIEW },
+      { label: 'Backup History', icon: <History size={12} />, view: SECURITY_AUDIT_VIEW },
+      { label: 'Schedule Backup', icon: <Calendar size={12} />, view: SECURITY_AUDIT_VIEW },
       { label: 'Restore Data', icon: <DownloadCloud size={12} /> },
-      { label: 'Database Optimization', icon: <Database size={12} /> },
-      { label: 'Backup Settings', icon: <Settings size={12} /> },
+      { label: 'Database Optimization', icon: <Database size={12} />, view: 'Database Optimization' },
+      { label: 'Backup Settings', icon: <Settings size={12} />, view: SECURITY_AUDIT_VIEW },
     ]
   },
   {
@@ -159,12 +212,12 @@ const configCards = [
     title: 'API & Integrations',
     desc: 'Manage third-party integrations and APIs.',
     links: [
-      { label: 'API Settings', icon: <Webhook size={12} /> },
-      { label: 'Third Party Integrations', icon: <Link size={12} /> },
-      { label: 'Webhook Settings', icon: <GitPullRequest size={12} /> },
-      { label: 'SSO / OAuth Settings', icon: <Key size={12} /> },
-      { label: 'Google Workspace', icon: <Mail size={12} /> },
-      { label: 'Microsoft 365 Integration', icon: <Layout size={12} /> },
+      { label: 'API Settings', icon: <Webhook size={12} />, view: INTEGRATIONS_NOTIFICATIONS_VIEW },
+      { label: 'Third Party Integrations', icon: <Link size={12} />, view: INTEGRATIONS_NOTIFICATIONS_VIEW },
+      { label: 'Webhook Settings', icon: <GitPullRequest size={12} />, view: INTEGRATIONS_NOTIFICATIONS_VIEW },
+      { label: 'SSO / OAuth Settings', icon: <Key size={12} />, view: INTEGRATIONS_NOTIFICATIONS_VIEW },
+      { label: 'Google Workspace', icon: <Mail size={12} />, view: INTEGRATIONS_NOTIFICATIONS_VIEW },
+      { label: 'Microsoft 365 Integration', icon: <Layout size={12} />, view: INTEGRATIONS_NOTIFICATIONS_VIEW },
     ]
   },
   {
@@ -172,12 +225,12 @@ const configCards = [
     title: 'Email / SMS Templates',
     desc: 'Create and manage templates for messages.',
     links: [
-      { label: 'Email Templates', icon: <Mail size={12} /> },
-      { label: 'SMS Templates', icon: <MessageSquare size={12} /> },
-      { label: 'WhatsApp Templates', icon: <MessageCircle size={12} /> },
-      { label: 'Template Categories', icon: <Folder size={12} /> },
-      { label: 'Dynamic Fields', icon: <Braces size={12} /> },
-      { label: 'Template Settings', icon: <Settings size={12} /> },
+      { label: 'Email Templates', icon: <Mail size={12} />, view: INTEGRATIONS_NOTIFICATIONS_VIEW },
+      { label: 'SMS Templates', icon: <MessageSquare size={12} />, view: INTEGRATIONS_NOTIFICATIONS_VIEW },
+      { label: 'WhatsApp Templates', icon: <MessageCircle size={12} />, view: INTEGRATIONS_NOTIFICATIONS_VIEW },
+      { label: 'Template Categories', icon: <Folder size={12} />, view: INTEGRATIONS_NOTIFICATIONS_VIEW },
+      { label: 'Dynamic Fields', icon: <Braces size={12} />, view: INTEGRATIONS_NOTIFICATIONS_VIEW },
+      { label: 'Template Settings', icon: <Settings size={12} />, view: INTEGRATIONS_NOTIFICATIONS_VIEW },
     ]
   },
   {
@@ -185,11 +238,11 @@ const configCards = [
     title: 'Theme & Appearance',
     desc: 'Customize look and feel of the system.',
     links: [
-      { label: 'Theme Settings', icon: <Palette size={12} /> },
-      { label: 'Color Schemes', icon: <Palette size={12} /> },
-      { label: 'Custom CSS', icon: <Code size={12} /> },
-      { label: 'Menu Management', icon: <Menu size={12} /> },
-      { label: 'Dashboard Widgets', icon: <LayoutDashboard size={12} /> },
+      { label: 'Theme Settings', icon: <Palette size={12} />, view: DATA_MODULES_UI_VIEW },
+      { label: 'Color Schemes', icon: <Palette size={12} />, view: DATA_MODULES_UI_VIEW },
+      { label: 'Custom CSS', icon: <Code size={12} />, view: DATA_MODULES_UI_VIEW },
+      { label: 'Menu Management', icon: <Menu size={12} />, view: DATA_MODULES_UI_VIEW },
+      { label: 'Dashboard Widgets', icon: <LayoutDashboard size={12} />, view: DATA_MODULES_UI_VIEW },
       { label: 'UI Preferences', icon: <Sliders size={12} /> },
     ]
   },
@@ -198,12 +251,12 @@ const configCards = [
     title: 'Audit Log',
     desc: 'Track all system activities and changes.',
     links: [
-      { label: 'User Activity Log', icon: <Activity size={12} /> },
-      { label: 'Data Change Log', icon: <Database size={12} /> },
-      { label: 'Login History', icon: <History size={12} /> },
-      { label: 'Action History', icon: <List size={12} /> },
-      { label: 'Export Logs', icon: <DownloadCloud size={12} /> },
-      { label: 'Audit Log Reports', icon: <FileBarChart size={12} /> },
+      { label: 'User Activity Log', icon: <Activity size={12} />, view: SECURITY_AUDIT_VIEW },
+      { label: 'Data Change Log', icon: <Database size={12} />, view: SECURITY_AUDIT_VIEW },
+      { label: 'Login History', icon: <History size={12} />, view: SECURITY_AUDIT_VIEW },
+      { label: 'Action History', icon: <List size={12} />, view: SECURITY_AUDIT_VIEW },
+      { label: 'Export Logs', icon: <DownloadCloud size={12} />, view: SECURITY_AUDIT_VIEW },
+      { label: 'Audit Log Reports', icon: <FileBarChart size={12} />, view: SECURITY_AUDIT_VIEW },
     ]
   },
   {
@@ -211,12 +264,12 @@ const configCards = [
     title: 'Import / Export',
     desc: 'Import or export system data.',
     links: [
-      { label: 'Import Data', icon: <Upload size={12} /> },
-      { label: 'Export Data', icon: <DownloadCloud size={12} /> },
-      { label: 'Data Mapping', icon: <Map size={12} /> },
-      { label: 'Import History', icon: <History size={12} /> },
-      { label: 'Export History', icon: <History size={12} /> },
-      { label: 'Scheduled Exports', icon: <Calendar size={12} /> },
+      { label: 'Import Data', icon: <Upload size={12} />, view: DATA_MODULES_UI_VIEW },
+      { label: 'Export Data', icon: <DownloadCloud size={12} />, view: DATA_MODULES_UI_VIEW },
+      { label: 'Data Mapping', icon: <Map size={12} />, view: DATA_MODULES_UI_VIEW },
+      { label: 'Import History', icon: <History size={12} />, view: DATA_MODULES_UI_VIEW },
+      { label: 'Export History', icon: <History size={12} />, view: DATA_MODULES_UI_VIEW },
+      { label: 'Scheduled Exports', icon: <Calendar size={12} />, view: DATA_MODULES_UI_VIEW },
     ]
   }
 ];
@@ -230,30 +283,66 @@ const keyBenefits = [
   { title: 'Better Experience', desc: 'Enhance productivity for all users.', icon: <CheckCircle2 size={14} className="text-pink-600" />, bg: 'bg-pink-50' },
 ];
 
-import { SubModuleView } from './shared/SubModuleView';
+export function SettingsManagementCRM({
+  currentView = 'General Settings',
+  onNavigate,
+}: {
+  currentView?: string;
+  onNavigate?: (view: string) => void;
+}) {
+  const resolvedView = SETTINGS_VIEW_ALIASES[currentView] ?? currentView;
 
-export function SettingsManagementCRM({ currentView = 'General Settings' }: { currentView?: string }) {
-  if (currentView && currentView !== 'General Settings') {
+  const CoreView = CORE_SYSTEM_VIEWS[resolvedView];
+  if (CoreView) {
+    const View = CoreView;
+    return <View />;
+  }
+
+  if (resolvedView === SECURITY_AUDIT_VIEW) {
+    return <SecurityAuditComplianceView />;
+  }
+
+  if (resolvedView === USER_GOVERNANCE_VIEW) {
+    return <UserGovernanceView />;
+  }
+
+  if (resolvedView === INTEGRATIONS_NOTIFICATIONS_VIEW) {
+    return <IntegrationsNotificationsView />;
+  }
+
+  if (resolvedView === DOCUMENT_IDENTITY_VIEW) {
+    return <DocumentIdentityView />;
+  }
+
+  if (resolvedView === DEPARTMENT_OPERATIONS_VIEW) {
+    return <DepartmentOperationsView />;
+  }
+
+  if (resolvedView === DATA_MODULES_UI_VIEW) {
+    return <DataModulesUiView />;
+  }
+
+  if (resolvedView && resolvedView !== 'General Settings') {
     return <SubModuleView module="Settings Management" title={currentView} />;
   }
 
+  const nav = (page: string) => onNavigate?.(toViewKey('Settings Management', page));
+
   return (
     <div className="flex flex-col space-y-4 h-full relative">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-slate-800 tracking-tight">Settings Management</h2>
           <p className="text-xs text-slate-500 mt-0.5">Manage and customize your system preferences and configurations</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded flex items-center gap-2 shadow-sm transition-colors">
+          <button type="button" className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded flex items-center gap-2 shadow-sm transition-colors">
             <Eye size={14} />
             <span>View School Profile</span>
           </button>
         </div>
       </div>
 
-      {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         {kpis.map((kpi, i) => (
           <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3 hover:shadow-md transition-shadow">
@@ -269,7 +358,6 @@ export function SettingsManagementCRM({ currentView = 'General Settings' }: { cu
         ))}
       </div>
 
-      {/* Configuration Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-4 flex-1">
          {configCards.map((card, i) => (
             <div key={i} className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col hover:shadow-md transition-shadow">
@@ -284,7 +372,12 @@ export function SettingsManagementCRM({ currentView = 'General Settings' }: { cu
                </div>
                <div className="flex flex-col p-2">
                   {card.links.map((link, j) => (
-                     <a key={j} href="#" className="flex items-center justify-between p-2 hover:bg-slate-50 rounded text-slate-700 transition-colors group">
+                     <button
+                       key={j}
+                       type="button"
+                       onClick={() => 'view' in link && link.view && nav(link.view)}
+                       className="flex items-center justify-between p-2 hover:bg-slate-50 rounded text-slate-700 transition-colors group text-left w-full"
+                     >
                         <div className="flex items-center gap-2">
                            <div className="text-slate-400 group-hover:text-blue-600 transition-colors">
                               {link.icon}
@@ -292,14 +385,13 @@ export function SettingsManagementCRM({ currentView = 'General Settings' }: { cu
                            <span className="text-[10px] font-medium group-hover:text-blue-700 transition-colors">{link.label}</span>
                         </div>
                         <ChevronRight size={12} className="text-slate-300 group-hover:text-blue-500 transition-colors" />
-                     </a>
+                     </button>
                   ))}
                </div>
             </div>
          ))}
       </div>
 
-      {/* Bottom Banner - Key Benefits */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 mt-2">
          {keyBenefits.map((benefit, i) => (
             <div key={i} className="bg-white p-2 rounded-lg border border-slate-200 shadow-sm flex items-center gap-2">
@@ -313,7 +405,6 @@ export function SettingsManagementCRM({ currentView = 'General Settings' }: { cu
             </div>
          ))}
       </div>
-
     </div>
   );
 }

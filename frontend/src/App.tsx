@@ -186,7 +186,7 @@ export default function App() {
               'Event Management': <EventManagementCRM currentView={page} />,
               'Website & CMS Management': <WebsiteCMSManagementCRM currentView={page} onNavigate={setCurrentView} />,
               'Reports & Analytics': <ReportsAnalyticsCRM currentView={page} onNavigate={setCurrentView} />,
-              'Settings Management': <SettingsManagementCRM currentView={page} />,
+              'Settings Management': <SettingsManagementCRM currentView={page} onNavigate={setCurrentView} />,
               'System Administration': <SystemAdministrationCRM currentView={page} />,
               'Institution Setup': <InstitutionSetupCRM currentView={page} />,
             };
