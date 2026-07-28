@@ -1278,6 +1278,65 @@ export async function scheduleHostelReport(body: Record<string, unknown>) {
   });
 }
 
+export type HostelStaffManagement = {
+  academicYear: string;
+  academicYears: string[];
+  roles: { value: string; label: string }[];
+  hostels: { id: string; name: string }[];
+  kpis: {
+    totalStaff: number;
+    wardens: number;
+    onDuty: number;
+    inactive: number;
+    unassigned: number;
+  };
+  staff: {
+    id: string;
+    staffName: string;
+    role: string;
+    roleLabel: string;
+    mobile: string;
+    status: string;
+    hostelId: string | null;
+    hostelName: string;
+    createdAt: string;
+  }[];
+  permissions: { canManage: boolean; canAssign: boolean };
+};
+
+export async function fetchHostelStaffManagement(
+  seed?: boolean,
+  academicYear?: string,
+  filters?: { hostelId?: string; role?: string; status?: string },
+) {
+  const params: Record<string, string | undefined> = { academicYear, ...filters };
+  if (seed) params.seed = '1';
+  return api<HostelStaffManagement>(`/api/hostel/staff${qs(params)}`);
+}
+
+export async function createHostelStaff(body: {
+  staffName: string;
+  role?: string;
+  mobile?: string;
+  hostelId?: string;
+  status?: string;
+}) {
+  return api<{ message: string; staffId: string; data: HostelStaffManagement }>('/api/hostel/staff', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function updateHostelStaff(
+  id: string,
+  body: { staffName?: string; role?: string; mobile?: string; hostelId?: string | null; status?: string },
+) {
+  return api<{ message: string; data: HostelStaffManagement }>(`/api/hostel/staff/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+}
+
 export async function deleteHostelReportSchedule(scheduleId: string) {
   return api<{ success: boolean; data: HostelReportsAnalytics }>(`/api/hostel/reports/schedules/${scheduleId}`, {
     method: 'DELETE',

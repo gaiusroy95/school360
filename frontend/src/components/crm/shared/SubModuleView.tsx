@@ -115,6 +115,8 @@ interface SubModuleViewProps {
  * Shared list/KPI screen used for submenu pages that did not yet have a dedicated view.
  * Matches existing slate / amber ERP visual language (no theme change).
  */
+const DISABLED_BTN = 'opacity-50 cursor-not-allowed pointer-events-none';
+
 export function SubModuleView({ module, title }: SubModuleViewProps) {
   const [query, setQuery] = useState('');
   const seed = hash(`${module}|${title}`);
@@ -137,7 +139,7 @@ export function SubModuleView({ module, title }: SubModuleViewProps) {
             <strong>Placeholder view</strong> — table and KPIs use demo data only.
             {' '}
             {module === 'Settings Management' && title === 'Payment Settings'
-              ? 'Payment gateway configuration is not yet wired to a live API.'
+              ? 'Open Payment Settings from the Settings sidebar for the live payment configuration hub.'
               : 'A dedicated live screen or redirect has not been implemented for this menu item yet.'}
           </span>
         </div>
@@ -151,19 +153,25 @@ export function SubModuleView({ module, title }: SubModuleViewProps) {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              className="px-3 py-2 bg-white border border-slate-200 text-slate-700 rounded text-xs font-medium hover:bg-slate-50 flex items-center gap-1.5 shadow-sm"
+              disabled
+              title="Import will be available when this module is fully implemented"
+              className={`px-3 py-2 bg-white border border-slate-200 text-slate-700 rounded text-xs font-medium flex items-center gap-1.5 shadow-sm ${DISABLED_BTN}`}
             >
               <UploadCloud size={14} /> Import
             </button>
             <button
               type="button"
-              className="px-3 py-2 bg-white border border-slate-200 text-slate-700 rounded text-xs font-medium hover:bg-slate-50 flex items-center gap-1.5 shadow-sm"
+              disabled
+              title="Export will be available when this module is fully implemented"
+              className={`px-3 py-2 bg-white border border-slate-200 text-slate-700 rounded text-xs font-medium flex items-center gap-1.5 shadow-sm ${DISABLED_BTN}`}
             >
               <Download size={14} /> Export
             </button>
             <button
               type="button"
-              className="px-3 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 rounded text-xs font-bold flex items-center gap-1.5 shadow-sm uppercase"
+              disabled
+              title="Create flow not yet available for this screen"
+              className={`px-3 py-2 bg-amber-400 text-slate-900 rounded text-xs font-bold flex items-center gap-1.5 shadow-sm uppercase ${DISABLED_BTN}`}
             >
               <Plus size={14} strokeWidth={3} /> Add New
             </button>
@@ -192,7 +200,9 @@ export function SubModuleView({ module, title }: SubModuleViewProps) {
             </div>
             <button
               type="button"
-              className="inline-flex items-center gap-1.5 text-xs text-slate-600 border border-slate-200 rounded px-2.5 py-1.5 hover:bg-slate-50"
+              disabled
+              title="Advanced filters coming soon"
+              className={`inline-flex items-center gap-1.5 text-xs text-slate-600 border border-slate-200 rounded px-2.5 py-1.5 ${DISABLED_BTN}`}
             >
               <Filter size={14} /> Filters
             </button>
@@ -229,7 +239,12 @@ export function SubModuleView({ module, title }: SubModuleViewProps) {
                       </td>
                     ))}
                     <td className="px-4 py-2.5">
-                      <button type="button" className="text-blue-600 font-semibold hover:underline">
+                      <button
+                        type="button"
+                        disabled
+                        title="Record detail view not yet implemented"
+                        className={`text-blue-600 font-semibold ${DISABLED_BTN}`}
+                      >
                         View
                       </button>
                     </td>

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { fetchMainDashboard, type MainDashboardData } from '../../lib/dashboardServices';
 import { KPICards } from './KPICards';
 import { ChartsRow } from './ChartsRow';
 import { QuickAccess } from './QuickAccess';
 import { BottomRow } from './BottomRow';
+import { QuickActionMenu } from '../shared/QuickActionMenu';
 
 interface DashboardPageProps {
   onNavigate?: (view: string) => void;
@@ -81,10 +82,13 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
             Refresh
           </button>
 
-          <button className="bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold text-xs px-4 py-2 rounded flex items-center gap-2 shadow-sm transition-colors uppercase">
-            <Plus size={14} strokeWidth={3} />
-            <span>Add New</span>
-          </button>
+          {onNavigate && (
+            <QuickActionMenu
+              onNavigate={onNavigate}
+              label="Add New"
+              triggerClassName="bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold text-xs px-4 py-2 rounded flex items-center gap-2 shadow-sm transition-colors uppercase"
+            />
+          )}
         </div>
       </div>
 

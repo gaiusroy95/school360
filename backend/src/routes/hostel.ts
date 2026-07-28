@@ -8,6 +8,12 @@ import {
   seedHostelDashboard,
 } from '../lib/hostelDashboard.js';
 import {
+  createHostelStaff,
+  getHostelStaffManagement,
+  seedHostelStaffManagement,
+  updateHostelStaff,
+} from '../lib/hostelStaffManagement.js';
+import {
   allocateBed,
   approveTransfer,
   autoAssignBed,
@@ -1102,6 +1108,48 @@ hostelRouter.delete(
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
     const result = await deleteHostelReportSchedule(institutionId, String(req.params.id));
+    return res.json(result);
+  }),
+);
+
+hostelRouter.get(
+  '/staff',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    if (req.query.seed === '1') {
+      const data = await seedHostelStaffManagement(
+        institutionId,
+        req.query.academicYear ? String(req.query.academicYear) : '2025-26',
+      );
+      return res.json(data);
+    }
+    const data = await getHostelStaffManagement(
+      institutionId,
+      req.query.academicYear ? String(req.query.academicYear) : '2025-26',
+      {
+        hostelId: req.query.hostelId ? String(req.query.hostelId) : undefined,
+        role: req.query.role ? String(req.query.role) : undefined,
+        status: req.query.status ? String(req.query.status) : undefined,
+      },
+    );
+    return res.json(data);
+  }),
+);
+
+hostelRouter.post(
+  '/staff',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const result = await createHostelStaff(institutionId, req.body);
+    return res.json(result);
+  }),
+);
+
+hostelRouter.patch(
+  '/staff/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const result = await updateHostelStaff(institutionId, String(req.params.id), req.body);
     return res.json(result);
   }),
 );

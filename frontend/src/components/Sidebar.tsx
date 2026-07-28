@@ -198,16 +198,21 @@ export function Sidebar({ isOpen, setIsOpen, currentView, setCurrentView }: Side
 
       <div className="p-3 bg-slate-800/50 m-2 rounded-lg border border-slate-700">
         <p className="text-[10px] text-slate-400">Need Help?</p>
-        <button className="w-full py-1.5 mt-1 bg-amber-400 text-slate-900 rounded text-[10px] font-bold uppercase transition-colors hover:bg-amber-500">
+        <button
+          type="button"
+          onClick={() => setCurrentView(toViewKey('System Administration', 'Support & Maintenance'))}
+          className="w-full py-1.5 mt-1 bg-amber-400 text-slate-900 rounded text-[10px] font-bold uppercase transition-colors hover:bg-amber-500"
+        >
           Contact Support
         </button>
       </div>
       <div className="pb-3 text-[9px] text-slate-500 text-center flex flex-col gap-1">
         <p>© 2026 360schoolerp.</p>
         <div className="flex justify-center gap-1.5">
-          <a href="#" className="hover:text-slate-300">Version 3.0.0</a> |
-          <a href="#" className="hover:text-slate-300">Privacy</a> |
-          <a href="#" className="hover:text-slate-300">Terms</a>
+          <span className="text-slate-500">v1.0.0</span>
+          <button type="button" onClick={() => setCurrentView(toViewKey('Settings Management', 'Security & Compliance'))} className="hover:text-slate-300">Privacy</button>
+          <span>|</span>
+          <button type="button" onClick={() => setCurrentView(toViewKey('System Administration', 'License Management'))} className="hover:text-slate-300">Terms</button>
         </div>
       </div>
     </aside>

@@ -12,6 +12,7 @@ import { InventoryView } from './hostel/InventoryView';
 import { LaundryManagementView } from './hostel/LaundryManagementView';
 import { DisciplineIncidentsView } from './hostel/DisciplineIncidentsView';
 import { HostelReportsAnalyticsView } from './hostel/HostelReportsAnalyticsView';
+import { WardensStaffView } from './hostel/WardensStaffView';
 
 export function HostelManagementCRM({
   currentView = 'Hostel Dashboard',
@@ -28,6 +29,9 @@ export function HostelManagementCRM({
   }
   if (currentView === 'Students') {
     return <HostelStudentsView />;
+  }
+  if (currentView === 'Wardens / Staff') {
+    return <WardensStaffView />;
   }
   if (currentView === 'Visitor Management') {
     return <VisitorManagementView />;

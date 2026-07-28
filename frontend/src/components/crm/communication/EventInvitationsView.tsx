@@ -35,7 +35,15 @@ const EVENT_TYPE_ICON: Record<string, string> = {
   OTHER: '📅',
 };
 
-export function EventInvitationsView() {
+export function EventInvitationsView({
+  initialComposeOpen = false,
+  headerTitle,
+  headerSubtitle,
+}: {
+  initialComposeOpen?: boolean;
+  headerTitle?: string;
+  headerSubtitle?: string;
+} = {}) {
   const [data, setData] = useState<EventInvitationsManagement | null>(null);
   const [detail, setDetail] = useState<EventInvitationDetail | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -45,7 +53,7 @@ export function EventInvitationsView() {
   const [userRole, setUserRole] = useState('Communication Manager');
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('info');
-  const [showCompose, setShowCompose] = useState(false);
+  const [showCompose, setShowCompose] = useState(initialComposeOpen);
   const [saving, setSaving] = useState(false);
 
   const [title, setTitle] = useState('');
@@ -156,8 +164,8 @@ export function EventInvitationsView() {
     <div className="flex flex-col h-full space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-slate-800 tracking-tight">Event Invitations</h2>
-          <p className="text-xs text-slate-500 mt-0.5">Manage RSVPs &amp; automated reminders for Annual Day, Sports Meet, PTMs &amp; more</p>
+          <h2 className="text-xl font-bold text-slate-800 tracking-tight">{headerTitle ?? 'Event Invitations'}</h2>
+          <p className="text-xs text-slate-500 mt-0.5">{headerSubtitle ?? 'Manage RSVPs & automated reminders for Annual Day, Sports Meet, PTMs & more'}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <select value={academicYear} onChange={(e) => setAcademicYear(e.target.value)}

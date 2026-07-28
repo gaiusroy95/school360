@@ -26,6 +26,7 @@ import { useAuth } from './contexts/AuthContext';
 import { parseViewKey } from './lib/navigation';
 import { pathToViewKey, viewKeyToPath } from './lib/urlRoutes';
 import { EntranceExamPortal } from './components/entrance/EntranceExamPortal';
+import { SystemStatusBar } from './components/SystemStatusBar';
 
 function isEntranceExamPath(pathname: string) {
   return pathname === '/entrance-exam' || pathname.startsWith('/entrance-exam/');
@@ -128,7 +129,7 @@ export default function App() {
       <Sidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} currentView={currentView} setCurrentView={setCurrentView} />
       
       <div className="flex-1 flex flex-col lg:ml-56 h-full overflow-hidden w-full">
-        <TopBar onMenuClick={() => setIsSidebarOpen(true)} />
+        <TopBar onMenuClick={() => setIsSidebarOpen(true)} onNavigate={setCurrentView} />
         
         <main className="flex-1 overflow-y-auto p-5 custom-scrollbar flex flex-col space-y-5">
           {(() => {
@@ -150,7 +151,7 @@ export default function App() {
               'Hostel Management': <HostelManagementCRM currentView={page} onNavigate={setCurrentView} />,
               'Inventory Management': <InventoryManagementCRM currentView={page} onNavigate={setCurrentView} />,
               'Communication Management': <CommunicationManagementCRM currentView={page} onNavigate={setCurrentView} />,
-              'Event Management': <EventManagementCRM currentView={page} />,
+              'Event Management': <EventManagementCRM currentView={page} onNavigate={setCurrentView} />,
               'Website & CMS Management': <WebsiteCMSManagementCRM currentView={page} onNavigate={setCurrentView} />,
               'Reports & Analytics': <ReportsAnalyticsCRM currentView={page} onNavigate={setCurrentView} />,
               'Settings Management': <SettingsManagementCRM currentView={page} onNavigate={setCurrentView} />,
@@ -172,21 +173,7 @@ export default function App() {
           })()}
         </main>
         
-        {/* SYSTEM STATUS BAR */}
-        <footer className="bg-white border-t border-slate-200 h-10 px-6 flex items-center justify-between shrink-0 hidden sm:flex">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2">
-              <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
-              <p className="text-[10px] text-slate-500">System Health: Good</p>
-            </div>
-            <p className="text-[10px] text-slate-500">Storage Used: <span className="text-slate-700 font-bold">42% (2.1GB / 5GB)</span></p>
-            <p className="text-[10px] text-slate-500">SMS Balance: <span className="text-slate-700 font-bold">12,402 Credits</span></p>
-          </div>
-          <div className="flex items-center gap-4">
-            <p className="text-[10px] text-slate-500 italic">Build v4.2.0-stable</p>
-            <p className="text-[10px] font-bold text-slate-900 px-2 py-0.5 bg-amber-100 rounded">SUPER ADMIN PRIVILEGES</p>
-          </div>
-        </footer>
+        <SystemStatusBar />
       </div>
     </div>
   );

@@ -14,7 +14,10 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import type { ComponentType } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { toViewKey } from '../../lib/navigation';
+import { resolveSettingsLink } from '../../lib/appNavigation';
+import { fetchAdminDashboardOverview } from '../../lib/settingsAdminDashboardServices';
 import { SubModuleView } from './shared/SubModuleView';
 import { AddressLocationView } from './settings/AddressLocationView';
 import { MaintenanceModeView } from './settings/MaintenanceModeView';
@@ -29,6 +32,7 @@ import { IntegrationsNotificationsView } from './settings/IntegrationsNotificati
 import { DocumentIdentityView } from './settings/DocumentIdentityView';
 import { DepartmentOperationsView } from './settings/DepartmentOperationsView';
 import { DataModulesUiView } from './settings/DataModulesUiView';
+import { PaymentSettingsView } from './settings/PaymentSettingsView';
 
 const CORE_SYSTEM_VIEWS: Record<string, ComponentType> = {
   'Address & Location': AddressLocationView,
@@ -46,6 +50,7 @@ const INTEGRATIONS_NOTIFICATIONS_VIEW = 'Integrations, APIs & Notifications';
 const DOCUMENT_IDENTITY_VIEW = 'Document, Identity & Custom Fields';
 const DEPARTMENT_OPERATIONS_VIEW = 'Department & Operations Management';
 const DATA_MODULES_UI_VIEW = 'Data Management, Modules & UI';
+const PAYMENT_SETTINGS_VIEW = 'Payment Settings';
 
 /** Sidebar / card labels that should open an existing live view instead of a placeholder. */
 const SETTINGS_VIEW_ALIASES: Record<string, string> = {
@@ -62,6 +67,7 @@ const SETTINGS_VIEW_ALIASES: Record<string, string> = {
   'Theme & Appearance': DATA_MODULES_UI_VIEW,
   'Email / SMS Templates': INTEGRATIONS_NOTIFICATIONS_VIEW,
   'Import / Export': DATA_MODULES_UI_VIEW,
+  'Payment Settings': PAYMENT_SETTINGS_VIEW,
 };
 
 const kpis = [
@@ -173,12 +179,12 @@ const configCards = [
     title: 'Payment Settings',
     desc: 'Configure payment gateways and methods.',
     links: [
-      { label: 'Payment Gateways', icon: <CreditCard size={12} /> },
-      { label: 'Fee Payment Methods', icon: <Wallet size={12} /> },
-      { label: 'Online Payment Settings', icon: <Globe size={12} /> },
-      { label: 'Invoice Settings', icon: <FileText size={12} /> },
-      { label: 'Refund & Cancellation', icon: <RefreshCcw size={12} /> },
-      { label: 'Payment Reminders', icon: <BellRing size={12} /> },
+      { label: 'Payment Gateways', icon: <CreditCard size={12} />, view: PAYMENT_SETTINGS_VIEW },
+      { label: 'Fee Payment Methods', icon: <Wallet size={12} />, view: PAYMENT_SETTINGS_VIEW },
+      { label: 'Online Payment Settings', icon: <Globe size={12} />, view: PAYMENT_SETTINGS_VIEW },
+      { label: 'Invoice Settings', icon: <FileText size={12} />, view: toViewKey('Fees & Finance', 'Invoices') },
+      { label: 'Refund & Cancellation', icon: <RefreshCcw size={12} />, view: toViewKey('Fees & Finance', 'Refunds') },
+      { label: 'Payment Reminders', icon: <BellRing size={12} />, view: PAYMENT_SETTINGS_VIEW },
     ]
   },
   {
@@ -292,6 +298,31 @@ export function SettingsManagementCRM({
 }) {
   const resolvedView = SETTINGS_VIEW_ALIASES[currentView] ?? currentView;
 
+  const [hubKpis, setHubKpis] = useState(kpis);
+
+  const loadHubKpis = useCallback(() => {
+    void fetchAdminDashboardOverview('24h').then((data) => {
+      const k = data.metrics.kpis;
+      setHubKpis([
+        { title: 'System Status', value: (k.failedLogins24h as number) > 10 ? 'Warning' : 'Healthy', subtitle: 'Live telemetry', subtitleColor: 'text-green-600', icon: <ShieldCheck size={20} />, color: 'text-green-600', bg: 'bg-green-100', valueColor: 'text-green-600' },
+        { title: 'Active Users', value: String(k.activeSessions ?? '—'), subtitle: 'Currently Online', subtitleColor: 'text-slate-500', icon: <Users size={20} />, color: 'text-blue-600', bg: 'bg-blue-100', valueColor: 'text-slate-900' },
+        { title: 'Modules Active', value: String(k.activeModules ?? '—'), subtitle: 'Modules Enabled', subtitleColor: 'text-slate-500', icon: <Package size={20} />, color: 'text-purple-600', bg: 'bg-purple-100', valueColor: 'text-slate-900' },
+        { title: 'Active Students', value: String(k.activeStudents ?? '—'), subtitle: 'Enrolled', subtitleColor: 'text-slate-500', icon: <Cloud size={20} />, color: 'text-orange-600', bg: 'bg-orange-100', valueColor: 'text-slate-900' },
+        { title: 'DB Tables', value: String(k.dbTables ?? '—'), subtitle: 'Schema objects', subtitleColor: 'text-slate-500', icon: <Database size={20} />, color: 'text-teal-600', bg: 'bg-teal-100', valueColor: 'text-slate-900' },
+        { title: 'Security Score', value: k.securityScore != null ? `${k.securityScore}/100` : '—', subtitle: 'Security Settings', subtitleColor: 'text-slate-500', icon: <Lock size={20} />, color: 'text-red-600', bg: 'bg-red-100', valueColor: 'text-slate-900' },
+      ]);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (resolvedView === 'General Settings') loadHubKpis();
+  }, [loadHubKpis, resolvedView]);
+
+  const navLink = (label: string, view?: string) => {
+    const target = resolveSettingsLink(label, view);
+    if (target) onNavigate?.(target);
+  };
+
   const CoreView = CORE_SYSTEM_VIEWS[resolvedView];
   if (CoreView) {
     const View = CoreView;
@@ -322,11 +353,13 @@ export function SettingsManagementCRM({
     return <DataModulesUiView />;
   }
 
+  if (resolvedView === PAYMENT_SETTINGS_VIEW) {
+    return <PaymentSettingsView onNavigate={onNavigate} />;
+  }
+
   if (resolvedView && resolvedView !== 'General Settings') {
     return <SubModuleView module="Settings Management" title={currentView} />;
   }
-
-  const nav = (page: string) => onNavigate?.(toViewKey('Settings Management', page));
 
   return (
     <div className="flex flex-col space-y-4 h-full relative">
@@ -336,7 +369,11 @@ export function SettingsManagementCRM({
           <p className="text-xs text-slate-500 mt-0.5">Manage and customize your system preferences and configurations</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded flex items-center gap-2 shadow-sm transition-colors">
+          <button
+            type="button"
+            onClick={() => onNavigate?.(toViewKey('Institution Setup', 'Basic Information'))}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded flex items-center gap-2 shadow-sm transition-colors"
+          >
             <Eye size={14} />
             <span>View School Profile</span>
           </button>
@@ -344,7 +381,7 @@ export function SettingsManagementCRM({
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-        {kpis.map((kpi, i) => (
+        {hubKpis.map((kpi, i) => (
           <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3 hover:shadow-md transition-shadow">
             <div className={`w-10 h-10 rounded-full ${kpi.bg} ${kpi.color} flex items-center justify-center shadow-sm shrink-0`}>
               {kpi.icon}
@@ -375,8 +412,12 @@ export function SettingsManagementCRM({
                      <button
                        key={j}
                        type="button"
-                       onClick={() => 'view' in link && link.view && nav(link.view)}
-                       className="flex items-center justify-between p-2 hover:bg-slate-50 rounded text-slate-700 transition-colors group text-left w-full"
+                       onClick={() => navLink(link.label, 'view' in link ? link.view : undefined)}
+                       className={`flex items-center justify-between p-2 rounded text-slate-700 transition-colors group text-left w-full ${
+                         resolveSettingsLink(link.label, 'view' in link ? link.view : undefined)
+                           ? 'hover:bg-slate-50 cursor-pointer'
+                           : 'opacity-50 cursor-not-allowed'
+                       }`}
                      >
                         <div className="flex items-center gap-2">
                            <div className="text-slate-400 group-hover:text-blue-600 transition-colors">
