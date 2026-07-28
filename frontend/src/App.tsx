@@ -1,10 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
-import { KPICards } from './components/dashboard/KPICards';
-import { ChartsRow } from './components/dashboard/ChartsRow';
-import { QuickAccess } from './components/dashboard/QuickAccess';
-import { BottomRow } from './components/dashboard/BottomRow';
+import { DashboardPage } from './components/dashboard/DashboardPage';
 import { AdmissionCRM } from './components/crm/AdmissionCRM';
 import { StudentManagementCRM } from './components/crm/StudentManagementCRM';
 import { ParentManagementCRM } from './components/crm/ParentManagementCRM';
@@ -24,7 +21,7 @@ import { ReportsAnalyticsCRM } from './components/crm/ReportsAnalyticsCRM';
 import { SettingsManagementCRM } from './components/crm/SettingsManagementCRM';
 import { SystemAdministrationCRM } from './components/crm/SystemAdministrationCRM';
 import { InstitutionSetupCRM } from './components/crm/InstitutionSetupCRM';
-import { Plus, GraduationCap } from 'lucide-react';
+import { GraduationCap } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { parseViewKey } from './lib/navigation';
 import { pathToViewKey, viewKeyToPath } from './lib/urlRoutes';
@@ -136,37 +133,7 @@ export default function App() {
         <main className="flex-1 overflow-y-auto p-5 custom-scrollbar flex flex-col space-y-5">
           {(() => {
             if (module === 'Dashboard') {
-              return (
-              <>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div>
-                    <h2 className="text-xl font-bold text-slate-800">
-                      Welcome Back, Super Admin! <span className="text-xl">👋</span>
-                    </h2>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Real-time insights for <span className="font-bold">Greenwood International School</span>
-                    </p>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <select className="bg-white border border-slate-200 text-xs px-3 py-2 rounded focus:outline-none text-slate-700 shadow-sm">
-                      <option>Academic Year: 2025-26</option>
-                      <option>Academic Year: 2024-25</option>
-                    </select>
-                    
-                    <button className="bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold text-xs px-4 py-2 rounded flex items-center gap-2 shadow-sm transition-colors uppercase">
-                      <Plus size={14} strokeWidth={3} />
-                      <span>Add New</span>
-                    </button>
-                  </div>
-                </div>
-
-                <KPICards />
-                <ChartsRow />
-                <QuickAccess onNavigate={setCurrentView} />
-                <BottomRow />
-              </>
-              );
+              return <DashboardPage onNavigate={setCurrentView} />;
             }
 
             const routes: Record<string, ReactNode> = {

@@ -50,6 +50,7 @@ import { settingsAdminDashboardRouter } from './routes/settingsAdminDashboard.js
 import { settingsIntegrationsApiUpdatesRouter } from './routes/settingsIntegrationsApiUpdates.js';
 import { b2bExternalRouter } from './routes/b2bExternal.js';
 import { settingsLicenseSupportRouter } from './routes/settingsLicenseSupport.js';
+import { dashboardRouter } from './routes/dashboard.js';
 import { bootstrapLicenseSupport } from './lib/licenseSupportE2E.js';
 import { mobileRouter } from './routes/mobile.js';
 import { connectDatabase } from './lib/prisma.js';
@@ -170,6 +171,7 @@ app.use('/api/settings/data-modules-ui', settingsDataModulesUiRouter);
 app.use('/api/settings/admin-dashboard', settingsAdminDashboardRouter);
 app.use('/api/settings/integrations-api-updates', settingsIntegrationsApiUpdatesRouter);
 app.use('/api/v1', b2bExternalRouter);
+app.use('/api/dashboard', dashboardRouter);
 app.use('/api/settings/license-support', settingsLicenseSupportRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
