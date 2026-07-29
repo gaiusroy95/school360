@@ -1,4 +1,5 @@
 import type { Student } from './studentServices';
+import { resolveLogoUrl } from './branding';
 import type { IdCardSchool, IdCardStudent, IdCardTemplateId } from '../components/crm/InstitutionSetup/idCardTypes';
 import { ID_CARD_TEMPLATES } from '../components/crm/InstitutionSetup/idCardTypes';
 
@@ -36,7 +37,7 @@ export function schoolFromInstitutionSetup(setup: Record<string, unknown> | null
     address: [address.addressLine1, address.city, address.state].filter(Boolean).join(', ') || 'Main Campus',
     phone: address.phone || '—',
     session: session.sessionName || session.currentSession || session.academicYear || '2025-26',
-    logoUrl: basic?.sections?.['Logo & Branding']?.logoUrl || undefined,
+    logoUrl: resolveLogoUrl(basic?.sections?.['Logo & Branding']?.logoUrl),
     website: address.website || undefined,
   };
 }

@@ -5,6 +5,8 @@ import {
   ShieldAlert, ChevronRight, X, Building2
 } from 'lucide-react';
 import { isModuleActive, isSubActive, toViewKey } from '../lib/navigation';
+import { APP_NAME, APP_TAGLINE } from '../lib/branding';
+import { BrandLogo } from './shared/BrandLogo';
 
 const menuItems = [
   { icon: LayoutDashboard, label: 'Dashboard' },
@@ -123,11 +125,11 @@ export function Sidebar({ isOpen, setIsOpen, currentView, setCurrentView }: Side
           <X size={20} />
         </button>
         <div className="flex items-center gap-2 mt-2 lg:mt-0">
-          <div className="w-8 h-8 bg-amber-400 rounded flex items-center justify-center font-bold text-[#0f172a] text-lg">360</div>
-          <h1 className="text-lg font-bold tracking-tight">360schoolerp</h1>
+          <BrandLogo className="h-8 w-8 object-contain shrink-0" />
+          <h1 className="text-lg font-bold tracking-tight">{APP_NAME}</h1>
         </div>
         <p className="text-[9px] text-slate-400 mt-1 leading-tight uppercase tracking-wider">
-          One Platform. One Login. Complete Management.
+          {APP_TAGLINE}
         </p>
       </div>
 
@@ -207,7 +209,7 @@ export function Sidebar({ isOpen, setIsOpen, currentView, setCurrentView }: Side
         </button>
       </div>
       <div className="pb-3 text-[9px] text-slate-500 text-center flex flex-col gap-1">
-        <p>© 2026 360schoolerp.</p>
+        <p>© 2026 {APP_NAME}.</p>
         <div className="flex justify-center gap-1.5">
           <span className="text-slate-500">v1.0.0</span>
           <button type="button" onClick={() => setCurrentView(toViewKey('Settings Management', 'Security & Compliance'))} className="hover:text-slate-300">Privacy</button>

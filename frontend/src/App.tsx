@@ -21,7 +21,8 @@ import { ReportsAnalyticsCRM } from './components/crm/ReportsAnalyticsCRM';
 import { SettingsManagementCRM } from './components/crm/SettingsManagementCRM';
 import { SystemAdministrationCRM } from './components/crm/SystemAdministrationCRM';
 import { InstitutionSetupCRM } from './components/crm/InstitutionSetupCRM';
-import { GraduationCap } from 'lucide-react';
+import { BrandLogo } from './components/shared/BrandLogo';
+import { APP_NAME } from './lib/branding';
 import { useAuth } from './contexts/AuthContext';
 import { parseViewKey } from './lib/navigation';
 import { pathToViewKey, viewKeyToPath } from './lib/urlRoutes';
@@ -82,10 +83,10 @@ export default function App() {
             }
           }}
         >
-          <div className="bg-blue-600 p-3 rounded-lg mb-4 self-center">
-            <GraduationCap className="text-white" size={32} />
+          <div className="mb-4 self-center">
+            <BrandLogo className="h-16 w-auto object-contain" />
           </div>
-          <h1 className="text-2xl font-bold text-slate-800 mb-2 text-center">360schoolERP</h1>
+          <h1 className="text-2xl font-bold text-slate-800 mb-2 text-center">{APP_NAME}</h1>
           <p className="text-slate-500 text-sm text-center mb-6">Sign in with your account</p>
           <label className="text-xs font-bold text-slate-600 mb-1">Email</label>
           <input

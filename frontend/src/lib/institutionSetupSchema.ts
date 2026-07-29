@@ -91,8 +91,8 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         id: 'logoBranding',
         title: 'Logo & Branding',
         fields: [
-          { key: 'logoUrl', label: 'Logo URL', type: 'url', help: 'Upload later; store URL/path for now' },
-          { key: 'faviconUrl', label: 'Favicon URL', type: 'url' },
+          { key: 'logoUrl', label: 'Logo URL', type: 'url', help: 'Default: /logo.png (bundled app logo)', placeholder: '/logo.png' },
+          { key: 'faviconUrl', label: 'Favicon URL', type: 'url', placeholder: '/favicon.png' },
           { key: 'primaryColor', label: 'Primary Color', type: 'text', placeholder: '#0f172a' },
           { key: 'secondaryColor', label: 'Secondary Color', type: 'text', placeholder: '#fbbf24' },
         ],

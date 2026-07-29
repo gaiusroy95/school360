@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import express from 'express';
 import cors from 'cors';
 import { authRouter } from './routes/auth.js';
@@ -62,6 +64,7 @@ import { bootstrapDocumentIdentity } from './lib/documentIdentityCustomFields.js
 import { bootstrapDepartmentOps } from './lib/departmentOperationsManagement.js';
 import { bootstrapDataModulesUi } from './lib/dataManagementModulesUi.js';
 import { bootstrapGlobalEnvironment } from './lib/globalEnvironmentSettings.js';
+import { bootstrapBrandingAssets } from './lib/branding.js';
 import { getDefaultInstitutionId } from './lib/institution.js';
 import { maintenanceMiddleware } from './middleware/maintenance.js';
 import { apiRateLimitMiddleware } from './middleware/rateLimit.js';
@@ -74,6 +77,7 @@ import { asyncHandler } from './lib/asyncHandler.js';
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const frontendOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
   .split(',')
   .map((s) => s.trim())
@@ -117,6 +121,8 @@ app.use(express.json({ limit: '5mb' }));
 
 app.use(maintenanceMiddleware);
 app.use(apiRateLimitMiddleware);
+
+app.use(express.static(path.join(__dirname, '../public')));
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: '360schoolerp-backend' });
@@ -198,6 +204,7 @@ async function start() {
       await bootstrapDepartmentOps(institutionId);
       await bootstrapDataModulesUi(institutionId);
       await bootstrapGlobalEnvironment(institutionId);
+      await bootstrapBrandingAssets(institutionId);
       await bootstrapLicenseSupport(institutionId);
     } catch (e) {
       console.warn('Security/governance bootstrap skipped:', e);

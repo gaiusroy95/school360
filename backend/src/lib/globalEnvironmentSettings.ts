@@ -1,4 +1,5 @@
 import { prisma } from './prisma.js';
+import { DEFAULT_LOGO_URL } from './branding.js';
 import { getDefaultInstitutionId } from './institution.js';
 
 function readSetupSections(raw: unknown): Record<string, Record<string, unknown>> {
@@ -100,7 +101,7 @@ export function loadGlobalEnvironmentFromSetup(setup: {
 
   return {
     companyName: readField(basic, ['institutionProfile'], 'institutionName', ''),
-    brandingLogoUrl: readField(basic, ['logoBranding'], 'logoUrl', ''),
+    brandingLogoUrl: readField(basic, ['logoBranding'], 'logoUrl', DEFAULT_LOGO_URL),
     language: readField(prefs, ['languageSettings'], 'defaultLanguage', 'English'),
     currency: readField(prefs, ['currencySettings'], 'currency', 'INR'),
     currencySymbol: readField(prefs, ['currencySettings'], 'currencySymbol', '₹'),

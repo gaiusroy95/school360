@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
 import { fetchInstitutionSetup } from '../../../lib/institutionApi';
+import { resolveLogoUrl } from '../../../lib/branding';
 import { downloadBulkStudentIdCardsPdf } from '../../../lib/studentIdCardPdf';
 import { IdCardByTemplate } from './IdCardFaces';
 import {
@@ -61,7 +62,7 @@ function schoolFromSetup(setup: Record<string, unknown> | null): IdCardSchool {
     address: addr,
     phone,
     session: sessionLabel,
-    logoUrl: basic?.sections?.['Logo & Branding']?.logoUrl || undefined,
+    logoUrl: resolveLogoUrl(basic?.sections?.['Logo & Branding']?.logoUrl),
     website: website || undefined,
   };
 }

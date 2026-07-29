@@ -1,3 +1,5 @@
+import { resolveLogoUrl } from '../../../lib/branding';
+
 export type SchoolBranding = {
   name: string;
   address: string;
@@ -181,6 +183,6 @@ export function schoolFromInstitutionSetup(setup: Record<string, unknown> | null
     email: address.email || '—',
     affiliation: profile.affiliationNo || profile.registrationNo || '—',
     session: session.sessionName || session.currentSession || session.academicYear || '2025-26',
-    logoUrl: logo.logoUrl || undefined,
+    logoUrl: resolveLogoUrl(logo.logoUrl),
   };
 }

@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  GraduationCap,
   Loader2,
   Clock,
   CheckCircle,
@@ -10,6 +9,7 @@ import {
   XCircle,
   MinusCircle,
 } from 'lucide-react';
+import { BrandLogo } from '../shared/BrandLogo';
 import {
   fetchEntranceExam,
   fetchEntranceExamResult,
@@ -462,8 +462,8 @@ export function EntranceExamPortal() {
     <div className="min-h-screen bg-gradient-to-br from-indigo-600 to-indigo-800 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
         <div className="bg-indigo-700 px-8 py-6 text-center text-white">
-          <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center mx-auto mb-3">
-            <GraduationCap size={32} />
+          <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center mx-auto mb-3 p-2">
+            <BrandLogo className="h-full w-full object-contain" />
           </div>
           <h1 className="text-xl font-bold">Entrance Exam Portal</h1>
           <p className="text-indigo-200 text-sm mt-1">Enter your token and PIN to begin</p>

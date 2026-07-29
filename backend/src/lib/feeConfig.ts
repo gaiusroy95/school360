@@ -1,4 +1,5 @@
 import { prisma } from './prisma.js';
+import { DEFAULT_LOGO_URL } from './branding.js';
 
 export const FEE_HEAD_LABELS: Record<string, string> = {
   admissionFee: 'Admission Fee',
@@ -255,7 +256,7 @@ export function buildInstitutionReceiptProfile(
     phone: basic.phone || '',
     email: basic.email || '',
     website: basic.website || '',
-    logoUrl: basic.logoUrl || '',
+    logoUrl: basic.logoUrl || DEFAULT_LOGO_URL,
     currency: fee.defaultCurrency || 'INR',
     receiptFooter:
       fee.receiptFooter ||

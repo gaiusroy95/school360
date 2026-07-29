@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -138,6 +139,7 @@ export default function LoginScreen() {
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.container}>
+        <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" accessibilityLabel="360schoolERP" />
         <Text style={styles.brand}>360schoolERP</Text>
         <Text style={styles.subtitle}>Family app — students & parents</Text>
 
@@ -216,6 +218,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   container: { flex: 1, padding: spacing.lg, justifyContent: 'center' },
+  logo: { width: 120, height: 120, alignSelf: 'center', marginBottom: spacing.sm },
   brand: { fontSize: 28, fontWeight: '800', color: colors.primary, textAlign: 'center' },
   subtitle: { fontSize: 14, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.lg },
   tabs: {

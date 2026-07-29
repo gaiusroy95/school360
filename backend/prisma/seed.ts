@@ -1,8 +1,18 @@
 import 'dotenv/config';
 import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
+import { DEFAULT_FAVICON_URL, DEFAULT_LOGO_URL } from '../src/lib/branding.js';
 
 const prisma = new PrismaClient();
+
+const DEFAULT_BASIC_INFORMATION = {
+  sections: {
+    logoBranding: {
+      logoUrl: DEFAULT_LOGO_URL,
+      faviconUrl: DEFAULT_FAVICON_URL,
+    },
+  },
+};
 
 async function main() {
   const email = 'admin@360schoolerp.com';
@@ -26,7 +36,11 @@ async function main() {
     create: {
       id: 'seed-institution',
       name: 'Greenwood International School',
-      setup: { create: {} },
+      setup: {
+        create: {
+          basicInformation: DEFAULT_BASIC_INFORMATION,
+        },
+      },
     },
   });
 

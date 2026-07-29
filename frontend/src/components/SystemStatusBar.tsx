@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchAdminDashboardOverview } from '../lib/settingsAdminDashboardServices';
+import { BrandLogo } from './shared/BrandLogo';
+import { APP_NAME } from '../lib/branding';
 
 export function SystemStatusBar() {
   const { user } = useAuth();
@@ -50,7 +52,10 @@ export function SystemStatusBar() {
         )}
       </div>
       <div className="flex items-center gap-4">
-        <p className="text-[10px] text-slate-500">360schoolERP</p>
+        <div className="flex items-center gap-2">
+          <BrandLogo className="h-5 w-auto object-contain" />
+          <p className="text-[10px] text-slate-500">{APP_NAME}</p>
+        </div>
         <p className="text-[10px] font-bold text-slate-900 px-2 py-0.5 bg-amber-100 rounded uppercase">{roleLabel}</p>
       </div>
     </footer>

@@ -20,6 +20,7 @@ import {
   FeeTabs,
   StatusBadge,
 } from './FeeFinanceUi';
+import { resolveLogoUrl } from '../../../lib/branding';
 
 function InvoicePreview({ invoice }: { invoice: FeeInvoice }) {
   const inst = invoice.institutionSnapshot as Record<string, string>;
@@ -31,7 +32,7 @@ function InvoicePreview({ invoice }: { invoice: FeeInvoice }) {
   return (
     <div id="invoice-print-area" className="bg-white border border-slate-200 rounded-xl p-6 md:p-8 text-sm print:border-0 print:shadow-none print:p-0">
       <div className="text-center border-b border-slate-200 pb-4 mb-4">
-        {inst.logoUrl && <img src={inst.logoUrl} alt="" className="h-12 mx-auto mb-2 object-contain" />}
+        <img src={resolveLogoUrl(inst.logoUrl)} alt="" className="h-12 mx-auto mb-2 object-contain" />
         <h2 className="text-lg font-bold text-slate-900 uppercase tracking-wide">{schoolName}</h2>
         {address && <p className="text-xs text-slate-600 mt-1">{address}</p>}
         {(inst.phone || inst.email) && (

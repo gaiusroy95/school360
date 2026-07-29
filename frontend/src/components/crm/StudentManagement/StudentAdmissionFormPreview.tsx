@@ -1,5 +1,6 @@
 import type { ReactNode, Ref } from 'react';
 import type { SchoolBranding, StudentAdmissionFormData } from './studentAdmissionFormTypes';
+import { resolveLogoUrl } from '../../../lib/branding';
 import { formatDisplayDate, fullName, getAdmissionDocuments, getSubmittedDocumentLabels } from './studentAdmissionFormTypes';
 
 /** A4 at 72 DPI — matches jsPDF portrait dimensions for pixel-perfect export */
@@ -99,11 +100,7 @@ function FormHeader({ school, page, exportMode }: { school: SchoolBranding; page
       <div className="border-b-[3px] border-slate-800 pb-3 mb-4 shrink-0">
         <div className="flex items-start gap-4">
           <div className="w-[72px] h-[72px] border-2 border-slate-300 bg-white flex items-center justify-center shrink-0 overflow-hidden">
-            {school.logoUrl ? (
-              <img src={school.logoUrl} alt="" className="max-w-full max-h-full object-contain" />
-            ) : (
-              <span className="text-[11px] font-bold text-indigo-700 text-center leading-tight">LOGO</span>
-            )}
+            <img src={resolveLogoUrl(school.logoUrl)} alt="" className="max-w-full max-h-full object-contain" />
           </div>
           <div className="flex-1 text-center pt-1">
             <h2 className="text-[18px] font-bold text-slate-900 uppercase tracking-wide leading-tight">{school.name}</h2>
@@ -120,11 +117,7 @@ function FormHeader({ school, page, exportMode }: { school: SchoolBranding; page
     <div className="border-b-2 border-slate-800 pb-1.5 mb-2">
       <div className="flex items-start gap-2">
         <div className="w-10 h-10 border border-slate-300 bg-white flex items-center justify-center shrink-0 overflow-hidden">
-          {school.logoUrl ? (
-            <img src={school.logoUrl} alt="" className="max-w-full max-h-full object-contain" />
-          ) : (
-            <span className="text-[8px] font-bold text-indigo-700 text-center leading-tight">LOGO</span>
-          )}
+          <img src={resolveLogoUrl(school.logoUrl)} alt="" className="max-w-full max-h-full object-contain" />
         </div>
         <div className="flex-1 text-center">
           <h2 className="text-[10px] font-bold text-slate-900 uppercase tracking-wide leading-tight">{school.name}</h2>
