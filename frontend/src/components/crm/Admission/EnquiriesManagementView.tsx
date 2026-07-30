@@ -21,6 +21,7 @@ import {
   type EnquiryInput,
 } from '../../../lib/admissionServices';
 import { createApplicationFromEnquiry } from '../../../lib/applicationServices';
+import { CreateApplicationFormFields } from './CreateApplicationFormFields';
 import { downloadEnquiryTemplate, parseEnquiryWorkbook } from '../../../lib/enquiryExcel';
 import { useAuth } from '../../../contexts/AuthContext';
 import { viewKeyToPath } from '../../../lib/urlRoutes';
@@ -99,7 +100,7 @@ const EMPTY_ANALYTICS: EnquiryAnalytics = {
   conversionTrend: [],
 };
 
-const EMPTY_META: EnquiryMeta = { classes: [], sources: [], statuses: [], classesFromSetup: false };
+const EMPTY_META: EnquiryMeta = { classes: [], sources: [], statuses: [], counselors: [], classesFromSetup: false };
 
 /** Ensure Indian mobile numbers are stored with +91 prefix. */
 function normalizeIndiaMobile(raw: string): string {
@@ -233,8 +234,13 @@ export function EnquiriesManagementView() {
   const [showAllActivities, setShowAllActivities] = useState(false);
   const [showAllTasks, setShowAllTasks] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [viewMode, setViewMode] = useState<'enquiries' | 'assign'>('enquiries');
+  const [assignDraft, setAssignDraft] = useState<Record<string, string>>({});
+  const [assigningId, setAssigningId] = useState<string | null>(null);
 
   const performer = user?.displayName || user?.email || 'Admin';
+  const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN';
+  const counselors = meta.counselors?.length ? meta.counselors : [performer];
 
   const showSuccess = (msg: string) => {
     setSuccessMsg(msg);
@@ -599,6 +605,34 @@ export function EnquiriesManagementView() {
     setQuickModal('createApplication');
   };
 
+  const unassignedEnquiries = useMemo(
+    () => enquiries.filter((e) => !e.assignedTo?.trim()),
+    [enquiries],
+  );
+
+  const handleAssignLead = async (enquiryId: string) => {
+    const assignee = assignDraft[enquiryId];
+    if (!assignee) {
+      showError('Select a counselor to assign this lead.');
+      return;
+    }
+    setAssigningId(enquiryId);
+    try {
+      await updateEnquiry(enquiryId, { assignedTo: assignee });
+      showSuccess('Lead assigned to counselor');
+      setAssignDraft((prev) => {
+        const next = { ...prev };
+        delete next[enquiryId];
+        return next;
+      });
+      await refreshAll();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Failed to assign lead');
+    } finally {
+      setAssigningId(null);
+    }
+  };
+
   const conversionTrendTotals = useMemo(() => {
     const trend = analytics.conversionTrend;
     if (trend.length === 0) {
@@ -880,18 +914,89 @@ export function EnquiriesManagementView() {
                     <button
                       key={tab}
                       type="button"
-                      onClick={() => setActiveTab(tab)}
+                      onClick={() => { setActiveTab(tab); setViewMode('enquiries'); }}
                       className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                        activeTab === tab ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        activeTab === tab && viewMode === 'enquiries' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                       }`}
                     >
                       {tab} ({tabCount(tab, kpis)})
                     </button>
                   ))}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setViewMode(viewMode === 'assign' ? 'enquiries' : 'assign')}
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                        viewMode === 'assign' ? 'bg-amber-600 text-white' : 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200'
+                      }`}
+                    >
+                      Assign Leads ({unassignedEnquiries.length})
+                    </button>
+                  )}
                 </div>
               </div>
 
               <div className="overflow-x-auto">
+                {viewMode === 'assign' ? (
+                  <table className="w-full text-left text-xs whitespace-nowrap">
+                    <thead className="bg-amber-50 text-slate-600 border-b border-amber-100">
+                      <tr>
+                        <th className="p-3 font-semibold">Enquiry ID</th>
+                        <th className="p-3 font-semibold">Student Name</th>
+                        <th className="p-3 font-semibold">Class</th>
+                        <th className="p-3 font-semibold">Source</th>
+                        <th className="p-3 font-semibold">Status</th>
+                        <th className="p-3 font-semibold">Assign Counselor</th>
+                        <th className="p-3 font-semibold text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {unassignedEnquiries.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="p-8 text-center text-slate-500">
+                            All leads are assigned. New unassigned enquiries will appear here.
+                          </td>
+                        </tr>
+                      ) : (
+                        unassignedEnquiries.map((enq) => (
+                          <tr key={enq.id || enq.enquiryId} className="hover:bg-amber-50/40">
+                            <td className="p-3 text-indigo-600 font-medium">{enq.enquiryId}</td>
+                            <td className="p-3 font-semibold text-slate-800">{enq.enquirerName}</td>
+                            <td className="p-3 text-slate-600">{enq.classInterested || '-'}</td>
+                            <td className="p-3 text-slate-600">{enq.source}</td>
+                            <td className="p-3">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border ${statusBadgeClass(enq.status)}`}>
+                                {enq.status}
+                              </span>
+                            </td>
+                            <td className="p-3">
+                              <select
+                                value={assignDraft[enq.id || ''] || ''}
+                                onChange={(e) => setAssignDraft((prev) => ({ ...prev, [enq.id || '']: e.target.value }))}
+                                className="w-full min-w-[160px] p-2 border border-slate-300 rounded-lg text-sm"
+                              >
+                                <option value="">Select counselor...</option>
+                                {counselors.map((c) => (
+                                  <option key={c} value={c}>{c}</option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="p-3 text-center">
+                              <button
+                                type="button"
+                                disabled={assigningId === enq.id}
+                                onClick={() => void handleAssignLead(enq.id || '')}
+                                className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-semibold hover:bg-amber-700 disabled:opacity-50"
+                              >
+                                {assigningId === enq.id ? 'Assigning...' : 'Assign'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                ) : (
                 <table className="w-full text-left text-xs whitespace-nowrap">
                   <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
                     <tr>
@@ -980,6 +1085,7 @@ export function EnquiriesManagementView() {
                     )}
                   </tbody>
                 </table>
+                )}
               </div>
 
               <div className="p-4 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500 bg-white">
@@ -1205,7 +1311,7 @@ export function EnquiriesManagementView() {
       {isAddModalOpen && (
         <Modal title="Add New Enquiry" icon={<UserPlus size={20} className="text-indigo-600" />} onClose={() => setIsAddModalOpen(false)}>
           <form onSubmit={handleAddSubmit} className="space-y-4">
-            <EnquiryFormFields meta={meta} performer={performer} />
+            <EnquiryFormFields meta={meta} performer={performer} counselors={counselors} />
             <ModalActions onCancel={() => setIsAddModalOpen(false)} submitting={submitting} submitLabel="Save Enquiry" />
           </form>
         </Modal>
@@ -1215,7 +1321,7 @@ export function EnquiriesManagementView() {
       {isEditModalOpen && selectedEnquiry && (
         <Modal title="Edit Enquiry" icon={<Edit size={20} className="text-indigo-600" />} onClose={() => { setIsEditModalOpen(false); setSelectedEnquiry(null); }}>
           <form onSubmit={handleEditSubmit} className="space-y-4">
-            <EnquiryFormFields meta={meta} performer={performer} enquiry={selectedEnquiry} isEdit />
+            <EnquiryFormFields meta={meta} performer={performer} counselors={counselors} enquiry={selectedEnquiry} isEdit />
             <ModalActions onCancel={() => { setIsEditModalOpen(false); setSelectedEnquiry(null); }} submitting={submitting} submitLabel="Update Enquiry" />
           </form>
         </Modal>
@@ -1229,10 +1335,12 @@ export function EnquiriesManagementView() {
           onClose={() => setQuickModal(null)}
         >
           <form onSubmit={handleQuickSubmit} className="space-y-4">
-            <EnquirySelect
-              enquiries={enquiries}
-              defaultEnquiryId={quickModal === 'createApplication' ? selectedEnquiry?.id : undefined}
-            />
+            {quickModal !== 'createApplication' && (
+              <EnquirySelect
+                enquiries={enquiries}
+                defaultEnquiryId={selectedEnquiry?.id}
+              />
+            )}
             {quickModal === 'followUp' && (
               <>
                 <div>
@@ -1240,6 +1348,7 @@ export function EnquiriesManagementView() {
                   <select name="mode" defaultValue="Phone" className="w-full p-2 border border-slate-300 rounded-lg text-sm">
                     <option value="Phone">Phone</option>
                     <option value="Campus Visit">Campus Visit</option>
+                    <option value="Google Meet">Google Meet</option>
                     <option value="Video Call">Video Call</option>
                     <option value="Email">Email</option>
                     <option value="In-person Counselling">In-person Counselling</option>
@@ -1251,7 +1360,7 @@ export function EnquiriesManagementView() {
                   <Field label="Due Date *" name="dueDate" type="date" required />
                   <Field label="Time" name="dueTime" type="time" />
                 </div>
-                <Field label="Assign Counselor" name="assignedTo" defaultValue={performer} />
+                <CounselorSelect counselors={counselors} name="assignedTo" label="Assign Counselor" defaultValue={performer} />
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Discussion Notes</label>
                   <textarea name="discussionNotes" rows={2} className="w-full p-2 border border-slate-300 rounded-lg text-sm" placeholder="Notes from conversation..." />
@@ -1282,33 +1391,18 @@ export function EnquiriesManagementView() {
               </>
             )}
             {quickModal === 'assign' && (
-              <Field label="Assign To *" name="assignee" required placeholder="Counselor name" defaultValue={performer} />
+              <CounselorSelect counselors={counselors} name="assignee" label="Assign To *" defaultValue={performer} required />
             )}
             {quickModal === 'convert' && (
               <p className="text-sm text-slate-600">This will mark the selected enquiry as <strong>Converted</strong>.</p>
             )}
             {quickModal === 'createApplication' && (
-              <>
-                <p className="text-sm text-slate-600">
-                  Complete the application form. Fields are pre-filled from the enquiry where possible.
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <Field label="Student Name *" name="studentName" required defaultValue={selectedEnquiry?.enquirerName} />
-                  <Field label="Date of Birth" name="dateOfBirth" type="date" />
-                  <Field label="Father's Name" name="fatherName" />
-                  <Field label="Mother's Name" name="motherName" />
-                  <Field label="Place of Birth" name="placeOfBirth" />
-                  <Field label="Class Applied" name="classApplied" defaultValue={selectedEnquiry?.classInterested} />
-                  <Field label="Mobile" name="mobile" defaultValue={selectedEnquiry?.mobile} />
-                  <Field label="Email" name="email" type="email" defaultValue={selectedEnquiry?.email} />
-                </div>
-                <div className="mt-3">
-                  <Field label="Address" name="address" />
-                </div>
-                <div className="mt-3">
-                  <Field label="Application Notes" name="notes" placeholder="Optional notes for the application" />
-                </div>
-              </>
+              <CreateApplicationFormFields
+                key={`create-app-${selectedEnquiry?.id || 'default'}`}
+                enquiries={enquiries}
+                meta={meta}
+                defaultEnquiryId={selectedEnquiry?.id}
+              />
             )}
             <ModalActions onCancel={() => setQuickModal(null)} submitting={submitting} submitLabel="Confirm" />
           </form>
@@ -1509,6 +1603,38 @@ function ModalActions({
   );
 }
 
+function CounselorSelect({
+  counselors,
+  name,
+  label,
+  defaultValue,
+  required,
+}: {
+  counselors: string[];
+  name: string;
+  label: string;
+  defaultValue?: string;
+  required?: boolean;
+}) {
+  const options = [...new Set([...(counselors || []), defaultValue].filter(Boolean) as string[])];
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-slate-700 mb-1">{label}</label>
+      <select
+        name={name}
+        required={required}
+        defaultValue={defaultValue || ''}
+        className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+      >
+        <option value="">Select counselor...</option>
+        {options.map((c) => (
+          <option key={c} value={c}>{c}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function EnquirySelect({ enquiries, defaultEnquiryId }: { enquiries: Enquiry[]; defaultEnquiryId?: string }) {
   return (
     <div>
@@ -1595,11 +1721,13 @@ function MobileNumberField({ defaultValue }: { defaultValue?: string }) {
 function EnquiryFormFields({
   meta,
   performer,
+  counselors,
   enquiry,
   isEdit,
 }: {
   meta: EnquiryMeta;
   performer: string;
+  counselors: string[];
   enquiry?: Enquiry;
   isEdit?: boolean;
 }) {
@@ -1658,7 +1786,13 @@ function EnquiryFormFields({
           </select>
         </div>
       )}
-      <Field label="Assigned To" name="assignedTo" defaultValue={enquiry?.assignedTo || performer} />
+      <CounselorSelect
+        counselors={counselors}
+        name="assignedTo"
+        label="Assigned To"
+        defaultValue={enquiry?.assignedTo || performer}
+        required
+      />
       <Field
         label="Next Follow Up Date"
         name="nextFollowUp"

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, RefreshCcw, Sparkles } from 'lucide-react';
+import { Pencil, RefreshCcw, Sparkles } from 'lucide-react';
 import {
-  createFeeMaster,
   listFeeMasters,
   seedFeeMasters,
   updateFeeMaster,
@@ -18,19 +17,42 @@ import {
   FeeMessage,
 } from './FeeFinanceUi';
 
+const EMPTY_FORM = {
+  code: '',
+  name: '',
+  category: 'TUITION',
+  defaultAmount: '',
+  description: '',
+  isRefundable: false,
+  isTaxable: false,
+  status: 'ACTIVE' as FeeMasterStatus,
+  showInCollection: true,
+  showInInvoice: true,
+  showInPayment: true,
+};
+
+const CATEGORIES = [
+  'TUITION',
+  'TRANSPORT',
+  'HOSTEL',
+  'EXAM',
+  'LIBRARY',
+  'LAB',
+  'ACTIVITY',
+  'ADMIN',
+  'ADMISSION',
+  'FINE',
+  'OTHER',
+];
+
 export function FeeMastersView() {
   const [records, setRecords] = useState<FeeMaster[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({
-    code: '',
-    name: '',
-    category: 'TUITION',
-    defaultAmount: '',
-    description: '',
-  });
+  const [editRow, setEditRow] = useState<FeeMaster | null>(null);
+  const [form, setForm] = useState(EMPTY_FORM);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -61,23 +83,51 @@ export function FeeMastersView() {
     }
   };
 
-  const handleCreate = async () => {
+  const openEdit = (row: FeeMaster) => {
+    setEditRow(row);
+    setForm({
+      code: row.code,
+      name: row.name,
+      category: row.category || 'TUITION',
+      defaultAmount: row.defaultAmount ? String(row.defaultAmount) : '',
+      description: row.description || '',
+      isRefundable: row.isRefundable,
+      isTaxable: row.isTaxable,
+      status: row.status,
+      showInCollection: row.showInCollection,
+      showInInvoice: row.showInInvoice,
+      showInPayment: row.showInPayment,
+    });
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setEditRow(null);
+    setForm(EMPTY_FORM);
+  };
+
+  const handleUpdate = async () => {
+    if (!editRow) return;
     setMessage('');
     setError('');
     try {
-      await createFeeMaster({
-        code: form.code.trim(),
+      await updateFeeMaster(editRow.id, {
         name: form.name.trim(),
         category: form.category,
-        defaultAmount: form.defaultAmount ? Number(form.defaultAmount) : 0,
         description: form.description,
+        isRefundable: form.isRefundable,
+        isTaxable: form.isTaxable,
+        status: form.status,
+        showInCollection: form.showInCollection,
+        showInInvoice: form.showInInvoice,
+        showInPayment: form.showInPayment,
       });
-      setMessage('Fee master created');
-      setShowModal(false);
-      setForm({ code: '', name: '', category: 'TUITION', defaultAmount: '', description: '' });
+      setMessage(`Fee master "${editRow.code}" updated`);
+      closeModal();
       void load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Create failed');
+      setError(e instanceof Error ? e.message : 'Update failed');
     }
   };
 
@@ -96,7 +146,7 @@ export function FeeMastersView() {
       <AcademicPageHeader
         breadcrumb="Fees & Finance"
         title="Fee Masters"
-        subtitle="Configure fee headers used across collection, invoices, and payments."
+        subtitle="Manage visibility & permissions for fee headers synced from Fee Structure."
         actions={
           <>
             <button type="button" onClick={() => void load()} className={am.btnSecondary}>
@@ -105,9 +155,6 @@ export function FeeMastersView() {
             <button type="button" onClick={() => void handleSeed()} className={am.btnSecondary}>
               <Sparkles size={14} /> Seed Defaults
             </button>
-            <button type="button" onClick={() => setShowModal(true)} className={am.btnPrimary}>
-              <Plus size={14} /> Add Master
-            </button>
           </>
         }
       />
@@ -115,12 +162,12 @@ export function FeeMastersView() {
         <FeeMessage message={message} type="success" />
         <FeeMessage message={error} type="error" />
         <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
-          School-specific details (bank, GST, receipt footer) can be stored per fee master under <strong>schoolDetails</strong> JSON — configure via Institution Setup for global defaults.
+          Fee headers and default amounts are created from <strong>Fee Structure</strong>. Use this page to control status, visibility (Collection / Invoice / Payment), and refundable/taxable flags.
         </div>
         {loading ? (
           <AcademicLoading label="Loading fee masters…" />
         ) : records.length === 0 ? (
-          <EmptyState>No fee masters yet. Click &quot;Seed Defaults&quot; or add a custom master.</EmptyState>
+          <EmptyState>No fee masters yet. Create fee structures in <strong>Fee Structure</strong> or click &quot;Seed Defaults&quot; for standard headers.</EmptyState>
         ) : (
           <div className={am.tableWrap}>
             <table className="w-full">
@@ -133,6 +180,7 @@ export function FeeMastersView() {
                   <th className={am.th}>Flags</th>
                   <th className={am.th}>Status</th>
                   <th className={am.th}>Visibility</th>
+                  <th className={am.th}>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -185,6 +233,16 @@ export function FeeMastersView() {
                         </label>
                       </div>
                     </td>
+                    <td className={am.td}>
+                      <button
+                        type="button"
+                        onClick={() => openEdit(row)}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 hover:underline"
+                      >
+                        <Pencil size={12} />
+                        Edit
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -193,11 +251,21 @@ export function FeeMastersView() {
         )}
       </div>
 
-      <AcademicModal open={showModal} onClose={() => setShowModal(false)} title="Add Fee Master" large>
+      <AcademicModal
+        open={showModal}
+        onClose={closeModal}
+        title={editRow ? `Edit Fee Master — ${editRow.code}` : 'Fee Master'}
+        large
+      >
         <div className="space-y-3">
           <div>
             <label className="text-xs font-semibold text-slate-600">Code</label>
-            <input className={am.input} value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} placeholder="TUITION_FEE" />
+            <input
+              className={`${am.input} bg-slate-100 text-slate-500`}
+              value={form.code}
+              readOnly
+            />
+            <p className="text-[10px] text-slate-500 mt-1">Codes are managed from Fee Structure.</p>
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600">Name</label>
@@ -207,23 +275,96 @@ export function FeeMastersView() {
             <div>
               <label className="text-xs font-semibold text-slate-600">Category</label>
               <select className={am.select + ' w-full'} value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}>
-                {['TUITION', 'TRANSPORT', 'HOSTEL', 'EXAM', 'LIBRARY', 'LAB', 'ACTIVITY', 'ADMIN', 'FINE', 'OTHER'].map((c) => (
+                {CATEGORIES.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-600">Default Amount</label>
-              <input type="number" className={am.input} value={form.defaultAmount} onChange={(e) => setForm((f) => ({ ...f, defaultAmount: e.target.value }))} />
+              <input
+                type="number"
+                className={`${am.input} bg-slate-100 text-slate-500`}
+                value={form.defaultAmount}
+                readOnly
+              />
+              <p className="text-[10px] text-slate-500 mt-1">Synced from Fee Structure saves.</p>
             </div>
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600">Description</label>
             <textarea className={am.input} rows={2} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-slate-600">Status</label>
+              <select
+                className={am.select + ' w-full'}
+                value={form.status}
+                onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as FeeMasterStatus }))}
+              >
+                <option value="ACTIVE">ACTIVE</option>
+                <option value="INACTIVE">INACTIVE</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-2 pt-5">
+              <label className="flex items-center gap-2 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.isRefundable}
+                  onChange={(e) => setForm((f) => ({ ...f, isRefundable: e.target.checked }))}
+                />
+                Refundable
+              </label>
+              <label className="flex items-center gap-2 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.isTaxable}
+                  onChange={(e) => setForm((f) => ({ ...f, isTaxable: e.target.checked }))}
+                />
+                Taxable
+              </label>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-600">Visibility</label>
+            <div className="flex flex-wrap gap-4 mt-1">
+              <label className="flex items-center gap-2 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.showInCollection}
+                  onChange={(e) => setForm((f) => ({ ...f, showInCollection: e.target.checked }))}
+                />
+                Collection
+              </label>
+              <label className="flex items-center gap-2 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.showInInvoice}
+                  onChange={(e) => setForm((f) => ({ ...f, showInInvoice: e.target.checked }))}
+                />
+                Invoice
+              </label>
+              <label className="flex items-center gap-2 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.showInPayment}
+                  onChange={(e) => setForm((f) => ({ ...f, showInPayment: e.target.checked }))}
+                />
+                Payment
+              </label>
+            </div>
+          </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setShowModal(false)} className={am.btnSecondary}>Cancel</button>
-            <button type="button" onClick={() => void handleCreate()} className={am.btnPrimary} disabled={!form.code || !form.name}>Save</button>
+            <button type="button" onClick={closeModal} className={am.btnSecondary}>Cancel</button>
+            <button
+              type="button"
+              onClick={() => void handleUpdate()}
+              className={am.btnPrimary}
+              disabled={!form.name || !editRow}
+            >
+              Save Changes
+            </button>
           </div>
         </div>
       </AcademicModal>

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { ParentCommunicationChannel, ParentCommunicationDirection, ParentCommunicationStatus, ParentRelationship } from '@prisma/client';
+import { ParentCommunicationChannel, ParentCommunicationDirection, ParentCommunicationStatus, ParentRelationship, ParentCommunicationCampaignStatus } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { getDefaultInstitutionId } from '../lib/institution.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -12,6 +12,14 @@ import {
   nextCommunicationRecordId,
   serializeCommunication,
 } from '../lib/parentCommunications.js';
+import {
+  cancelCommunicationCampaign,
+  createCommunicationCampaign,
+  getCampaignDashboard,
+  listCommunicationCampaigns,
+  processDueCommunicationCampaigns,
+  sendCampaignNow,
+} from '../lib/parentCommunicationCampaigns.js';
 
 export const parentCommunicationsRouter = Router();
 parentCommunicationsRouter.use(requireAuth);
@@ -20,8 +28,96 @@ parentCommunicationsRouter.get(
   '/meta',
   asyncHandler(async (_req, res) => {
     const institutionId = await getDefaultInstitutionId();
-    const summary = await getCommunicationDashboard(institutionId);
-    return res.json({ summary });
+    await processDueCommunicationCampaigns(institutionId);
+    const [summary, campaigns] = await Promise.all([
+      getCommunicationDashboard(institutionId),
+      getCampaignDashboard(institutionId),
+    ]);
+    return res.json({ summary, campaigns });
+  }),
+);
+
+parentCommunicationsRouter.get(
+  '/campaigns',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const status = typeof req.query.status === 'string' ? req.query.status.toUpperCase() : undefined;
+    const campaigns = await listCommunicationCampaigns(institutionId, {
+      status:
+        status && Object.values(ParentCommunicationCampaignStatus).includes(status as ParentCommunicationCampaignStatus)
+          ? (status as ParentCommunicationCampaignStatus)
+          : undefined,
+    });
+    return res.json({ campaigns });
+  }),
+);
+
+parentCommunicationsRouter.post(
+  '/campaigns',
+  asyncHandler(async (req, res) => {
+    const schema = z.object({
+      action: z.enum(['draft', 'send_now', 'scheduled']),
+      channel: z.enum(['SMS', 'EMAIL', 'APP', 'CALL', 'NOTICE', 'WHATSAPP']),
+      subject: z.string().min(1),
+      body: z.string().min(1),
+      category: z.string().optional(),
+      audienceBatches: z
+        .array(
+          z.object({
+            className: z.string().optional(),
+            sectionName: z.string().optional(),
+            academicYear: z.string().optional(),
+            parentRelationship: z.enum(['FATHER', 'MOTHER', 'GUARDIAN']).optional(),
+          }),
+        )
+        .min(1),
+      scheduledAt: z.string().optional(),
+      recurrenceType: z.enum(['NONE', 'WEEKLY', 'MONTHLY', 'DAY_15']).optional(),
+      createdBy: z.string().optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    if (parsed.data.action === 'scheduled' && !parsed.data.scheduledAt) {
+      return res.status(400).json({ error: 'scheduledAt is required for scheduled campaigns' });
+    }
+
+    const institutionId = await getDefaultInstitutionId();
+    const result = await createCommunicationCampaign(institutionId, {
+      action: parsed.data.action,
+      channel: parsed.data.channel as ParentCommunicationChannel,
+      subject: parsed.data.subject,
+      body: parsed.data.body,
+      category: parsed.data.category,
+      audienceBatches: parsed.data.audienceBatches.map((b) => ({
+        className: b.className,
+        sectionName: b.sectionName,
+        academicYear: b.academicYear,
+        parentRelationship: b.parentRelationship as ParentRelationship | undefined,
+      })),
+      scheduledAt: parsed.data.scheduledAt ? new Date(parsed.data.scheduledAt) : undefined,
+      recurrenceType: parsed.data.recurrenceType,
+      createdBy: parsed.data.createdBy,
+    });
+    return res.status(201).json(result);
+  }),
+);
+
+parentCommunicationsRouter.post(
+  '/campaigns/:id/send',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const result = await sendCampaignNow(institutionId, req.params.id);
+    return res.json(result);
+  }),
+);
+
+parentCommunicationsRouter.post(
+  '/campaigns/:id/cancel',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const campaign = await cancelCommunicationCampaign(institutionId, req.params.id);
+    return res.json({ campaign });
   }),
 );
 

@@ -42,6 +42,9 @@ export type StudentAdmissionFormData = {
   academicYear: string;
   house: string;
   rollNumber: string;
+  softId: string;
+  srNo: string;
+  portalNicCode: string;
   admissionDate: string;
   previousSchool: string;
   admissionType: string;
@@ -106,6 +109,9 @@ export const emptyAdmissionForm = (): StudentAdmissionFormData => ({
   academicYear: '2025-26',
   house: '',
   rollNumber: '',
+  softId: '',
+  srNo: '',
+  portalNicCode: '',
   admissionDate: new Date().toISOString().slice(0, 10),
   previousSchool: '',
   admissionType: 'New Admission',

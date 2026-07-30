@@ -3,7 +3,7 @@ import {
   User, Users, BookOpen, HeartPulse, Bus, Home, FileText, IndianRupee, UserPlus,
   CheckCircle, Loader2, Download, ChevronLeft,
 } from 'lucide-react';
-import { createStudent, fetchStudentsMeta } from '../../../lib/studentServices';
+import { createStudent, fetchNextSoftId, fetchStudentsMeta } from '../../../lib/studentServices';
 import { fetchInstitutionSetup } from '../../../lib/institutionApi';
 import { toViewKey } from '../../../lib/navigation';
 import {
@@ -75,6 +75,9 @@ export function AddNewStudentView({ onNavigate, onCreated }: Props) {
     });
     void fetchInstitutionSetup().then(({ setup }) => {
       setSchool(schoolFromInstitutionSetup(setup as Record<string, unknown>));
+    });
+    void fetchNextSoftId().then(({ softId }) => {
+      setForm((f) => (f.softId ? f : { ...f, softId }));
     });
   }, []);
 
@@ -168,16 +171,19 @@ export function AddNewStudentView({ onNavigate, onCreated }: Props) {
         academicYear: form.academicYear,
         house: form.house || undefined,
         rollNumber: form.rollNumber || undefined,
+        srNo: form.srNo || undefined,
+        portalNicCode: form.portalNicCode || undefined,
         fatherName: form.fatherName || undefined,
         fatherMobile: isIndiaMobileEmpty(form.fatherMobile) ? undefined : normalizeIndiaMobile(form.fatherMobile),
         motherName: form.motherName || undefined,
         motherMobile: isIndiaMobileEmpty(form.motherMobile) ? undefined : normalizeIndiaMobile(form.motherMobile),
+        photoUrl: form.studentPhoto || undefined,
         customFields: {
           admissionForm: {
             ...form,
-            studentPhoto: form.studentPhoto ? '[attached]' : '',
-            fatherPhoto: form.fatherPhoto ? '[attached]' : '',
-            motherPhoto: form.motherPhoto ? '[attached]' : '',
+            studentPhoto: form.studentPhoto || '',
+            fatherPhoto: form.fatherPhoto || '',
+            motherPhoto: form.motherPhoto || '',
           },
         },
         documents: {
@@ -258,6 +264,9 @@ export function AddNewStudentView({ onNavigate, onCreated }: Props) {
               <Select label="Class / Grade *" value={form.className} onChange={(v) => set('className', v)} options={['', ...classes]} />
               <Select label="Section" value={form.sectionName} onChange={(v) => set('sectionName', v)} options={['', ...sections]} />
               <Field label="Academic Year" value={form.academicYear} onChange={(v) => set('academicYear', v)} />
+              <Field label="Soft ID (Auto)" value={form.softId} onChange={() => {}} readOnly hint="Generated from school initials + number" />
+              <Field label="SR No (Govt. Registration)" value={form.srNo} onChange={(v) => set('srNo', v)} placeholder="Government student registration number" />
+              <Field label="Portal NIC Code" value={form.portalNicCode} onChange={(v) => set('portalNicCode', v)} />
               <Field label="Roll Number" value={form.rollNumber} onChange={(v) => set('rollNumber', v)} />
               <Field label="House" value={form.house} onChange={(v) => set('house', v)} />
               <Field label="Admission Date" type="date" value={form.admissionDate} onChange={(v) => set('admissionDate', v)} />
@@ -444,11 +453,35 @@ function StepForm({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function Field({ label, value, onChange, type = 'text' }: { label: string; value: string; onChange: (v: string) => void; type?: string }) {
+function Field({
+  label,
+  value,
+  onChange,
+  type = 'text',
+  readOnly = false,
+  placeholder,
+  hint,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+  readOnly?: boolean;
+  placeholder?: string;
+  hint?: string;
+}) {
   return (
     <div>
       <label className="block text-xs font-bold text-slate-700 mb-1">{label}</label>
-      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+      <input
+        type={type}
+        value={value}
+        readOnly={readOnly}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className={`w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 ${readOnly ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : ''}`}
+      />
+      {hint ? <p className="text-[10px] text-slate-500 mt-1">{hint}</p> : null}
     </div>
   );
 }

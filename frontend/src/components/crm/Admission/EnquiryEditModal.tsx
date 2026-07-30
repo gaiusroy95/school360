@@ -16,16 +16,24 @@ type Props = {
 };
 
 export function EnquiryEditModal({ enquiry, performer, onClose, onSaved }: Props) {
-  const [meta, setMeta] = useState<EnquiryMeta>({ classes: [], sources: [], statuses: [] });
+  const [meta, setMeta] = useState<EnquiryMeta>({ classes: [], sources: [], statuses: [], counselors: [] });
+  const [metaLoading, setMetaLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setMetaLoading(true);
     void fetchEnquiryMeta()
-      .then(setMeta)
+      .then((res) => setMeta(res))
       .catch(() => {
-        /* keep defaults */
-      });
+        setMeta({
+          classes: [],
+          sources: ['Website', 'Walk-in', 'Phone Call', 'Referral', 'Others'],
+          statuses: ['New', 'In Process', 'Follow Up', 'Converted', 'Not Interested'],
+          counselors: [],
+        });
+      })
+      .finally(() => setMetaLoading(false));
   }, []);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -43,10 +51,7 @@ export function EnquiryEditModal({ enquiry, performer, onClose, onSaved }: Props
       setSubmitting(false);
       return;
     }
-    const payload = enquiryInputFromForm(formData, {
-      status: enquiry.status,
-      performer,
-    });
+    const payload = enquiryInputFromForm(formData, { performer });
     try {
       await updateEnquiry(enquiry.id, payload);
       await onSaved();
@@ -74,7 +79,16 @@ export function EnquiryEditModal({ enquiry, performer, onClose, onSaved }: Props
           {error && (
             <div className="px-3 py-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">{error}</div>
           )}
-          <EnquiryFormFields meta={meta} performer={performer} enquiry={enquiry} />
+          {metaLoading ? (
+            <p className="text-sm text-slate-500 text-center py-8">Loading form...</p>
+          ) : (
+            <EnquiryFormFields
+              key={`${enquiry.id}-${enquiry.status}`}
+              meta={meta}
+              performer={performer}
+              enquiry={enquiry}
+            />
+          )}
           <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
             <button
               type="button"
@@ -85,7 +99,7 @@ export function EnquiryEditModal({ enquiry, performer, onClose, onSaved }: Props
             </button>
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || metaLoading}
               className="px-5 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-sm disabled:opacity-50"
             >
               {submitting ? 'Saving...' : 'Update Lead'}
@@ -165,6 +179,17 @@ function EnquiryFormFields({
   performer: string;
   enquiry: Enquiry;
 }) {
+  const statusOptions =
+    meta.statuses.length > 0
+      ? meta.statuses
+      : ['New', 'In Process', 'Follow Up', 'Converted', 'Not Interested'];
+
+  const [status, setStatus] = useState(enquiry.status);
+
+  useEffect(() => {
+    setStatus(enquiry.status);
+  }, [enquiry.id, enquiry.status]);
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <Field label="Enquirer Name *" name="enquirerName" required defaultValue={enquiry.enquirerName} />
@@ -205,10 +230,11 @@ function EnquiryFormFields({
         <label className="block text-xs font-semibold text-slate-700 mb-1">Status</label>
         <select
           name="status"
-          defaultValue={enquiry.status}
+          value={status}
+          onChange={(e) => setStatus(e.target.value as Enquiry['status'])}
           className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
         >
-          {meta.statuses.map((s) => (
+          {statusOptions.map((s) => (
             <option key={s} value={s}>
               {s}
             </option>

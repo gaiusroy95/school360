@@ -1,7 +1,7 @@
 import { GatePassStatus, GatePassType, Prisma, StudentStatus } from '@prisma/client';
 import { prisma } from './prisma.js';
 import { dispatchPushNotifications } from './notifications.js';
-import { formatClassSection, getInstitutionFilterMeta } from './students.js';
+import { formatClassSection, getInstitutionFilterMeta, resolveStudentPhotos } from './students.js';
 
 export type GatePassStatusFilter =
   | 'all'
@@ -11,6 +11,45 @@ export type GatePassStatusFilter =
   | 'rejected'
   | 'issued'
   | 'completed';
+
+export const PICKUP_RELATIONS = [
+  { id: 'FATHER', label: 'Father' },
+  { id: 'MOTHER', label: 'Mother' },
+  { id: 'GUARDIAN', label: 'Guardian' },
+  { id: 'UNCLE', label: 'Uncle' },
+  { id: 'AUNT', label: 'Aunt' },
+  { id: 'GRANDPARENT', label: 'Grandparent' },
+  { id: 'SIBLING', label: 'Sibling' },
+  { id: 'OTHER', label: 'Other (relative / authorised person)' },
+] as const;
+
+type OtpSession = {
+  code: string;
+  expiresAt: number;
+  studentId: string;
+  mobile: string;
+  institutionId: string;
+  verified: boolean;
+  verificationToken?: string;
+};
+
+const otpSessions = new Map<string, OtpSession>();
+
+function normalizeMobile(mobile: string) {
+  return mobile.replace(/\D/g, '').slice(-10);
+}
+
+function otpSessionKey(institutionId: string, studentId: string, mobile: string) {
+  return `${institutionId}:${studentId}:${normalizeMobile(mobile)}`;
+}
+
+function generateOtpCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function generateVerificationToken() {
+  return `gpvt_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+}
 
 const STATUS_LABELS: Record<GatePassStatus, string> = {
   PENDING: 'Pending Review',
@@ -73,6 +112,8 @@ function serializeGatePass(row: {
   exitTime: string;
   completedAt: Date | null;
   principalNotifiedAt: Date | null;
+  otpVerified?: boolean;
+  otpVerifiedAt: Date | null;
   source: string;
   createdAt: Date;
   updatedAt: Date;
@@ -88,6 +129,8 @@ function serializeGatePass(row: {
     fatherMobile: string;
     motherName: string;
     motherMobile: string;
+    photoUrl?: string;
+    customFields?: unknown;
   };
 }) {
   return {
@@ -125,6 +168,8 @@ function serializeGatePass(row: {
     exitTime: row.exitTime,
     completedAt: row.completedAt?.toISOString() ?? null,
     principalNotifiedAt: row.principalNotifiedAt?.toISOString() ?? null,
+    otpVerified: row.otpVerified ?? false,
+    otpVerifiedAt: row.otpVerifiedAt?.toISOString() ?? null,
     source: row.source,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -132,6 +177,7 @@ function serializeGatePass(row: {
     fatherMobile: row.student.fatherMobile,
     motherName: row.student.motherName,
     motherMobile: row.student.motherMobile,
+    ...resolveStudentPhotos(row.student),
     canSubmitToPrincipal: row.status === GatePassStatus.PENDING,
     canApprove: row.status === GatePassStatus.AWAITING_PRINCIPAL,
     canReject: row.status === GatePassStatus.PENDING || row.status === GatePassStatus.AWAITING_PRINCIPAL,
@@ -155,6 +201,8 @@ const studentInclude = {
       fatherMobile: true,
       motherName: true,
       motherMobile: true,
+      photoUrl: true,
+      customFields: true,
     },
   },
 } as const;
@@ -189,8 +237,81 @@ export async function getGatePassMeta(institutionId: string, academicYear?: stri
       { id: 'MID_CLASS', label: 'Mid-Class Exit', description: 'Parent taking child during an ongoing class due to unexpected event' },
     ],
     statusLegend: Object.entries(STATUS_LABELS).map(([id, label]) => ({ id, label })),
-    workflowNote: 'Parent visit → Admin creates request → Submit to Principal → Principal approves via mobile app → Issue gate pass',
+    pickupRelations: PICKUP_RELATIONS,
+    workflowNote: 'Parent visit → Verify mobile OTP → Admin creates request → Submit to Principal → Principal approves → Issue gate pass',
   };
+}
+
+export async function sendGatePassOtp(
+  institutionId: string,
+  input: { studentId: string; mobile: string },
+) {
+  const mobile = normalizeMobile(input.mobile);
+  if (mobile.length < 10) throw new Error('Valid 10-digit mobile number is required');
+
+  const student = await prisma.student.findFirst({
+    where: { id: input.studentId, institutionId, status: StudentStatus.ACTIVE },
+  });
+  if (!student) throw new Error('Student not found');
+
+  const code = generateOtpCode();
+  const key = otpSessionKey(institutionId, input.studentId, mobile);
+  otpSessions.set(key, {
+    code,
+    expiresAt: Date.now() + 10 * 60 * 1000,
+    studentId: input.studentId,
+    mobile,
+    institutionId,
+    verified: false,
+  });
+
+  const registeredMobiles = [student.fatherMobile, student.motherMobile]
+    .map(normalizeMobile)
+    .filter((m) => m.length >= 10);
+
+  return {
+    sent: true,
+    message: `OTP sent to ${mobile}`,
+    demoOtp: code,
+    expiresInSeconds: 600,
+    isRegisteredParentMobile: registeredMobiles.includes(mobile),
+  };
+}
+
+export function verifyGatePassOtp(
+  institutionId: string,
+  input: { studentId: string; mobile: string; otp: string },
+) {
+  const mobile = normalizeMobile(input.mobile);
+  const key = otpSessionKey(institutionId, input.studentId, mobile);
+  const session = otpSessions.get(key);
+  if (!session) throw new Error('No OTP request found. Send OTP first.');
+  if (Date.now() > session.expiresAt) {
+    otpSessions.delete(key);
+    throw new Error('OTP expired. Please request a new one.');
+  }
+  if (input.otp.trim() !== session.code) throw new Error('Invalid OTP');
+
+  const verificationToken = generateVerificationToken();
+  session.verified = true;
+  session.verificationToken = verificationToken;
+  otpSessions.set(key, session);
+
+  return { verified: true, verificationToken, message: 'Mobile verified successfully' };
+}
+
+function consumeOtpVerification(
+  institutionId: string,
+  input: { studentId: string; mobile: string; otpVerificationToken: string },
+) {
+  const mobile = normalizeMobile(input.mobile);
+  const key = otpSessionKey(institutionId, input.studentId, mobile);
+  const session = otpSessions.get(key);
+  if (!session?.verified || session.verificationToken !== input.otpVerificationToken) {
+    throw new Error('Mobile OTP verification is required before creating a gate pass');
+  }
+  if (session.studentId !== input.studentId) throw new Error('OTP verification does not match selected student');
+  otpSessions.delete(key);
 }
 
 export async function listStudentsForGatePass(
@@ -228,6 +349,8 @@ export async function listStudentsForGatePass(
       fatherMobile: true,
       motherName: true,
       motherMobile: true,
+      photoUrl: true,
+      customFields: true,
     },
     orderBy: [{ firstName: 'asc' }],
     take: 200,
@@ -245,6 +368,7 @@ export async function listStudentsForGatePass(
     fatherMobile: s.fatherMobile,
     motherName: s.motherName,
     motherMobile: s.motherMobile,
+    ...resolveStudentPhotos(s),
   }));
 }
 
@@ -322,6 +446,7 @@ export async function createGatePass(
     parentName: string;
     parentMobile?: string;
     parentRelation?: string;
+    otpVerificationToken?: string;
     createdBy?: string;
     source?: string;
   },
@@ -331,7 +456,20 @@ export async function createGatePass(
   });
   if (!student) throw new Error('Student not found');
 
+  if (!input.parentMobile?.trim()) {
+    throw new Error('Parent/guardian mobile number is required');
+  }
+  if (!input.otpVerificationToken) {
+    throw new Error('Mobile OTP verification is required');
+  }
+  consumeOtpVerification(institutionId, {
+    studentId: input.studentId,
+    mobile: input.parentMobile,
+    otpVerificationToken: input.otpVerificationToken,
+  });
+
   const passNumber = await nextPassNumber(institutionId);
+  const now = new Date();
   const row = await prisma.studentGatePass.create({
     data: {
       institutionId,
@@ -345,8 +483,10 @@ export async function createGatePass(
       reason: input.reason.trim(),
       remarks: input.remarks?.trim() || '',
       parentName: input.parentName.trim(),
-      parentMobile: input.parentMobile?.trim() || '',
+      parentMobile: input.parentMobile.trim(),
       parentRelation: input.parentRelation?.trim() || 'Parent',
+      otpVerified: true,
+      otpVerifiedAt: now,
       createdBy: input.createdBy || 'Front Desk',
       source: input.source || 'FRONT_DESK',
     },

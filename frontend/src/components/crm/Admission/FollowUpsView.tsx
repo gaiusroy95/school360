@@ -13,6 +13,9 @@ import {
   Loader2,
   AlertCircle,
   Filter,
+  Copy,
+  ExternalLink,
+  RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
 import {
@@ -20,6 +23,7 @@ import {
   fetchFollowUpTaskMeta,
   addFollowUpTask,
   updateFollowUpTask,
+  syncFollowUpCalendar,
   type FollowUpTask,
   type FollowUpMode,
   type FollowUpTaskMeta,
@@ -32,6 +36,7 @@ const MODE_ICONS: Record<string, React.ReactNode> = {
   Phone: <Phone size={14} className="text-blue-500" />,
   'Campus Visit': <MapPin size={14} className="text-emerald-500" />,
   'Video Call': <Video size={14} className="text-purple-500" />,
+  'Google Meet': <Video size={14} className="text-green-600" />,
   Email: <Mail size={14} className="text-amber-500" />,
   'In-person Counselling': <User size={14} className="text-indigo-500" />,
 };
@@ -75,7 +80,12 @@ type TaskFormState = {
   dueDate: string;
   dueTime: string;
   assignedTo: string;
+  syncGoogleCalendar: boolean;
+  notifyEmail: boolean;
+  notifyWhatsApp: boolean;
 };
+
+const isVideoMode = (mode: string) => mode === 'Google Meet' || mode === 'Video Call';
 
 const emptyForm = (performer: string): TaskFormState => ({
   enquiryDbId: '',
@@ -86,6 +96,9 @@ const emptyForm = (performer: string): TaskFormState => ({
   dueDate: new Date().toISOString().slice(0, 10),
   dueTime: '10:00',
   assignedTo: performer,
+  syncGoogleCalendar: true,
+  notifyEmail: true,
+  notifyWhatsApp: true,
 });
 
 export function FollowUpsView() {
@@ -104,6 +117,12 @@ export function FollowUpsView() {
   const [editingTask, setEditingTask] = useState<FollowUpTask | null>(null);
   const [form, setForm] = useState<TaskFormState>(emptyForm(performer));
   const [useCustomCounselor, setUseCustomCounselor] = useState(false);
+  const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
+
+  const selectedEnquiry = useMemo(
+    () => meta?.enquiries.find((e) => e.id === form.enquiryDbId),
+    [meta?.enquiries, form.enquiryDbId],
+  );
 
   const counselorOptions = useMemo(() => {
     const names = new Set<string>();
@@ -198,6 +217,9 @@ export function FollowUpsView() {
       dueDate: task.dueDate,
       dueTime: task.dueTime || '',
       assignedTo,
+      syncGoogleCalendar: task.syncGoogleCalendar ?? isVideoMode(task.mode || ''),
+      notifyEmail: task.notifyEmail ?? true,
+      notifyWhatsApp: task.notifyWhatsApp ?? true,
     });
     setUseCustomCounselor(assignedTo !== '' && !known.has(assignedTo));
     setModalOpen(true);
@@ -213,6 +235,31 @@ export function FollowUpsView() {
       await refresh();
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to complete task');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const copyMeetingLink = async (taskId: string, link: string) => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedLinkId(taskId);
+      setTimeout(() => setCopiedLinkId(null), 2000);
+    } catch {
+      setErrorMsg('Could not copy link');
+    }
+  };
+
+  const handleResyncCalendar = async (task: FollowUpTask) => {
+    if (!task.id) return;
+    setSubmitting(true);
+    setErrorMsg(null);
+    try {
+      await syncFollowUpCalendar(task.id);
+      setSuccessMsg('Google Calendar synced and notifications sent');
+      await refresh();
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Calendar sync failed');
     } finally {
       setSubmitting(false);
     }
@@ -244,14 +291,25 @@ export function FollowUpsView() {
         dueDate: form.dueDate,
         dueTime: form.dueTime || undefined,
         assignedTo: form.assignedTo.trim() || performer,
+        syncGoogleCalendar: isVideoMode(form.mode) ? form.syncGoogleCalendar : false,
+        notifyEmail: form.notifyEmail,
+        notifyWhatsApp: form.notifyWhatsApp,
       };
 
       if (editingTask?.id) {
         await updateFollowUpTask(editingTask.id, payload);
-        setSuccessMsg('Follow-up updated');
+        setSuccessMsg(
+          isVideoMode(form.mode) && form.syncGoogleCalendar
+            ? 'Follow-up updated — Google Meet link shared when applicable'
+            : 'Follow-up updated',
+        );
       } else {
         await addFollowUpTask(form.enquiryDbId, payload);
-        setSuccessMsg('Follow-up scheduled');
+        setSuccessMsg(
+          isVideoMode(form.mode) && form.syncGoogleCalendar
+            ? 'Follow-up scheduled — Google Meet link generated and shared'
+            : 'Follow-up scheduled',
+        );
       }
       setModalOpen(false);
       setEditingTask(null);
@@ -266,6 +324,7 @@ export function FollowUpsView() {
   const modes = meta?.modes || [
     'Phone',
     'Campus Visit',
+    'Google Meet',
     'Video Call',
     'Email',
     'In-person Counselling',
@@ -277,7 +336,7 @@ export function FollowUpsView() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Follow Ups</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Schedule campus visits, assign counseling mode & subject to counselors
+            Schedule campus visits, video calls with Google Calendar auto-sync, and share Meet links via email & WhatsApp
           </p>
         </div>
         <button
@@ -389,6 +448,41 @@ export function FollowUpsView() {
                           &ldquo;{task.discussionNotes}&rdquo;
                         </p>
                       )}
+                      {task.meetingLink && (
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <a
+                            href={task.meetingLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[11px] text-green-700 bg-green-50 border border-green-200 px-2 py-1 rounded-full inline-flex items-center gap-1 hover:bg-green-100"
+                          >
+                            <ExternalLink size={10} /> Join Google Meet
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => void copyMeetingLink(task.id || '', task.meetingLink || '')}
+                            className="text-[11px] text-slate-600 bg-slate-50 border border-slate-200 px-2 py-1 rounded-full inline-flex items-center gap-1 hover:bg-slate-100"
+                          >
+                            <Copy size={10} /> {copiedLinkId === task.id ? 'Copied!' : 'Copy link'}
+                          </button>
+                        </div>
+                      )}
+                      {(task.calendarSyncStatus || task.notificationLog) && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {task.calendarSyncStatus === 'SYNCED' && (
+                            <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full">Calendar synced</span>
+                          )}
+                          {task.calendarSyncStatus === 'FAILED' && (
+                            <span className="text-[10px] bg-red-50 text-red-600 px-2 py-0.5 rounded-full">Calendar sync failed</span>
+                          )}
+                          {task.notificationLog?.email?.sent && (
+                            <span className="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">Email sent</span>
+                          )}
+                          {task.notificationLog?.whatsapp?.sent && (
+                            <span className="text-[10px] bg-green-50 text-green-700 px-2 py-0.5 rounded-full">WhatsApp sent</span>
+                          )}
+                        </div>
+                      )}
                       <div className="flex flex-wrap items-center gap-2 mt-2">
                         <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{mode}</span>
                         <span
@@ -410,6 +504,17 @@ export function FollowUpsView() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0 ml-2">
+                    {isVideoMode(mode) && task.status !== 'Completed' && (
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => void handleResyncCalendar(task)}
+                        title="Re-sync Google Calendar & resend link"
+                        className="w-8 h-8 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center hover:bg-green-50 hover:text-green-600 transition-colors border border-slate-100 disabled:opacity-50"
+                      >
+                        <RefreshCw size={14} />
+                      </button>
+                    )}
                     {task.status !== 'Completed' && (
                       <button
                         type="button"
@@ -525,7 +630,14 @@ export function FollowUpsView() {
                   <select
                     required
                     value={form.mode}
-                    onChange={(e) => setForm((f) => ({ ...f, mode: e.target.value as FollowUpMode }))}
+                    onChange={(e) => {
+                      const mode = e.target.value as FollowUpMode;
+                      setForm((f) => ({
+                        ...f,
+                        mode,
+                        syncGoogleCalendar: isVideoMode(mode) ? true : false,
+                      }));
+                    }}
                     className="w-full p-2 border border-slate-300 rounded-lg text-sm"
                   >
                     {modes.map((m) => (
@@ -628,6 +740,56 @@ export function FollowUpsView() {
                   />
                 </div>
               </div>
+
+              {isVideoMode(form.mode) && (
+                <div className="rounded-lg border border-green-200 bg-green-50/60 p-3 space-y-2">
+                  <p className="text-xs font-bold text-green-900 flex items-center gap-1">
+                    <Video size={14} /> Google Calendar & Meet
+                  </p>
+                  <label className="flex items-start gap-2 text-xs text-green-900">
+                    <input
+                      type="checkbox"
+                      checked={form.syncGoogleCalendar}
+                      onChange={(e) => setForm((f) => ({ ...f, syncGoogleCalendar: e.target.checked }))}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      Auto-sync to Google Calendar and generate a Google Meet link
+                      <span className="block text-[10px] text-green-700/80 mt-0.5">
+                        Configure OAuth in Institution Setup → Integrations → Google Workspace
+                      </span>
+                    </span>
+                  </label>
+                  {form.syncGoogleCalendar && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-5">
+                      <label className="flex items-center gap-2 text-xs text-green-900">
+                        <input
+                          type="checkbox"
+                          checked={form.notifyEmail}
+                          onChange={(e) => setForm((f) => ({ ...f, notifyEmail: e.target.checked }))}
+                          disabled={!selectedEnquiry?.email}
+                        />
+                        Send link to customer email
+                        <span className="text-[10px] text-green-700/70">
+                          {selectedEnquiry?.email || '(no email on enquiry)'}
+                        </span>
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-green-900">
+                        <input
+                          type="checkbox"
+                          checked={form.notifyWhatsApp}
+                          onChange={(e) => setForm((f) => ({ ...f, notifyWhatsApp: e.target.checked }))}
+                          disabled={!selectedEnquiry?.mobile}
+                        />
+                        Send link to WhatsApp
+                        <span className="text-[10px] text-green-700/70">
+                          {selectedEnquiry?.mobile || '(no mobile on enquiry)'}
+                        </span>
+                      </label>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex justify-end gap-2 pt-2">
                 <button

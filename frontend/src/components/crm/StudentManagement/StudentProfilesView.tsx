@@ -22,6 +22,7 @@ import {
 import { downloadStudentIdCardPdf } from '../../../lib/studentIdCardPdf';
 import { StudentProfileTabContent } from './StudentProfileTabContent';
 import { StudentProfileEditModal } from './StudentProfileEditModal';
+import { getStudentPhotoUrl, resolvePhotoDisplay } from '../../../lib/studentPhotoUtils';
 
 const DEFAULT_PROFILE: StudentProfileMeta = {
   feeDueAmount: 0,
@@ -190,7 +191,7 @@ export function StudentProfilesView() {
     );
   }
 
-  const avatar = student.photoUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(student.fullName)}`;
+  const avatar = resolvePhotoDisplay(getStudentPhotoUrl(student), student.fullName);
 
   return (
     <div className="flex flex-col h-full bg-slate-50 overflow-hidden">

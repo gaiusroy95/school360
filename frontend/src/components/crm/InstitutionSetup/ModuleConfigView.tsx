@@ -417,7 +417,8 @@ export function ModuleConfigView({
                         className={
                           field.type === 'textarea' ||
                           field.type === 'multiselect' ||
-                          field.type === 'eventMultiselect'
+                          field.type === 'eventMultiselect' ||
+                          field.type === 'file'
                             ? 'md:col-span-2 space-y-1.5'
                             : 'space-y-1.5'
                         }

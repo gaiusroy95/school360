@@ -1,8 +1,4 @@
-import { createRequire } from 'node:module';
-
-const require = createRequire(import.meta.url);
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfParse = require('pdf-parse') as (buffer: Buffer) => Promise<{ text: string; numpages: number }>;
+import { PDFParse } from 'pdf-parse';
 
 export async function extractTextFromPdfBase64(base64: string): Promise<{ text: string; pages: number }> {
   const raw = base64.includes(',') ? base64.split(',')[1] : base64;
@@ -10,11 +6,17 @@ export async function extractTextFromPdfBase64(base64: string): Promise<{ text: 
   if (buf.length < 5 || buf.subarray(0, 5).toString('utf8') !== '%PDF-') {
     throw new Error('Invalid PDF file');
   }
-  const result = await pdfParse(buf);
-  return {
-    text: (result.text || '').trim(),
-    pages: result.numpages || 0,
-  };
+
+  const parser = new PDFParse({ data: buf });
+  try {
+    const result = await parser.getText();
+    return {
+      text: (result.text || '').trim(),
+      pages: result.total || 0,
+    };
+  } finally {
+    await parser.destroy().catch(() => {});
+  }
 }
 
 export async function extractTextFromPdfs(
@@ -26,7 +28,9 @@ export async function extractTextFromPdfs(
   for (const file of files) {
     const { text, pages } = await extractTextFromPdfBase64(file.fileData);
     if (!text) {
-      throw new Error(`Could not extract text from "${file.fileName}". The PDF may be scanned images only (use OCR in Phase 2).`);
+      throw new Error(
+        `Could not extract text from "${file.fileName}". The PDF may be scanned images only — use OCR Test Generation instead.`,
+      );
     }
     fileMeta.push({ fileName: file.fileName, pages, charCount: text.length });
     parts.push(`--- ${file.fileName} ---\n${text}`);

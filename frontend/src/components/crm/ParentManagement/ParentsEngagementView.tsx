@@ -4,7 +4,8 @@ import {
 } from 'lucide-react';
 import {
   createParentEngagement, createParentEngagementsBatch, fetchParentEngagements,
-  fetchParentEngagementsMeta, updateParentEngagement, type EngagementRecord,
+  fetchParentEngagementsMeta, fetchParentEngagementHierarchy, updateParentEngagement,
+  type EngagementHierarchyMeta, type EngagementRecord,
 } from '../../../lib/parentEngagementServices';
 import { fetchParents, fetchParentDetail, type ParentDetail, type ParentListItem } from '../../../lib/parentServices';
 import { fetchStudents, fetchStudentsMeta } from '../../../lib/studentServices';
@@ -19,7 +20,7 @@ function toLocalInputValue(iso: string) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-type FilterMode = 'parent' | 'child';
+type FilterMode = 'hierarchy' | 'parent' | 'child';
 type SelectedChild = { studentId: string; name: string; classGroup: string };
 type EngagementFormTab = 'plan' | 'results';
 type EngagementModalState = { mode: 'create' | 'edit'; tab: EngagementFormTab; record?: EngagementRecord };
@@ -40,7 +41,14 @@ export function ParentsEngagementView() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
 
-  const [filterMode, setFilterMode] = useState<FilterMode>('parent');
+  const [filterMode, setFilterMode] = useState<FilterMode>('hierarchy');
+  const [academicYear, setAcademicYear] = useState('2025-26');
+  const [hierarchyMeta, setHierarchyMeta] = useState<EngagementHierarchyMeta | null>(null);
+  const [teacherName, setTeacherName] = useState('');
+  const [hierarchyClass, setHierarchyClass] = useState('');
+  const [hierarchySection, setHierarchySection] = useState('');
+  const [sectionStudents, setSectionStudents] = useState<{ id: string; fullName: string; classGroup: string }[]>([]);
+
   const [parentSearch, setParentSearch] = useState('');
   const [parentResults, setParentResults] = useState<ParentListItem[]>([]);
   const [searchingParents, setSearchingParents] = useState(false);
@@ -63,10 +71,42 @@ export function ParentsEngagementView() {
   const [form, setForm] = useState(emptyForm());
 
   const listParams = useMemo(() => {
+    if (filterMode === 'hierarchy' && teacherName && hierarchyClass) {
+      return {
+        teacherName,
+        className: hierarchyClass,
+        sectionName: hierarchySection || undefined,
+        academicYear,
+      };
+    }
     if (selectedParentKey) return { parentKey: selectedParentKey };
     if (selectedChildId) return { studentId: selectedChildId };
     return undefined;
-  }, [selectedParentKey, selectedChildId]);
+  }, [filterMode, teacherName, hierarchyClass, hierarchySection, academicYear, selectedParentKey, selectedChildId]);
+
+  const teacherAssignments = useMemo(() => {
+    return hierarchyMeta?.teachers.find((t) => t.teacherName === teacherName)?.assignments || [];
+  }, [hierarchyMeta, teacherName]);
+
+  const teacherClassOptions = useMemo(() => {
+    return [...new Set(teacherAssignments.map((a) => a.className))];
+  }, [teacherAssignments]);
+
+  const teacherSectionOptions = useMemo(() => {
+    if (!hierarchyClass) return [];
+    return teacherAssignments
+      .filter((a) => a.className === hierarchyClass)
+      .map((a) => a.sectionName);
+  }, [teacherAssignments, hierarchyClass]);
+
+  const nextAssignment = useMemo(() => {
+    if (!hierarchyClass || !hierarchySection) return null;
+    const idx = teacherAssignments.findIndex(
+      (a) => a.className === hierarchyClass && a.sectionName === hierarchySection,
+    );
+    if (idx < 0 || idx >= teacherAssignments.length - 1) return null;
+    return teacherAssignments[idx + 1];
+  }, [teacherAssignments, hierarchyClass, hierarchySection]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -85,8 +125,10 @@ export function ParentsEngagementView() {
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
+    void fetchParentEngagementHierarchy(academicYear).then(setHierarchyMeta);
     void fetchStudentsMeta().then((r) => {
       setClassOptions(r.filters.classes);
+      if (r.filters.defaultAcademicYear) setAcademicYear(r.filters.defaultAcademicYear);
     });
     void fetchStudents({ pageSize: 500, viewAll: true }).then((r) =>
       setAllStudents(r.students.map((s) => ({
@@ -95,7 +137,36 @@ export function ParentsEngagementView() {
         classGroup: s.classSection || `${s.className}-${s.sectionName}`,
       }))),
     );
-  }, []);
+  }, [academicYear]);
+
+  useEffect(() => {
+    if (!hierarchyClass) {
+      setSectionStudents([]);
+      setSelectedPlanChildren([]);
+      return;
+    }
+    void fetchStudents({
+      className: hierarchyClass,
+      sectionName: hierarchySection || undefined,
+      academicYear,
+      viewAll: true,
+      pageSize: 500,
+    }).then((r) => {
+      const students = r.students.map((s) => ({
+        id: s.id,
+        fullName: s.fullName,
+        classGroup: s.classSection || `${s.className}-${s.sectionName}`,
+      }));
+      setSectionStudents(students);
+      if (filterMode === 'hierarchy' && students.length > 0) {
+        setSelectedPlanChildren(students.map((s) => ({
+          studentId: s.id,
+          name: s.fullName,
+          classGroup: s.classGroup,
+        })));
+      }
+    });
+  }, [hierarchyClass, hierarchySection, academicYear, filterMode]);
 
   useEffect(() => {
     if (!childClass) {
@@ -192,12 +263,40 @@ export function ParentsEngagementView() {
     setParentSearch('');
     setChildClass('');
     setChildSection('');
+    setTeacherName('');
+    setHierarchyClass('');
+    setHierarchySection('');
+    setSectionStudents([]);
     setSelectedPlanChildren([]);
     setPlanAllChildren(false);
   };
 
+  const applyHierarchyAssignment = (className: string, sectionName: string) => {
+    setHierarchyClass(className);
+    setHierarchySection(sectionName);
+    setSelectedChildId('');
+    setSelectedParent(null);
+    setSelectedParentKey(null);
+  };
+
+  const advanceToNextClass = () => {
+    if (!nextAssignment) return false;
+    applyHierarchyAssignment(nextAssignment.className, nextAssignment.sectionName);
+    return true;
+  };
+
   const openPlanForm = () => {
-    setPlanAllChildren(selectedParent ? selectedParent.children.length > 1 : false);
+    if (filterMode === 'hierarchy' && (!teacherName || !hierarchyClass || !hierarchySection)) {
+      setMessage('Select Teacher, Class, and Section in the hierarchy filter first.');
+      return;
+    }
+    setPlanAllChildren(
+      filterMode === 'hierarchy'
+        ? true
+        : selectedParent
+          ? selectedParent.children.length > 1
+          : false,
+    );
     setModalStudentId(selectedPlanChildren[0]?.studentId || selectedChildId || '');
     setForm(emptyForm());
     if (selectedParent) {
@@ -259,7 +358,63 @@ export function ParentsEngagementView() {
     return [];
   };
 
-  const handleSavePlan = async () => {
+  const hierarchyPayload = () => ({
+    teacherName,
+    className: hierarchyClass,
+    sectionName: hierarchySection,
+    academicYear,
+    publishToMobile: true,
+  });
+
+  const persistEngagementPlan = async (andCreateNext = false) => {
+    const targets = resolveCreateTargets();
+    if (targets.length === 0) {
+      setMessage('Select students for this class/section or choose a parent/child.');
+      return;
+    }
+
+    const payload = {
+      parentRelationship: form.parentRelationship,
+      title: form.title,
+      description: form.description,
+      engagementType: form.engagementType,
+      plannedAt: new Date(form.plannedAt).toISOString(),
+      actionsTaken: form.actionsTaken || undefined,
+      outcome: form.outcome || undefined,
+      status: form.outcome ? 'COMPLETED' : 'PLANNED',
+      completedAt: form.outcome ? new Date().toISOString() : undefined,
+      ...(filterMode === 'hierarchy' ? hierarchyPayload() : {}),
+    };
+
+    if (targets.length === 1) {
+      await createParentEngagement({ ...payload, studentId: targets[0].studentId });
+    } else {
+      await createParentEngagementsBatch(targets.map((c) => ({ ...payload, studentId: c.studentId })));
+    }
+
+    setMessage(
+      filterMode === 'hierarchy'
+        ? `Created ${targets.length} engagement plan(s) for ${hierarchyClass} ${hierarchySection} and published to teacher mobile app.`
+        : targets.length > 1
+          ? `Created ${targets.length} engagement plans.`
+          : 'Action plan created.',
+    );
+
+    if (andCreateNext) {
+      const queued = nextAssignment;
+      if (queued && advanceToNextClass()) {
+        setForm((f) => ({ ...f, title: '', description: '', actionsTaken: '', outcome: '' }));
+        setMessage(`Saved. Continue with ${queued.classGroup}.`);
+        void load();
+        return;
+      }
+    }
+
+    closeEngagementModal();
+    void load();
+  };
+
+  const handleSavePlan = async (andCreateNext = false) => {
     if (!form.title || !form.plannedAt) {
       setMessage('Title and planned date are required on Action Plan.');
       return;
@@ -289,33 +444,7 @@ export function ParentsEngagementView() {
     }
 
     try {
-      const payload = {
-        parentRelationship: form.parentRelationship,
-        title: form.title,
-        description: form.description,
-        engagementType: form.engagementType,
-        plannedAt: new Date(form.plannedAt).toISOString(),
-        actionsTaken: form.actionsTaken || undefined,
-        outcome: form.outcome || undefined,
-        status: form.outcome ? 'COMPLETED' : 'PLANNED',
-        completedAt: form.outcome ? new Date().toISOString() : undefined,
-      };
-
-      if (targets.length === 1) {
-        await createParentEngagement({ ...payload, studentId: targets[0].studentId });
-      } else {
-        await createParentEngagementsBatch(targets.map((c) => ({ ...payload, studentId: c.studentId })));
-      }
-
-      setMessage(
-        form.outcome
-          ? 'Engagement created and marked complete with results.'
-          : targets.length > 1
-            ? `Created ${targets.length} engagement plans.`
-            : 'Action plan created.',
-      );
-      closeEngagementModal();
-      void load();
+      await persistEngagementPlan(andCreateNext);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : 'Failed to create engagement');
     }
@@ -361,7 +490,7 @@ export function ParentsEngagementView() {
       <ParentPageHeader
         breadcrumb="Parent Management › Parents Engagement"
         title="Parents Engagement"
-        subtitle="Plan and track parent engagement events, outcomes, and follow-ups."
+        subtitle="Teacher → Class → Section → Parents Engagement. Plans sync to the teacher mobile app."
         actions={
           <button type="button" onClick={openPlanForm} className={pm.btnPrimary}>
             <Plus size={14} /> New Engagement
@@ -373,7 +502,22 @@ export function ParentsEngagementView() {
         {message && <p className={pm.message}>{message}</p>}
 
         <div className={`${pm.card} ${pm.cardPad} space-y-4`}>
+          <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-3 text-xs text-indigo-900">
+            <p className="font-bold">Hierarchy workflow</p>
+            <p className="mt-1 text-indigo-800">
+              Select <strong>Teacher</strong> → <strong>Class</strong> → <strong>Section</strong>, then create parent engagement plans for all students in that section.
+              Teacher assignments come from Academic Management (Class Teacher &amp; Teacher Allocation) and are published to the mobile app automatically.
+            </p>
+          </div>
+
           <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => { setFilterMode('hierarchy'); clearSelection(); }}
+              className={filterMode === 'hierarchy' ? pm.tabActive : pm.tab}
+            >
+              <Users size={12} className="inline mr-1" /> Teacher → Class → Section
+            </button>
             <button
               type="button"
               onClick={() => { setFilterMode('parent'); clearSelection(); }}
@@ -388,14 +532,74 @@ export function ParentsEngagementView() {
             >
               <User size={12} className="inline mr-1" /> Child-wise Filter
             </button>
-            {(selectedParent || selectedChildId) && (
+            {(selectedParent || selectedChildId || teacherName) && (
               <button type="button" onClick={clearSelection} className={`${pm.btnGhost} ml-auto text-xs`}>
                 <X size={12} /> Clear selection
               </button>
             )}
           </div>
 
-          {filterMode === 'parent' ? (
+          {filterMode === 'hierarchy' ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <select value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} className={pm.selectFull}>
+                  <option value={academicYear}>{academicYear}</option>
+                </select>
+                <select
+                  value={teacherName}
+                  onChange={(e) => {
+                    setTeacherName(e.target.value);
+                    setHierarchyClass('');
+                    setHierarchySection('');
+                  }}
+                  className={pm.selectFull}
+                >
+                  <option value="">Select Teacher</option>
+                  {(hierarchyMeta?.teachers || []).map((t) => (
+                    <option key={t.teacherName} value={t.teacherName}>{t.teacherName}</option>
+                  ))}
+                </select>
+                <select
+                  value={hierarchyClass}
+                  onChange={(e) => {
+                    setHierarchyClass(e.target.value);
+                    setHierarchySection('');
+                  }}
+                  disabled={!teacherName}
+                  className={pm.selectFull}
+                >
+                  <option value="">Select Class</option>
+                  {teacherClassOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <select
+                  value={hierarchySection}
+                  onChange={(e) => setHierarchySection(e.target.value)}
+                  disabled={!hierarchyClass}
+                  className={pm.selectFull}
+                >
+                  <option value="">Select Section</option>
+                  {teacherSectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              {teacherName && teacherAssignments.length === 0 && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2">
+                  No class/section assignments found for this teacher. Assign class teachers in Academic Management → Class Sections or Teacher Allocation.
+                </p>
+              )}
+              {teacherName && hierarchyClass && hierarchySection && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-bold text-slate-700 mb-2">
+                    Students in {hierarchyClass} {hierarchySection} ({sectionStudents.length})
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                    {sectionStudents.map((s) => (
+                      <span key={s.id} className={`${pm.badge} ${pm.badgeBlue}`}>{s.fullName}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : filterMode === 'parent' ? (
             <div className="space-y-3">
               <div className="flex flex-col sm:flex-row gap-2">
                 <input
@@ -498,13 +702,20 @@ export function ParentsEngagementView() {
         )}
 
         <ParentTableCard
-          title={selectedParent || selectedChildId ? 'Filtered Engagement Events' : 'Engagement Events'}
+          title={
+            filterMode === 'hierarchy' && teacherName && hierarchyClass
+              ? `Engagements — ${teacherName} · ${hierarchyClass} ${hierarchySection || ''}`
+              : selectedParent || selectedChildId
+                ? 'Filtered Engagement Events'
+                : 'Engagement Events'
+          }
           footer={`${records.length} event(s)`}
         >
           <table className={pm.table}>
             <thead className={pm.tableHead}>
               <tr>
                 <th className={pm.th}>Title</th>
+                <th className={pm.th}>Teacher</th>
                 <th className={pm.th}>Student</th>
                 <th className={pm.th}>Parent</th>
                 <th className={pm.th}>Type</th>
@@ -515,7 +726,7 @@ export function ParentsEngagementView() {
             </thead>
             <tbody className={pm.tbody}>
               {records.length === 0 ? (
-                <tr><td colSpan={7} className="p-10 text-center text-slate-400 text-sm">No engagements yet</td></tr>
+                <tr><td colSpan={8} className="p-10 text-center text-slate-400 text-sm">No engagements yet</td></tr>
               ) : records.map((r) => (
                 <tr key={r.id} className={pm.trHover}>
                   <td className={`${pm.td} font-medium text-slate-800`}>
@@ -530,6 +741,13 @@ export function ParentsEngagementView() {
                         Result: {r.outcome}
                       </p>
                     )}
+                  </td>
+                  <td className={pm.td}>
+                    <div className="text-sm">{r.teacherName || '—'}</div>
+                    <div className="text-[10px] text-slate-500">
+                      {r.className ? `${r.className} ${r.sectionName}` : r.classGroup}
+                      {r.mobilePublished ? ' · Mobile' : ''}
+                    </div>
                   </td>
                   <td className={pm.td}>
                     <div className="text-sm">{r.studentName}</div>
@@ -601,7 +819,15 @@ export function ParentsEngagementView() {
 
           {engagementModal?.tab === 'plan' ? (
             <div className="space-y-3">
-              {engagementModal.mode === 'create' && (
+              {engagementModal.mode === 'create' && filterMode === 'hierarchy' && (
+                <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-3 text-xs text-slate-700 space-y-1">
+                  <p><span className="font-semibold text-slate-800">Teacher:</span> {teacherName}</p>
+                  <p><span className="font-semibold text-slate-800">Class / Section:</span> {hierarchyClass} {hierarchySection}</p>
+                  <p><span className="font-semibold text-slate-800">Students:</span> {selectedPlanChildren.length} selected for engagement plan</p>
+                </div>
+              )}
+
+              {engagementModal.mode === 'create' && filterMode !== 'hierarchy' && (
                 <>
                   {selectedPlanChildren.length > 0 ? (
                     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
@@ -730,12 +956,23 @@ export function ParentsEngagementView() {
           )}
         </div>
 
-        <div className="flex gap-2 justify-end pt-2">
+        <div className="flex gap-2 justify-end pt-2 flex-wrap">
           <button type="button" onClick={closeEngagementModal} className={pm.btnCancel}>Cancel</button>
           {engagementModal?.tab === 'plan' ? (
-            <button type="button" onClick={() => void handleSavePlan()} className={pm.btnSave}>
-              {engagementModal.mode === 'edit' ? 'Save Plan' : 'Save'}
-            </button>
+            <>
+              <button type="button" onClick={() => void handleSavePlan(false)} className={pm.btnSave}>
+                {engagementModal.mode === 'edit' ? 'Save Plan' : 'Save'}
+              </button>
+              {engagementModal.mode === 'create' && filterMode === 'hierarchy' && nextAssignment && (
+                <button
+                  type="button"
+                  onClick={() => void handleSavePlan(true)}
+                  className={pm.btnPrimary}
+                >
+                  Save &amp; create next class
+                </button>
+              )}
+            </>
           ) : (
             <button type="button" onClick={() => void handleSaveResults()} className={pm.btnSave}>
               {form.outcome.trim() ? 'Save Results & Complete' : 'Save Actions'}

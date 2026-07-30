@@ -2,6 +2,7 @@ import { ParentEngagementStatus, ParentRelationship, Student } from '@prisma/cli
 import { prisma } from './prisma.js';
 import { deriveParentContacts, loadStudentsForParents, makeParentKey, parseParentKey } from './parents.js';
 import { formatClassSection } from './students.js';
+import { createRosterTask, publishTeacherRosterTasks } from './teacherRoster.js';
 
 function studentFullName(s: Pick<Student, 'firstName' | 'lastName'>) {
   return [s.firstName, s.lastName].filter(Boolean).join(' ').trim();
@@ -28,6 +29,11 @@ export function serializeEngagement(row: {
   outcome: string;
   studentFeedbackNotes: string;
   status: ParentEngagementStatus;
+  teacherName: string;
+  className: string;
+  sectionName: string;
+  academicYear: string;
+  rosterTaskId: string;
   createdAt: Date;
   updatedAt: Date;
 }) {
@@ -47,6 +53,13 @@ export function serializeEngagement(row: {
     studentFeedbackNotes: row.studentFeedbackNotes,
     status: row.status,
     statusLabel: ENGAGEMENT_STATUS_UI[row.status],
+    teacherName: row.teacherName,
+    className: row.className,
+    sectionName: row.sectionName,
+    classGroup: row.className ? formatClassSection(row.className, row.sectionName) : '',
+    academicYear: row.academicYear,
+    rosterTaskId: row.rosterTaskId,
+    mobilePublished: Boolean(row.rosterTaskId),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -92,7 +105,7 @@ export async function enrichEngagementRecords(
     return {
       ...base,
       studentName: studentFullName(student),
-      classGroup: formatClassSection(student.className, student.sectionName),
+      classGroup: base.classGroup || formatClassSection(student.className, student.sectionName),
       parentName,
       parentMobile: parentMobile || '—',
       parentKey: makeParentKey(rel, parentMobile, parentName),
@@ -123,4 +136,115 @@ export async function getEngagementDashboard(institutionId: string) {
     prisma.parentEngagementEvent.count({ where: { institutionId, status: 'MISSED' } }),
   ]);
   return { total, planned, completed, missed };
+}
+
+export type EngagementHierarchyContext = {
+  teacherName: string;
+  className: string;
+  sectionName: string;
+  academicYear: string;
+};
+
+export async function getEngagementHierarchyMeta(institutionId: string, academicYear = '2025-26') {
+  const sections = await prisma.academicClassSection.findMany({
+    where: { institutionId, academicYear },
+    orderBy: [{ className: 'asc' }, { sectionName: 'asc' }],
+  });
+
+  const allocations = await prisma.academicTeacherAllocation.findMany({
+    where: { institutionId, academicYear },
+    select: { teacherName: true, className: true, sectionName: true },
+    distinct: ['teacherName', 'className', 'sectionName'],
+  });
+
+  type Assignment = { className: string; sectionName: string; classGroup: string };
+  const teacherMap = new Map<string, { teacherName: string; assignments: Assignment[] }>();
+
+  const addAssignment = (teacherName: string, className: string, sectionName: string) => {
+    const name = teacherName.trim();
+    if (!name || !className.trim()) return;
+    if (!teacherMap.has(name)) {
+      teacherMap.set(name, { teacherName: name, assignments: [] });
+    }
+    const bucket = teacherMap.get(name)!;
+    const key = `${className}::${sectionName}`;
+    if (!bucket.assignments.some((a) => `${a.className}::${a.sectionName}` === key)) {
+      bucket.assignments.push({
+        className,
+        sectionName,
+        classGroup: formatClassSection(className, sectionName),
+      });
+    }
+  };
+
+  for (const s of sections) {
+    if (s.classTeacher?.trim()) {
+      addAssignment(s.classTeacher, s.className, s.sectionName);
+    }
+  }
+  for (const a of allocations) {
+    addAssignment(a.teacherName, a.className, a.sectionName);
+  }
+
+  const teachers = [...teacherMap.values()].sort((a, b) => a.teacherName.localeCompare(b.teacherName));
+  const classes = [...new Set(sections.map((s) => s.className))].sort();
+  const sectionsByClass = sections.reduce<Record<string, string[]>>((acc, s) => {
+    const list = acc[s.className] || [];
+    if (!list.includes(s.sectionName)) list.push(s.sectionName);
+    acc[s.className] = list.sort();
+    return acc;
+  }, {});
+
+  return { academicYear, teachers, classes, sectionsByClass };
+}
+
+export async function publishEngagementToMobile(
+  institutionId: string,
+  engagement: {
+    id: string;
+    title: string;
+    description: string;
+    plannedAt: Date;
+  },
+  ctx: EngagementHierarchyContext,
+) {
+  if (!ctx.teacherName.trim()) return '';
+
+  const existing = await prisma.academicTeacherRosterTask.findFirst({
+    where: {
+      institutionId,
+      linkedEntityId: engagement.id,
+      taskType: 'PARENT_ENGAGEMENT',
+    },
+  });
+  if (existing) {
+    if (!existing.publishedAt) {
+      await publishTeacherRosterTasks(institutionId, {
+        academicYear: ctx.academicYear,
+        taskIds: [existing.id],
+      });
+    }
+    return existing.id;
+  }
+
+  const task = await createRosterTask(institutionId, {
+    academicYear: ctx.academicYear,
+    teacherName: ctx.teacherName,
+    taskType: 'PARENT_ENGAGEMENT',
+    title: engagement.title,
+    description: engagement.description,
+    className: ctx.className,
+    sectionName: ctx.sectionName,
+    linkedEntityId: engagement.id,
+    dueDate: engagement.plannedAt.toISOString(),
+    feedbackRequired: true,
+    assignedBy: 'Parents Engagement',
+  });
+
+  await publishTeacherRosterTasks(institutionId, {
+    academicYear: ctx.academicYear,
+    taskIds: [task.id],
+  });
+
+  return task.id;
 }

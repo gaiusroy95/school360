@@ -39,12 +39,33 @@ export function LeadsPipelineView() {
   }, [refresh]);
 
   const handleStatusChange = async (id: string, newStatus: EnquiryStatus) => {
+    const current = enquiries.find((e) => e.id === id);
+    if (!current || current.status === newStatus) return;
+
+    setEnquiries((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, status: newStatus } : e)),
+    );
+    setSelectedEnquiry((prev) =>
+      prev?.id === id ? { ...prev, status: newStatus } : prev,
+    );
+
     try {
       await updateEnquiryStatus(id, newStatus, undefined, performer);
-      await refresh();
+      setErrorMsg(null);
     } catch (err) {
+      setEnquiries((prev) =>
+        prev.map((e) => (e.id === id ? { ...e, status: current.status } : e)),
+      );
+      setSelectedEnquiry((prev) =>
+        prev?.id === id ? { ...prev, status: current.status } : prev,
+      );
       setErrorMsg(err instanceof Error ? err.message : 'Failed to update status');
     }
+  };
+
+  const handleEdit = (enq: Enquiry) => {
+    const latest = enquiries.find((e) => e.id === enq.id) || enq;
+    setSelectedEnquiry(latest);
   };
 
   if (loading) {
@@ -83,15 +104,19 @@ export function LeadsPipelineView() {
       <LeadsKanban
         enquiries={enquiries}
         onStatusUpdate={handleStatusChange}
-        onEdit={(enq) => setSelectedEnquiry(enq)}
+        onEdit={handleEdit}
       />
 
       {selectedEnquiry && (
         <EnquiryEditModal
+          key={`${selectedEnquiry.id}-${selectedEnquiry.status}`}
           enquiry={selectedEnquiry}
           performer={performer}
           onClose={() => setSelectedEnquiry(null)}
-          onSaved={refresh}
+          onSaved={async () => {
+            await refresh();
+            setSelectedEnquiry(null);
+          }}
         />
       )}
     </div>

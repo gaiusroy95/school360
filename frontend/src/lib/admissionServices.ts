@@ -33,6 +33,7 @@ export type FollowUpMode =
   | 'Phone'
   | 'Email'
   | 'Video Call'
+  | 'Google Meet'
   | 'Campus Visit'
   | 'In-person Counselling';
 
@@ -51,6 +52,17 @@ export interface FollowUpTask {
   dueTime?: string;
   scheduledAt?: string;
   status: 'Pending' | 'Completed' | string;
+  meetingLink?: string;
+  calendarEventId?: string;
+  calendarSyncStatus?: string;
+  syncGoogleCalendar?: boolean;
+  notifyEmail?: boolean;
+  notifyWhatsApp?: boolean;
+  notificationLog?: {
+    email?: { sent: boolean; at?: string; error?: string };
+    whatsapp?: { sent: boolean; at?: string; error?: string };
+    calendar?: { synced: boolean; at?: string; error?: string; stub?: boolean };
+  };
   createdAt?: string;
   updatedAt?: string;
 }
@@ -64,6 +76,8 @@ export type FollowUpTaskMeta = {
     enquirerName: string;
     assignedTo: string;
     classInterested: string;
+    email?: string;
+    mobile?: string;
   }>;
   counselors: string[];
 };
@@ -104,6 +118,7 @@ export type EnquiryMeta = {
   classes: string[];
   sources: string[];
   statuses: string[];
+  counselors?: string[];
   classesFromSetup?: boolean;
 };
 
@@ -157,6 +172,9 @@ export async function updateFollowUpTask(
     dueTime: string | null;
     assignedTo: string;
     status: 'Pending' | 'Completed';
+    syncGoogleCalendar: boolean;
+    notifyEmail: boolean;
+    notifyWhatsApp: boolean;
   }>,
 ) {
   return api<{ task: FollowUpTask }>(`/api/enquiries/tasks/${taskId}`, {
@@ -219,12 +237,22 @@ export async function addFollowUpTask(
     subject?: string;
     discussionNotes?: string;
     assignedTo?: string;
+    syncGoogleCalendar?: boolean;
+    notifyEmail?: boolean;
+    notifyWhatsApp?: boolean;
   },
 ) {
   return api<{ task: FollowUpTask }>(`/api/enquiries/${enquiryDbId}/tasks`, {
     method: 'POST',
     body: JSON.stringify(taskData),
   });
+}
+
+export async function syncFollowUpCalendar(taskId: string) {
+  return api<{ task: FollowUpTask; sync: Record<string, unknown> }>(
+    `/api/enquiries/tasks/${taskId}/sync-calendar`,
+    { method: 'POST' },
+  );
 }
 
 export async function importEnquiries(rows: EnquiryInput[], replaceAll = false) {

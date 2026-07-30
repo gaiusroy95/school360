@@ -5,7 +5,7 @@ import {
   ShieldAlert, ChevronRight, X, Building2
 } from 'lucide-react';
 import { isModuleActive, isSubActive, toViewKey } from '../lib/navigation';
-import { APP_NAME, APP_TAGLINE } from '../lib/branding';
+import { APP_NAME } from '../lib/branding';
 import { BrandLogo } from './shared/BrandLogo';
 
 const menuItems = [
@@ -120,17 +120,15 @@ export function Sidebar({ isOpen, setIsOpen, currentView, setCurrentView }: Side
       <div className="p-4 border-b border-slate-700/50 relative">
         <button 
           onClick={() => setIsOpen(false)}
-          className="absolute right-4 top-4 p-1 text-slate-400 hover:text-white lg:hidden"
+          className="absolute right-3 top-3 p-1 text-slate-400 hover:text-white lg:hidden z-10"
         >
           <X size={20} />
         </button>
-        <div className="flex items-center gap-2 mt-2 lg:mt-0">
-          <BrandLogo className="h-8 w-8 object-contain shrink-0" />
-          <h1 className="text-lg font-bold tracking-tight">{APP_NAME}</h1>
+        <div className="mt-1 lg:mt-0 pr-7 lg:pr-0">
+          <div className="rounded-lg overflow-hidden bg-white shadow-sm ring-1 ring-slate-600/30">
+            <BrandLogo className="w-full h-auto max-h-[3.25rem] object-contain object-center block" />
+          </div>
         </div>
-        <p className="text-[9px] text-slate-400 mt-1 leading-tight uppercase tracking-wider">
-          {APP_TAGLINE}
-        </p>
       </div>
 
       <div className="flex-1 overflow-y-auto py-2 custom-scrollbar">

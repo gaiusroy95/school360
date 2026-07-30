@@ -309,3 +309,77 @@ export const PAYMENT_MODES = [
   { key: 'CHEQUE', label: 'Cheque' },
   { key: 'BANK_TRANSFER', label: 'Bank Transfer' },
 ] as const;
+
+export type FeeScheduleSource =
+  | 'institution_setup'
+  | 'fee_structure_class'
+  | 'fee_structure_student';
+
+export type ResolvedFeeSchedule = FeeSchedule & { source: FeeScheduleSource };
+
+type FeeStructureRow = Awaited<
+  ReturnType<typeof import('./feeStructure.js').listFeeStructures>
+>[number];
+
+function feeStructureToSchedule(row: FeeStructureRow): ResolvedFeeSchedule {
+  const heads = (row.feeHeads || [])
+    .filter((h) => h.amount > 0)
+    .map((h) => ({ key: h.key, label: h.label, amount: h.amount }));
+  return {
+    class: row.className,
+    section: row.sectionName || 'A',
+    frequency: row.frequency || 'Yearly',
+    refundable: 'No',
+    heads,
+    total: row.totalAmount,
+    source: row.studentId ? 'fee_structure_student' : 'fee_structure_class',
+  };
+}
+
+/** Resolve fee heads from student-specific structure, institution setup, or class fee structure. */
+export async function resolveCollectionFeeSchedule(
+  institutionId: string,
+  opts: {
+    className: string;
+    sectionName?: string;
+    studentId?: string;
+    academicYear?: string;
+  },
+): Promise<ResolvedFeeSchedule | null> {
+  const className = opts.className.trim();
+  const sectionName = (opts.sectionName || '').trim();
+  const academicYear = opts.academicYear || '2025-26';
+  if (!className) return null;
+
+  const { listFeeStructures } = await import('./feeStructure.js');
+
+  if (opts.studentId) {
+    const studentStructures = await listFeeStructures(institutionId, {
+      academicYear,
+      className,
+      sectionName: sectionName || undefined,
+    });
+    const studentRow = studentStructures.find(
+      (s) => s.studentId === opts.studentId && s.feeHeads.length > 0,
+    );
+    if (studentRow) return feeStructureToSchedule(studentRow);
+  }
+
+  const ctx = await loadFeeCollectionContext(institutionId);
+  const setupSchedule = findFeeSchedule(ctx.schedules, className, sectionName);
+  if (setupSchedule?.heads.length) {
+    return { ...setupSchedule, source: 'institution_setup' };
+  }
+
+  const classStructures = await listFeeStructures(institutionId, {
+    academicYear,
+    className,
+    sectionName: sectionName || undefined,
+  });
+  const classRow =
+    classStructures.find((s) => !s.studentId && s.feeHeads.length > 0) ||
+    classStructures.find((s) => !s.studentId && s.totalAmount > 0);
+  if (classRow) return feeStructureToSchedule(classRow);
+
+  return null;
+}

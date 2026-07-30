@@ -18,6 +18,11 @@ import { onDocumentIdentityTileSaved } from '../lib/documentIdentityCustomFields
 import { onDepartmentOpsTileSaved } from '../lib/departmentOperationsManagement.js';
 import { onDataModulesUiTileSaved } from '../lib/dataManagementModulesUi.js';
 import { onGlobalEnvironmentTileSaved } from '../lib/globalEnvironmentSettings.js';
+import {
+  getInstitutionLogoMeta,
+  readInstitutionLogo,
+  saveInstitutionLogo,
+} from '../lib/institutionBranding.js';
 
 export const institutionRouter = Router();
 
@@ -80,6 +85,39 @@ institutionRouter.get('/', async (_req, res) => {
 institutionRouter.get('/setup', async (_req, res) => {
   const institution = await getOrCreateDefaultInstitution();
   return res.json({ setup: institution.setup });
+});
+
+institutionRouter.get('/branding/logo', async (_req, res) => {
+  const institution = await getOrCreateDefaultInstitution();
+  const file = await readInstitutionLogo(institution.id);
+  if (!file) return res.status(404).json({ error: 'No logo uploaded' });
+  res.setHeader('Content-Type', file.mimeType);
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  return res.send(file.buffer);
+});
+
+institutionRouter.get('/branding/logo/meta', async (_req, res) => {
+  const institution = await getOrCreateDefaultInstitution();
+  return res.json(await getInstitutionLogoMeta(institution.id));
+});
+
+institutionRouter.post('/branding/logo', async (req, res) => {
+  const schema = z.object({
+    fileName: z.string().min(1),
+    mimeType: z.string().min(1),
+    dataBase64: z.string().min(1),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  try {
+    const institution = await getOrCreateDefaultInstitution();
+    const result = await saveInstitutionLogo(institution.id, parsed.data);
+    return res.status(201).json(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Logo upload failed';
+    return res.status(400).json({ error: message });
+  }
 });
 
 institutionRouter.patch('/setup/:tileKey', async (req, res) => {

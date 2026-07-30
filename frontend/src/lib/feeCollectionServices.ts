@@ -35,6 +35,7 @@ export type FeeSchedule = {
 };
 
 export type FeeStudent = {
+  studentId: string;
   admissionRecordId: string;
   admissionNumber: string;
   studentName: string;
@@ -44,7 +45,14 @@ export type FeeStudent = {
   className: string;
   sectionName: string;
   academicYear: string;
+  hasFeeSchedule?: boolean;
+  pendingInvoiceId?: string | null;
+  pendingInvoiceNumber?: string | null;
 };
+
+export function feeStudentOptionKey(s: FeeStudent) {
+  return s.studentId || `adm:${s.admissionRecordId}`;
+}
 
 export type FeeReceipt = {
   id: string;
@@ -75,6 +83,7 @@ export async function fetchFeeCollectionMeta() {
     paymentModes: Array<{ key: string; label: string }>;
     students: FeeStudent[];
     summary: {
+      activeStudents: number;
       confirmedAdmissions: number;
       totalReceipts: number;
       totalCollected: number;
@@ -83,9 +92,20 @@ export async function fetchFeeCollectionMeta() {
   }>('/api/fee-collection/meta');
 }
 
-export async function fetchFeeSchedule(className: string, sectionName: string) {
+export async function fetchFeeSchedule(
+  className: string,
+  sectionName: string,
+  opts?: { studentId?: string; academicYear?: string },
+) {
   const q = new URLSearchParams({ className, sectionName });
-  return api<{ schedule: FeeSchedule; currency: string }>(`/api/fee-collection/schedule?${q}`);
+  if (opts?.studentId) q.set('studentId', opts.studentId);
+  if (opts?.academicYear) q.set('academicYear', opts.academicYear);
+  return api<{
+    schedule: FeeSchedule;
+    currency: string;
+    source?: string;
+    pendingInvoice?: { id: string; invoiceNumber: string } | null;
+  }>(`/api/fee-collection/schedule?${q}`);
 }
 
 export async function fetchFeeReceipts(params?: { q?: string }) {
@@ -100,7 +120,8 @@ export async function fetchFeeReceipt(id: string) {
 }
 
 export async function collectFee(payload: {
-  admissionRecordId: string;
+  studentId?: string;
+  admissionRecordId?: string;
   paymentMode: string;
   feeItems: Array<{ key: string; label?: string; amount: number }>;
   remarks?: string;

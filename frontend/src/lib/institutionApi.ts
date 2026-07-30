@@ -1,5 +1,49 @@
 import { api } from './api';
 
+export async function uploadInstitutionLogo(file: File) {
+  const allowed = ['image/png', 'image/jpeg', 'image/jpg', 'application/pdf'];
+  if (!allowed.includes(file.type)) {
+    throw new Error('Only PNG, JPG, and PDF files are allowed');
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    throw new Error('Logo file must be 2MB or smaller');
+  }
+
+  const dataBase64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const base64 = result.includes(',') ? result.split(',')[1] : result;
+      resolve(base64);
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+
+  return api<{
+    logoUrl: string;
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+  }>('/api/institution/branding/logo', {
+    method: 'POST',
+    body: JSON.stringify({
+      fileName: file.name,
+      mimeType: file.type,
+      dataBase64,
+    }),
+  });
+}
+
+export async function fetchInstitutionLogoMeta() {
+  return api<{
+    hasLogo: boolean;
+    logoUrl: string | null;
+    fileName?: string;
+    mimeType?: string;
+  }>('/api/institution/branding/logo/meta');
+}
+
 export type InstitutionSetup = Record<string, unknown> & {
   id?: string;
   institutionId?: string;

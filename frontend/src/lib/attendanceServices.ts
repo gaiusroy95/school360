@@ -1008,6 +1008,8 @@ export type GatePassItem = {
   exitTime: string;
   completedAt: string | null;
   principalNotifiedAt: string | null;
+  otpVerified: boolean;
+  otpVerifiedAt: string | null;
   source: string;
   createdAt: string;
   updatedAt: string;
@@ -1015,6 +1017,9 @@ export type GatePassItem = {
   fatherMobile: string;
   motherName: string;
   motherMobile: string;
+  studentPhoto?: string;
+  fatherPhoto?: string;
+  motherPhoto?: string;
   canSubmitToPrincipal: boolean;
   canApprove: boolean;
   canReject: boolean;
@@ -1030,6 +1035,7 @@ export type GatePassMeta = {
   sections: string[];
   classGroups: { className: string; sectionName: string; label: string }[];
   passTypes: { id: string; label: string; description: string }[];
+  pickupRelations: { id: string; label: string }[];
   statusLegend: { id: string; label: string }[];
   workflowNote: string;
 };
@@ -1046,6 +1052,9 @@ export type GatePassStudentOption = {
   fatherMobile: string;
   motherName: string;
   motherMobile: string;
+  studentPhoto?: string;
+  fatherPhoto?: string;
+  motherPhoto?: string;
 };
 
 export type GatePassesResponse = {
@@ -1085,6 +1094,26 @@ export async function fetchGatePasses(params?: {
   return api<GatePassesResponse>(`/api/attendance/gate-passes${qs(params)}`);
 }
 
+export async function sendGatePassOtp(input: { studentId: string; mobile: string }) {
+  return api<{
+    sent: boolean;
+    message: string;
+    demoOtp?: string;
+    expiresInSeconds: number;
+    isRegisteredParentMobile: boolean;
+  }>('/api/attendance/gate-passes/send-otp', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function verifyGatePassOtp(input: { studentId: string; mobile: string; otp: string }) {
+  return api<{ verified: boolean; verificationToken: string; message: string }>(
+    '/api/attendance/gate-passes/verify-otp',
+    { method: 'POST', body: JSON.stringify(input) },
+  );
+}
+
 export async function createGatePass(input: {
   studentId: string;
   academicYear?: string;
@@ -1092,8 +1121,9 @@ export async function createGatePass(input: {
   reason: string;
   remarks?: string;
   parentName: string;
-  parentMobile?: string;
+  parentMobile: string;
   parentRelation?: string;
+  otpVerificationToken: string;
   source?: string;
 }) {
   return api<GatePassItem>('/api/attendance/gate-passes', {

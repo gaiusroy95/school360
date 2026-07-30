@@ -17,11 +17,14 @@ import {
   fetchCounselingMeta,
   fetchCounselingQueue,
   fetchCounselingLead,
+  fetchCounselorAnalytics,
+  assignCounselorToLead,
   logCounselingSession,
   type CounselingLead,
   type CounselingLog,
   type CounselingMeta,
   type CounselingSessionInput,
+  type CounselorAnalytics,
   type ActionIntent,
 } from '../../../lib/counsellingServices';
 
@@ -96,6 +99,7 @@ const EMPTY_META: CounselingMeta = {
     'Mark as Lost',
     'Move to Application',
   ],
+  counselors: [],
 };
 
 type SessionForm = CounselingSessionInput & { nextFollowUpDate: string; nextFollowUpTime: string };
@@ -123,8 +127,10 @@ function needsFollowUpDate(intent: string) {
 export function CounsellingView() {
   const { user } = useAuth();
   const counselorName = user?.displayName || user?.email || 'Counselor';
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
 
   const [meta, setMeta] = useState<CounselingMeta>(EMPTY_META);
+  const [analytics, setAnalytics] = useState<CounselorAnalytics | null>(null);
   const [leads, setLeads] = useState<CounselingLead[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedLead, setSelectedLead] = useState<CounselingLead | null>(null);
@@ -138,20 +144,23 @@ export function CounsellingView() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [sessionOpen, setSessionOpen] = useState(false);
   const [form, setForm] = useState<SessionForm>(emptySessionForm);
+  const [assigningCounselor, setAssigningCounselor] = useState(false);
 
   const loadQueue = useCallback(async () => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const [metaRes, queueRes] = await Promise.all([
+      const [metaRes, queueRes, analyticsRes] = await Promise.all([
         fetchCounselingMeta(),
         fetchCounselingQueue({
           sort,
           assignedTo: myLeadsOnly ? counselorName : undefined,
         }),
+        fetchCounselorAnalytics(),
       ]);
       setMeta(metaRes);
       setLeads(queueRes.leads);
+      setAnalytics(analyticsRes);
       setSelectedId((prev) => {
         if (prev && queueRes.leads.some((l) => l.id === prev)) return prev;
         return queueRes.leads[0]?.id ?? null;
@@ -198,6 +207,24 @@ export function CounsellingView() {
   const openSession = () => {
     setForm(emptySessionForm());
     setSessionOpen(true);
+  };
+
+  const handleAssignCounselor = async (assignedTo: string) => {
+    if (!selectedId || !assignedTo.trim()) return;
+    setAssigningCounselor(true);
+    setErrorMsg(null);
+    try {
+      const res = await assignCounselorToLead(selectedId, assignedTo.trim());
+      setSelectedLead(res.lead);
+      setLeads((prev) => prev.map((l) => (l.id === res.lead.id ? res.lead : l)));
+      setSuccessMsg(`Counselor assigned: ${assignedTo}`);
+      const analyticsRes = await fetchCounselorAnalytics();
+      setAnalytics(analyticsRes);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to assign counselor');
+    } finally {
+      setAssigningCounselor(false);
+    }
   };
 
   const buildNextFollowUpIso = (): string | undefined => {
@@ -359,6 +386,10 @@ export function CounsellingView() {
                       <div className="min-w-0">
                         <h4 className="text-sm font-bold text-slate-800 truncate">{l.enquirerName}</h4>
                         <p className="text-[10px] text-slate-500">{l.classInterested || 'Class N/A'}</p>
+                        <p className="text-[10px] font-semibold text-indigo-700 mt-1 flex items-center gap-1">
+                          <User size={10} />
+                          Counselor: {l.assignedTo || 'Unassigned'}
+                        </p>
                       </div>
                       <span className="text-[9px] text-slate-400 whitespace-nowrap">
                         {l.lastContactedAt ? formatRelative(l.lastContactedAt) : 'New'}
@@ -404,14 +435,31 @@ export function CounsellingView() {
                         <p className="text-sm text-slate-500">
                           Applying for: {lead.classInterested || '—'} • {lead.enquiryId}
                         </p>
-                        <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-2">
-                          <Phone size={12} /> {lead.mobile}
-                          {lead.assignedTo && (
-                            <>
-                              <User size={12} /> Counselor: {lead.assignedTo}
-                            </>
-                          )}
+                        <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap">
+                          <span className="inline-flex items-center gap-1">
+                            <Phone size={12} /> {lead.mobile}
+                          </span>
                         </p>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <label className="text-[10px] font-semibold text-slate-600">Counselor:</label>
+                          <select
+                            value={lead.assignedTo || ''}
+                            disabled={assigningCounselor}
+                            onChange={(e) => void handleAssignCounselor(e.target.value)}
+                            className="text-xs border border-slate-300 rounded-md px-2 py-1 bg-white max-w-[200px]"
+                          >
+                            <option value="">Unassigned</option>
+                            {meta.counselors.map((c) => (
+                              <option key={c} value={c}>
+                                {c}
+                              </option>
+                            ))}
+                            {lead.assignedTo && !meta.counselors.includes(lead.assignedTo) && (
+                              <option value={lead.assignedTo}>{lead.assignedTo}</option>
+                            )}
+                          </select>
+                          {assigningCounselor && <Loader2 size={12} className="animate-spin text-slate-400" />}
+                        </div>
                       </div>
                     </div>
                     <span className="text-xs font-medium px-2 py-1 rounded-full bg-slate-100 text-slate-600">
@@ -500,6 +548,91 @@ export function CounsellingView() {
             </>
           )}
         </div>
+      </div>
+
+      {/* Counselor-wise analytics for admin */}
+      <div className="mt-8 bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+          <div>
+            <h3 className="font-semibold text-slate-800">Counselors Wise Status</h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {isAdmin
+                ? 'Admin analysis — enquiry distribution by assigned counselor and pipeline stage'
+                : 'Enquiry distribution by assigned counselor and pipeline stage'}
+            </p>
+          </div>
+          {analytics?.totals && (
+            <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+              <span className="font-semibold">{analytics.totals.totalAssigned}</span> total assigned
+              {' · '}
+              <span className="text-emerald-700">{analytics.totals.converted} converted</span>
+            </div>
+          )}
+        </div>
+
+        {!analytics || analytics.counselors.length === 0 ? (
+          <p className="text-sm text-slate-500 text-center py-8">No counselor assignment data yet.</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {analytics.counselors.map((row) => (
+              <div key={row.counselorName} className="border border-slate-200 rounded-lg overflow-hidden">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-800 text-white">
+                      <th className="text-left px-3 py-2 font-semibold">Counsellor Name</th>
+                      <th className="px-2 py-2 font-semibold text-center">Total</th>
+                      <th className="px-2 py-2 font-semibold text-center">New</th>
+                      <th className="px-2 py-2 font-semibold text-center">In Process</th>
+                      <th className="px-2 py-2 font-semibold text-center">Follow Up</th>
+                      <th className="px-2 py-2 font-semibold text-center">Converted</th>
+                      <th className="px-2 py-2 font-semibold text-center">Not Int.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="bg-sky-50">
+                      <td className="px-3 py-2 font-bold text-slate-800">{row.counselorName}</td>
+                      <td className="px-2 py-2 text-center font-semibold">{row.totalAssigned}</td>
+                      <td className="px-2 py-2 text-center">{row.new}</td>
+                      <td className="px-2 py-2 text-center">{row.inProcess}</td>
+                      <td className="px-2 py-2 text-center">{row.followUp}</td>
+                      <td className="px-2 py-2 text-center text-emerald-700 font-medium">{row.converted}</td>
+                      <td className="px-2 py-2 text-center text-red-600">{row.notInterested}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {analytics?.totals && analytics.counselors.length > 1 && (
+          <div className="mt-4 border border-indigo-200 rounded-lg overflow-hidden">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="bg-indigo-900 text-white">
+                  <th className="text-left px-3 py-2 font-semibold">All Counselors (Total)</th>
+                  <th className="px-2 py-2 font-semibold text-center">Total</th>
+                  <th className="px-2 py-2 font-semibold text-center">New</th>
+                  <th className="px-2 py-2 font-semibold text-center">In Process</th>
+                  <th className="px-2 py-2 font-semibold text-center">Follow Up</th>
+                  <th className="px-2 py-2 font-semibold text-center">Converted</th>
+                  <th className="px-2 py-2 font-semibold text-center">Not Int.</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="bg-indigo-50">
+                  <td className="px-3 py-2 font-bold text-indigo-900">Institution Total</td>
+                  <td className="px-2 py-2 text-center font-semibold">{analytics.totals.totalAssigned}</td>
+                  <td className="px-2 py-2 text-center">{analytics.totals.new}</td>
+                  <td className="px-2 py-2 text-center">{analytics.totals.inProcess}</td>
+                  <td className="px-2 py-2 text-center">{analytics.totals.followUp}</td>
+                  <td className="px-2 py-2 text-center text-emerald-700 font-medium">{analytics.totals.converted}</td>
+                  <td className="px-2 py-2 text-center text-red-600">{analytics.totals.notInterested}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {sessionOpen && selectedId && (

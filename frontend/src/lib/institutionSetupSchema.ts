@@ -12,7 +12,8 @@ export type FieldType =
   | 'multiselect'
   | 'eventMultiselect'
   | 'checkbox'
-  | 'password';
+  | 'password'
+  | 'file';
 
 export type SetupField = {
   key: string;
@@ -23,6 +24,7 @@ export type SetupField = {
   options?: string[];
   help?: string;
   defaultValue?: string;
+  accept?: string;
 };
 
 export type SetupSection = {
@@ -91,7 +93,13 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         id: 'logoBranding',
         title: 'Logo & Branding',
         fields: [
-          { key: 'logoUrl', label: 'Logo URL', type: 'url', help: 'Default: /logo.png (bundled app logo)', placeholder: '/logo.png' },
+          {
+            key: 'logoUrl',
+            label: 'School Logo',
+            type: 'file',
+            accept: 'image/png,image/jpeg,image/jpg,application/pdf',
+            help: 'Upload PNG, JPG, or PDF (max 2MB). Used on ID cards, receipts, and admission forms.',
+          },
           { key: 'faviconUrl', label: 'Favicon URL', type: 'url', placeholder: '/favicon.png' },
           { key: 'primaryColor', label: 'Primary Color', type: 'text', placeholder: '#0f172a' },
           { key: 'secondaryColor', label: 'Secondary Color', type: 'text', placeholder: '#fbbf24' },
@@ -791,6 +799,22 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         ],
       },
       {
+        id: 'softIdNumbering',
+        title: 'Soft ID (ERP Student ID)',
+        description: 'Auto-generated student Soft ID using school initials (3–4 letters) followed by sequential numbers.',
+        fields: [
+          {
+            key: 'softIdPrefix',
+            label: 'Soft ID Prefix',
+            type: 'text',
+            placeholder: 'STAC (auto from school name if blank)',
+            help: 'Leave blank to derive initials from institution name. Numbers are appended automatically e.g. STAC0001.',
+          },
+          { key: 'softIdNext', label: 'Next Soft ID Number', type: 'number', placeholder: '1' },
+          { key: 'softIdPadLength', label: 'Number Padding Digits', type: 'number', placeholder: '4' },
+        ],
+      },
+      {
         id: 'employeeCodeFormat',
         title: 'Employee Code Format',
         fields: [
@@ -1237,7 +1261,9 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         fields: [
           { key: 'clientId', label: 'OAuth Client ID', type: 'text' },
           { key: 'clientSecret', label: 'OAuth Client Secret', type: 'password' },
-          { key: 'scopes', label: 'OAuth Scopes', type: 'text', placeholder: 'openid,email,profile,classroom' },
+          { key: 'scopes', label: 'OAuth Scopes', type: 'text', placeholder: 'openid,email,profile,https://www.googleapis.com/auth/calendar' },
+          { key: 'calendarRefreshToken', label: 'Calendar Refresh Token', type: 'password', help: 'Required for Admission CRM Google Meet auto-sync on follow-ups.' },
+          { key: 'calendarId', label: 'Google Calendar ID', type: 'text', placeholder: 'primary' },
           { key: 'directorySync', label: 'Sync Directory', type: 'select', options: ['Yes', 'No'] },
         ],
       },
@@ -1388,7 +1414,7 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         title: 'Import Students',
         fields: [
           { key: 'enabled', label: 'Allow Student Import', type: 'select', options: ['Yes', 'No'] },
-          { key: 'requiredColumns', label: 'Required Columns', type: 'textarea', placeholder: 'Name, Class, Section, DOB, Mobile' },
+          { key: 'requiredColumns', label: 'Required Columns', type: 'textarea', placeholder: 'Name, Class, Section, DOB, Mobile, Soft ID, SR No, Portal NIC Code' },
         ],
       },
       {
@@ -1404,7 +1430,7 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         title: 'Import Parents',
         fields: [
           { key: 'enabled', label: 'Allow Parent Import', type: 'select', options: ['Yes', 'No'] },
-          { key: 'requiredColumns', label: 'Required Columns', type: 'textarea', placeholder: 'parentName, mobile, studentAdmissionNumber, relationship' },
+          { key: 'requiredColumns', label: 'Required Columns', type: 'textarea', placeholder: 'parentName, mobile, studentAdmissionNumber, studentSoftId, studentSrNo, studentPortalNicCode, relationship' },
         ],
       },
       {

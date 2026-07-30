@@ -8,9 +8,12 @@ import { asyncHandler } from '../lib/asyncHandler.js';
 import {
   enrichEngagementRecords,
   getEngagementDashboard,
+  getEngagementHierarchyMeta,
   nextEngagementRecordId,
+  publishEngagementToMobile,
   resolveStudentIdsForParentKey,
   serializeEngagement,
+  type EngagementHierarchyContext,
 } from '../lib/parentEngagements.js';
 
 export const parentEngagementsRouter = Router();
@@ -28,13 +31,47 @@ const engagementBodySchema = z.object({
   studentFeedbackNotes: z.string().optional(),
   status: z.enum(['PLANNED', 'COMPLETED', 'MISSED', 'CANCELLED']).optional(),
   completedAt: z.string().optional(),
+  teacherName: z.string().optional(),
+  className: z.string().optional(),
+  sectionName: z.string().optional(),
+  academicYear: z.string().optional(),
+  publishToMobile: z.boolean().optional(),
 });
+
+function hierarchyFromBody(data: z.infer<typeof engagementBodySchema>): EngagementHierarchyContext {
+  return {
+    teacherName: data.teacherName?.trim() || '',
+    className: data.className?.trim() || '',
+    sectionName: data.sectionName?.trim() || '',
+    academicYear: data.academicYear?.trim() || '2025-26',
+  };
+}
+
+async function finalizeEngagementCreate(
+  institutionId: string,
+  row: { id: string; title: string; description: string; plannedAt: Date },
+  data: z.infer<typeof engagementBodySchema>,
+) {
+  const hierarchy = hierarchyFromBody(data);
+  let rosterTaskId = '';
+  if (data.publishToMobile !== false && hierarchy.teacherName) {
+    rosterTaskId = await publishEngagementToMobile(institutionId, row, hierarchy);
+    if (rosterTaskId) {
+      await prisma.parentEngagementEvent.update({
+        where: { id: row.id },
+        data: { rosterTaskId },
+      });
+    }
+  }
+  return rosterTaskId;
+}
 
 function engagementCreateData(
   institutionId: string,
   recordId: string,
   data: z.infer<typeof engagementBodySchema>,
 ) {
+  const hierarchy = hierarchyFromBody(data);
   return {
     institutionId,
     recordId,
@@ -49,8 +86,22 @@ function engagementCreateData(
     outcome: data.outcome || '',
     studentFeedbackNotes: data.studentFeedbackNotes || '',
     status: (data.status as ParentEngagementStatus) || 'PLANNED',
+    teacherName: hierarchy.teacherName,
+    className: hierarchy.className,
+    sectionName: hierarchy.sectionName,
+    academicYear: hierarchy.academicYear,
   };
 }
+
+parentEngagementsRouter.get(
+  '/hierarchy-meta',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const academicYear =
+      typeof req.query.academicYear === 'string' ? req.query.academicYear : '2025-26';
+    return res.json(await getEngagementHierarchyMeta(institutionId, academicYear));
+  }),
+);
 
 parentEngagementsRouter.get(
   '/meta',
@@ -68,6 +119,10 @@ parentEngagementsRouter.get(
     const studentId = typeof req.query.studentId === 'string' ? req.query.studentId : undefined;
     const parentKey = typeof req.query.parentKey === 'string' ? req.query.parentKey : undefined;
     const status = typeof req.query.status === 'string' ? req.query.status.toUpperCase() : undefined;
+    const teacherName = typeof req.query.teacherName === 'string' ? req.query.teacherName : undefined;
+    const className = typeof req.query.className === 'string' ? req.query.className : undefined;
+    const sectionName = typeof req.query.sectionName === 'string' ? req.query.sectionName : undefined;
+    const academicYear = typeof req.query.academicYear === 'string' ? req.query.academicYear : undefined;
     const from = typeof req.query.from === 'string' ? new Date(req.query.from) : undefined;
     const to = typeof req.query.to === 'string' ? new Date(req.query.to) : undefined;
 
@@ -82,6 +137,10 @@ parentEngagementsRouter.get(
         institutionId,
         ...(studentId ? { studentId } : {}),
         ...(studentIds ? { studentId: { in: studentIds } } : {}),
+        ...(teacherName ? { teacherName: { contains: teacherName, mode: 'insensitive' } } : {}),
+        ...(className ? { className } : {}),
+        ...(sectionName ? { sectionName } : {}),
+        ...(academicYear ? { academicYear } : {}),
         ...(status && Object.values(ParentEngagementStatus).includes(status as ParentEngagementStatus)
           ? { status: status as ParentEngagementStatus }
           : {}),
@@ -126,7 +185,9 @@ parentEngagementsRouter.post(
       const row = await prisma.parentEngagementEvent.create({
         data: engagementCreateData(institutionId, recordId, item),
       });
-      records.push(row);
+      await finalizeEngagementCreate(institutionId, row, item);
+      const fresh = await prisma.parentEngagementEvent.findUnique({ where: { id: row.id } });
+      if (fresh) records.push(fresh);
     }
     const enriched = await enrichEngagementRecords(institutionId, records);
     return res.status(201).json({ records: enriched });
@@ -144,7 +205,9 @@ parentEngagementsRouter.post(
     const row = await prisma.parentEngagementEvent.create({
       data: engagementCreateData(institutionId, recordId, parsed.data),
     });
-    const [record] = await enrichEngagementRecords(institutionId, [row]);
+    await finalizeEngagementCreate(institutionId, row, parsed.data);
+    const fresh = await prisma.parentEngagementEvent.findUnique({ where: { id: row.id } });
+    const [record] = await enrichEngagementRecords(institutionId, [fresh || row]);
     return res.status(201).json({ record });
   }),
 );

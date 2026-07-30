@@ -74,6 +74,7 @@ import {
 import {
   createRosterTask,
   getMobileTeacherTasks,
+  getTeacherAllocationMeta,
   getTeacherRosterDashboard,
   publishTeacherRosterTasks,
   ROSTER_TASK_TYPES,
@@ -1681,6 +1682,16 @@ academicRouter.post(
 );
 
 // ─── Teacher Roster Planner ─────────────────────────────────────────────────────
+
+academicRouter.get(
+  '/teacher-roster/allocation-meta',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const academicYear = typeof req.query.academicYear === 'string' ? req.query.academicYear : '2025-26';
+    const meta = await getTeacherAllocationMeta(institutionId, academicYear);
+    return res.json(meta);
+  }),
+);
 
 academicRouter.get(
   '/teacher-roster/dashboard',

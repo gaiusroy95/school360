@@ -559,7 +559,7 @@ export function AdmissionTestView() {
               className="px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-sm font-semibold rounded-lg"
             >
               {savingPassMarks ? 'Saving…' : 'Save'}
-            </button>
+        </button>
           </div>
         </div>
         <p className="text-[10px] text-slate-400 mt-2">
@@ -585,7 +585,7 @@ export function AdmissionTestView() {
             <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
               <Settings size={18} className="text-indigo-600" /> Test Configurations
             </h3>
-
+            
             {loading ? (
               <div className="flex items-center justify-center py-12 text-slate-400 gap-2 text-sm">
                 <Loader2 size={16} className="animate-spin" /> Loading tests...
@@ -595,7 +595,7 @@ export function AdmissionTestView() {
                 No tests yet. Use &ldquo;Create from PDF&rdquo; on the right to generate your first quiz.
               </p>
             ) : (
-              <div className="space-y-3">
+            <div className="space-y-3">
                 {tests.map((test) => (
                   <div
                     key={test.id}
@@ -1434,9 +1434,9 @@ export function AdmissionTestView() {
                   <Send size={14} /> Publish Test
                 </button>
               )}
-            </div>
           </div>
         </div>
+      </div>
       )}
     </div>
   );

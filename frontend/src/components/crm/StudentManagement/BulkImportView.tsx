@@ -344,6 +344,7 @@ function ImportModal({
                 <thead className="bg-slate-50 sticky top-0">
                   <tr>
                     <th className="p-2 text-left">Name</th>
+                    <th className="p-2 text-left">Soft ID</th>
                     <th className="p-2 text-left">Class</th>
                     <th className="p-2 text-left">Section</th>
                     <th className="p-2 text-left">Mobile</th>
@@ -353,6 +354,7 @@ function ImportModal({
                   {rows.slice(0, 20).map((r, i) => (
                     <tr key={i} className="border-t">
                       <td className="p-2">{String(r.fullName || r.firstName || '')}</td>
+                      <td className="p-2">{String(r.softId || '')}</td>
                       <td className="p-2">{String(r.className || className || '')}</td>
                       <td className="p-2">{String(r.sectionName || sectionName || '')}</td>
                       <td className="p-2">{String(r.mobile || '')}</td>

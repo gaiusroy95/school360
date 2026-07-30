@@ -4,9 +4,9 @@ import {
   BookOpen, PartyPopper, Heart, ListTodo, CheckCircle2, AlertTriangle,
 } from 'lucide-react';
 import {
-  createTeacherAllocation, createTeacherRosterTask, fetchAcademicMeta, fetchTeacherRosterDashboard,
-  publishTeacherRosterTasks, syncTeacherRosterAllocations, updateTeacherRosterTask,
-  type TeacherRosterDashboard, type TeacherRosterTask,
+  createTeacherAllocation, createTeacherRosterTask, fetchAcademicMeta, fetchTeacherAllocationMeta,
+  fetchTeacherRosterDashboard, publishTeacherRosterTasks, syncTeacherRosterAllocations, updateTeacherRosterTask,
+  type TeacherAllocationMeta, type TeacherRosterDashboard, type TeacherRosterTask,
 } from '../../../lib/academicServices';
 import {
   AcademicLoading, AcademicModal, AcademicPageHeader, AcademicPageShell,
@@ -45,6 +45,10 @@ const EMPTY_ALLOC = {
   teacherName: '', department: 'General', className: '', sectionName: '', subjectName: '',
   periodsPerWeek: 18, workloadLevel: 'MEDIUM',
 };
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">{children}</span>;
+}
 
 function TaskDetail({
   task, onClose, onSaveFeedback,
@@ -108,6 +112,7 @@ function TaskDetail({
 
 export function TeacherAllocationView() {
   const [dashboard, setDashboard] = useState<TeacherRosterDashboard | null>(null);
+  const [allocMeta, setAllocMeta] = useState<TeacherAllocationMeta | null>(null);
   const [loading, setLoading] = useState(true);
   const [academicYear, setAcademicYear] = useState('2025-26');
   const [years, setYears] = useState<string[]>(['2025-26']);
@@ -125,11 +130,15 @@ export function TeacherAllocationView() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const meta = await fetchAcademicMeta();
+      const [meta, allocMetaRes, d] = await Promise.all([
+        fetchAcademicMeta(),
+        fetchTeacherAllocationMeta(academicYear),
+        fetchTeacherRosterDashboard({
+          academicYear, teacherName: teacherFilter || undefined, taskType: typeFilter || undefined,
+        }),
+      ]);
       setYears(meta.academicYears);
-      const d = await fetchTeacherRosterDashboard({
-        academicYear, teacherName: teacherFilter || undefined, taskType: typeFilter || undefined,
-      });
+      setAllocMeta(allocMetaRes);
       setDashboard(d);
     } finally { setLoading(false); }
   }, [academicYear, teacherFilter, typeFilter]);
@@ -137,6 +146,89 @@ export function TeacherAllocationView() {
   useEffect(() => { void load(); }, [load]);
 
   const filteredTasks = useMemo(() => dashboard?.tasks || [], [dashboard]);
+
+  const findTeacher = useCallback(
+    (teacherName: string) => allocMeta?.teachers.find((t) => t.teacherName === teacherName),
+    [allocMeta],
+  );
+
+  const allocSectionOptions = useMemo(() => {
+    if (!allocForm.className || !allocMeta) return [];
+    return allocMeta.sectionsByClass[allocForm.className] || [];
+  }, [allocForm.className, allocMeta]);
+
+  const allocSubjectOptions = useMemo(() => {
+    if (!allocMeta) return [];
+    const teacher = findTeacher(allocForm.teacherName);
+    if (teacher && allocForm.className) {
+      const matched = teacher.classSubjects
+        .filter((cs) => cs.className === allocForm.className && (!allocForm.sectionName || cs.sectionName === allocForm.sectionName))
+        .map((cs) => cs.subjectName);
+      if (matched.length) return [...new Set(matched)];
+    }
+    return allocMeta.subjects;
+  }, [allocMeta, allocForm.teacherName, allocForm.className, allocForm.sectionName, findTeacher]);
+
+  const taskSectionOptions = useMemo(() => {
+    if (!taskForm.className || !allocMeta) return [];
+    return allocMeta.sectionsByClass[taskForm.className] || [];
+  }, [taskForm.className, allocMeta]);
+
+  const taskSubjectOptions = useMemo(() => {
+    if (!allocMeta) return [];
+    const teacher = findTeacher(taskForm.teacherName);
+    if (teacher && taskForm.className) {
+      const matched = teacher.classSubjects
+        .filter((cs) => cs.className === taskForm.className && (!taskForm.sectionName || cs.sectionName === taskForm.sectionName))
+        .map((cs) => cs.subjectName);
+      if (matched.length) return [...new Set(matched)];
+    }
+    return allocMeta.subjects;
+  }, [allocMeta, taskForm.teacherName, taskForm.className, taskForm.sectionName, findTeacher]);
+
+  const applyTeacherToAlloc = (teacherName: string) => {
+    const teacher = findTeacher(teacherName);
+    const first = teacher?.classSubjects[0];
+    setAllocForm((f) => ({
+      ...f,
+      teacherName,
+      department: teacher?.department || f.department || 'General',
+      className: first?.className || '',
+      sectionName: first?.sectionName || '',
+      subjectName: first?.subjectName || '',
+      periodsPerWeek: first?.periodsPerWeek || f.periodsPerWeek,
+    }));
+  };
+
+  const applyTeacherToTask = (teacherName: string, keepFields = false) => {
+    const teacher = findTeacher(teacherName);
+    const first = teacher?.classSubjects[0];
+    setTaskForm((f) => ({
+      ...f,
+      teacherName,
+      department: teacher?.department || 'General',
+      className: keepFields ? f.className : (first?.className || ''),
+      sectionName: keepFields ? f.sectionName : (first?.sectionName || ''),
+      subjectName: keepFields ? f.subjectName : (first?.subjectName || ''),
+    }));
+  };
+
+  const openTaskForm = (prefill?: Partial<typeof EMPTY_TASK>) => {
+    const base = { ...EMPTY_TASK, ...prefill };
+    setTaskForm(base);
+    if (prefill?.teacherName) {
+      const teacher = findTeacher(prefill.teacherName);
+      if (teacher && !prefill.department) {
+        setTaskForm((f) => ({ ...f, department: teacher.department }));
+      }
+    }
+    setShowTaskForm(true);
+  };
+
+  const openAllocForm = () => {
+    setAllocForm({ ...EMPTY_ALLOC });
+    setShowAllocForm(true);
+  };
 
   const saveTask = async () => {
     await createTeacherRosterTask({ ...taskForm, academicYear });
@@ -195,14 +287,14 @@ export function TeacherAllocationView() {
             <button type="button" onClick={() => void handleSync()} disabled={busy} className={am.btnSecondary}>
               <RefreshCw size={14} /> Sync Class Allocations
             </button>
+            <button type="button" onClick={() => openTaskForm()} className={am.btnSecondary}>
+              <Plus size={14} /> Create Task
+            </button>
             <button type="button" onClick={() => void handlePublish()} disabled={busy} className={am.btnSecondary}>
               <Send size={14} /> Publish to Mobile
             </button>
-            <button type="button" onClick={() => setShowAllocForm(true)} className={am.btnSecondary}>
+            <button type="button" onClick={openAllocForm} className={am.btnPrimary}>
               <Plus size={14} /> Class Allocation
-            </button>
-            <button type="button" onClick={() => setShowTaskForm(true)} className={am.btnPrimary}>
-              <Plus size={14} /> Assign Task
             </button>
           </div>
         )}
@@ -250,7 +342,16 @@ export function TeacherAllocationView() {
         </div>
 
         <div className="flex gap-3 mb-3">
-          <input placeholder="Filter by teacher…" value={teacherFilter} onChange={(e) => setTeacherFilter(e.target.value)} className={`${am.input} max-w-xs`} />
+          <select
+            value={teacherFilter}
+            onChange={(e) => setTeacherFilter(e.target.value)}
+            className={`${am.input} max-w-xs`}
+          >
+            <option value="">All teachers</option>
+            {(allocMeta?.teachers || []).map((t) => (
+              <option key={t.teacherName} value={t.teacherName}>{t.teacherName}</option>
+            ))}
+          </select>
           <div className="flex rounded-lg border border-slate-200 overflow-hidden">
             <button type="button" onClick={() => setViewMode('roster')} className={`px-3 py-1.5 text-xs font-bold ${viewMode === 'roster' ? 'bg-teal-600 text-white' : 'bg-white text-slate-600'}`}>By Teacher</button>
             <button type="button" onClick={() => setViewMode('tasks')} className={`px-3 py-1.5 text-xs font-bold ${viewMode === 'tasks' ? 'bg-teal-600 text-white' : 'bg-white text-slate-600'}`}>All Tasks</button>
@@ -264,15 +365,22 @@ export function TeacherAllocationView() {
               <p className="text-center text-slate-400 py-8">No teachers in roster. Add class allocations or assign tasks.</p>
             ) : (dashboard?.teacherRosters || []).map((tr) => (
               <div key={tr.teacherName} className={`${am.card} p-4`}>
-                <div className="flex items-start justify-between mb-3">
+                <div className="flex items-start justify-between mb-3 gap-3">
                   <div>
                     <h3 className="font-bold text-slate-800">{tr.teacherName}</h3>
                     <p className="text-xs text-slate-500">{tr.department} · {tr.classSubjects.length} class/subject · {tr.totalTasks} tasks</p>
                   </div>
-                  <div className="flex gap-2 text-xs">
-                    <span className="px-2 py-0.5 rounded bg-slate-100">{tr.pending} pending</span>
-                    <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800">{tr.inProgress} active</span>
-                    {tr.overdue > 0 && <span className="px-2 py-0.5 rounded bg-red-100 text-red-800">{tr.overdue} overdue</span>}
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <button
+                      type="button"
+                      onClick={() => openTaskForm({ teacherName: tr.teacherName, department: tr.department })}
+                      className={`${am.btnSecondary} text-xs py-1`}
+                    >
+                      <Plus size={12} /> Create Task
+                    </button>
+                    <span className="px-2 py-0.5 rounded bg-slate-100 text-xs">{tr.pending} pending</span>
+                    <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-xs">{tr.inProgress} active</span>
+                    {tr.overdue > 0 && <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 text-xs">{tr.overdue} overdue</span>}
                   </div>
                 </div>
 
@@ -281,9 +389,21 @@ export function TeacherAllocationView() {
                     <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Class & Subject</p>
                     <div className="flex flex-wrap gap-1.5">
                       {tr.classSubjects.map((a) => (
-                        <span key={String(a.id)} className="text-xs bg-blue-50 text-blue-800 border border-blue-200 rounded px-2 py-1">
+                        <button
+                          key={String(a.id)}
+                          type="button"
+                          onClick={() => openTaskForm({
+                            teacherName: tr.teacherName,
+                            department: tr.department,
+                            className: String(a.className),
+                            sectionName: String(a.sectionName || ''),
+                            subjectName: String(a.subjectName),
+                          })}
+                          className="text-xs bg-blue-50 text-blue-800 border border-blue-200 rounded px-2 py-1 hover:bg-blue-100"
+                          title="Create task for this class/subject"
+                        >
                           {String(a.subjectName)} — {String(a.className)}{a.sectionName ? `-${String(a.sectionName)}` : ''} ({String(a.periodsPerWeek)}p/w)
-                        </span>
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -353,18 +473,75 @@ export function TeacherAllocationView() {
         )}
       </div>
 
-      {/* Assign Task Modal */}
+      {/* Assign Roster Task Modal */}
       <AcademicModal open={showTaskForm} onClose={() => setShowTaskForm(false)} title="Assign Roster Task" large>
+        <p className="text-xs text-slate-500 -mt-2 mb-3">
+          Teacher, class, and section flow from system records — edit any field as needed for task vs achievement mapping.
+        </p>
         <div className="grid grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto pr-1">
-          <input placeholder="Teacher Name *" value={taskForm.teacherName} onChange={(e) => setTaskForm((f) => ({ ...f, teacherName: e.target.value }))} className={am.input} />
-          <input placeholder="Department" value={taskForm.department} onChange={(e) => setTaskForm((f) => ({ ...f, department: e.target.value }))} className={am.input} />
+          <label className="space-y-1">
+            <FieldLabel>Teacher Name *</FieldLabel>
+            <select
+              value={taskForm.teacherName}
+              onChange={(e) => applyTeacherToTask(e.target.value)}
+              className={am.input}
+            >
+              <option value="">Select teacher</option>
+              {(allocMeta?.teachers || []).map((t) => (
+                <option key={t.teacherName} value={t.teacherName}>{t.teacherName}</option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1">
+            <FieldLabel>Department</FieldLabel>
+            <select
+              value={taskForm.department}
+              onChange={(e) => setTaskForm((f) => ({ ...f, department: e.target.value }))}
+              className={am.input}
+            >
+              {(allocMeta?.departments || ['General']).map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </label>
           <select value={taskForm.taskType} onChange={(e) => setTaskForm((f) => ({ ...f, taskType: e.target.value as typeof f.taskType, feedbackRequired: e.target.value === 'PARENT_ENGAGEMENT' }))} className={`${am.input} col-span-2`}>
             {(dashboard?.taskTypes || []).map((t) => <option key={t.id} value={t.id}>{t.label} — {t.description}</option>)}
           </select>
           <input placeholder="Task Title *" value={taskForm.title} onChange={(e) => setTaskForm((f) => ({ ...f, title: e.target.value }))} className={`${am.input} col-span-2`} />
-          <input placeholder="Class" value={taskForm.className} onChange={(e) => setTaskForm((f) => ({ ...f, className: e.target.value }))} className={am.input} />
-          <input placeholder="Section" value={taskForm.sectionName} onChange={(e) => setTaskForm((f) => ({ ...f, sectionName: e.target.value }))} className={am.input} />
-          <input placeholder="Subject (if applicable)" value={taskForm.subjectName} onChange={(e) => setTaskForm((f) => ({ ...f, subjectName: e.target.value }))} className={am.input} />
+          <label className="space-y-1">
+            <FieldLabel>Class</FieldLabel>
+            <select
+              value={taskForm.className}
+              onChange={(e) => setTaskForm((f) => ({ ...f, className: e.target.value, sectionName: '' }))}
+              className={am.input}
+            >
+              <option value="">Select class</option>
+              {(allocMeta?.classes || []).map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+          <label className="space-y-1">
+            <FieldLabel>Section</FieldLabel>
+            <select
+              value={taskForm.sectionName}
+              onChange={(e) => setTaskForm((f) => ({ ...f, sectionName: e.target.value }))}
+              disabled={!taskForm.className}
+              className={am.input}
+            >
+              <option value="">All sections</option>
+              {taskSectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+          <label className="space-y-1">
+            <FieldLabel>Subject (if applicable)</FieldLabel>
+            <select
+              value={taskForm.subjectName}
+              onChange={(e) => setTaskForm((f) => ({ ...f, subjectName: e.target.value }))}
+              className={am.input}
+            >
+              <option value="">—</option>
+              {taskSubjectOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
           <select value={taskForm.priority} onChange={(e) => setTaskForm((f) => ({ ...f, priority: e.target.value as typeof f.priority }))} className={am.input}>
             <option value="LOW">Low Priority</option><option value="MEDIUM">Medium Priority</option><option value="HIGH">High Priority</option>
           </select>
@@ -386,16 +563,101 @@ export function TeacherAllocationView() {
 
       {/* Class Allocation Modal */}
       <AcademicModal open={showAllocForm} onClose={() => setShowAllocForm(false)} title="Class & Subject Allocation" large>
+        <p className="text-xs text-slate-500 -mt-2 mb-3">
+          All fields sync from system master data — select from dropdowns and save the allocation.
+        </p>
         <div className="grid grid-cols-2 gap-3">
-          <input placeholder="Teacher Name *" value={allocForm.teacherName} onChange={(e) => setAllocForm((f) => ({ ...f, teacherName: e.target.value }))} className={am.input} />
-          <input placeholder="Department" value={allocForm.department} onChange={(e) => setAllocForm((f) => ({ ...f, department: e.target.value }))} className={am.input} />
-          <input placeholder="Class *" value={allocForm.className} onChange={(e) => setAllocForm((f) => ({ ...f, className: e.target.value }))} className={am.input} />
-          <input placeholder="Section" value={allocForm.sectionName} onChange={(e) => setAllocForm((f) => ({ ...f, sectionName: e.target.value }))} className={am.input} />
-          <input placeholder="Subject *" value={allocForm.subjectName} onChange={(e) => setAllocForm((f) => ({ ...f, subjectName: e.target.value }))} className={am.input} />
-          <input type="number" placeholder="Periods/Week" value={allocForm.periodsPerWeek} onChange={(e) => setAllocForm((f) => ({ ...f, periodsPerWeek: Number(e.target.value) }))} className={am.input} />
-          <select value={allocForm.workloadLevel} onChange={(e) => setAllocForm((f) => ({ ...f, workloadLevel: e.target.value }))} className={am.input}>
-            <option value="FULL">Full Load</option><option value="MEDIUM">Medium Load</option><option value="LOW">Low Load</option>
-          </select>
+          <label className="space-y-1">
+            <FieldLabel>Teacher Name *</FieldLabel>
+            <select
+              value={allocForm.teacherName}
+              onChange={(e) => applyTeacherToAlloc(e.target.value)}
+              className={am.input}
+            >
+              <option value="">Select teacher</option>
+              {(allocMeta?.teachers || []).map((t) => (
+                <option key={t.teacherName} value={t.teacherName}>{t.teacherName}</option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1">
+            <FieldLabel>Department</FieldLabel>
+            <select
+              value={allocForm.department}
+              onChange={(e) => setAllocForm((f) => ({ ...f, department: e.target.value }))}
+              className={am.input}
+            >
+              {(allocMeta?.departments || ['General']).map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1">
+            <FieldLabel>Class *</FieldLabel>
+            <select
+              value={allocForm.className}
+              onChange={(e) => setAllocForm((f) => ({ ...f, className: e.target.value, sectionName: '' }))}
+              className={am.input}
+            >
+              <option value="">Select class</option>
+              {(allocMeta?.classes || []).map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+          <label className="space-y-1">
+            <FieldLabel>Section</FieldLabel>
+            <select
+              value={allocForm.sectionName}
+              onChange={(e) => setAllocForm((f) => ({ ...f, sectionName: e.target.value }))}
+              disabled={!allocForm.className}
+              className={am.input}
+            >
+              <option value="">All sections</option>
+              {allocSectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+          <label className="space-y-1">
+            <FieldLabel>Subject *</FieldLabel>
+            <select
+              value={allocForm.subjectName}
+              onChange={(e) => {
+                const subjectName = e.target.value;
+                const teacher = findTeacher(allocForm.teacherName);
+                const match = teacher?.classSubjects.find(
+                  (cs) =>
+                    cs.subjectName === subjectName &&
+                    cs.className === allocForm.className &&
+                    (!allocForm.sectionName || cs.sectionName === allocForm.sectionName),
+                );
+                setAllocForm((f) => ({
+                  ...f,
+                  subjectName,
+                  periodsPerWeek: match?.periodsPerWeek || f.periodsPerWeek,
+                }));
+              }}
+              className={am.input}
+            >
+              <option value="">Select subject</option>
+              {allocSubjectOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+          <label className="space-y-1">
+            <FieldLabel>Periods / Week</FieldLabel>
+            <select
+              value={allocForm.periodsPerWeek}
+              onChange={(e) => setAllocForm((f) => ({ ...f, periodsPerWeek: Number(e.target.value) }))}
+              className={am.input}
+            >
+              {(allocMeta?.periodsPerWeek || [12, 15, 18, 20, 24, 30]).map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1 col-span-2 sm:col-span-1">
+            <FieldLabel>Workload Level</FieldLabel>
+            <select value={allocForm.workloadLevel} onChange={(e) => setAllocForm((f) => ({ ...f, workloadLevel: e.target.value }))} className={am.input}>
+              <option value="FULL">Full Load</option><option value="MEDIUM">Medium Load</option><option value="LOW">Low Load</option>
+            </select>
+          </label>
         </div>
         <div className="flex justify-end gap-2 pt-4 border-t mt-3">
           <button type="button" onClick={() => setShowAllocForm(false)} className={am.btnSecondary}>Cancel</button>

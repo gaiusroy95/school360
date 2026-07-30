@@ -3,6 +3,7 @@ import {
   User, Download, Loader2, Search, Filter, Printer, CheckSquare, Square, FileStack,
 } from 'lucide-react';
 import { fetchStudents, fetchStudentsMeta, type Student } from '../../../lib/studentServices';
+import { getStudentPhotoUrl } from '../../../lib/studentPhotoUtils';
 import { fetchInstitutionSetup } from '../../../lib/institutionApi';
 import { toViewKey } from '../../../lib/navigation';
 import {
@@ -240,7 +241,7 @@ export function StudentIdCardsView({ onNavigate }: Props) {
     }
   };
 
-  const readyCount = selectedStudents.filter((s) => s.photoUrl).length;
+  const readyCount = selectedStudents.filter((s) => getStudentPhotoUrl(s)).length;
 
   return (
     <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
@@ -409,8 +410,8 @@ export function StudentIdCardsView({ onNavigate }: Props) {
                       <td className="p-3 font-mono text-xs">{s.admissionNumber}</td>
                       <td className="p-3 text-slate-600">{s.classSection}</td>
                       <td className="p-3 hidden sm:table-cell">
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${s.photoUrl ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                          {s.photoUrl ? 'Ready' : 'Missing'}
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${getStudentPhotoUrl(s) ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                          {getStudentPhotoUrl(s) ? 'Ready' : 'Missing'}
                         </span>
                       </td>
                       <td className="p-3 text-right">

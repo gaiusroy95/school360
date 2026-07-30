@@ -71,6 +71,7 @@ import { apiRateLimitMiddleware } from './middleware/rateLimit.js';
 import { startInvigilationScheduler } from './lib/examInvigilationScheduler.js';
 import { startMobileReminderScheduler } from './lib/mobileReminderScheduler.js';
 import { startBackupScheduler } from './lib/backupScheduler.js';
+import { startParentCommunicationScheduler } from './lib/parentCommunicationScheduler.js';
 import { startWebhookDeliveryWorker } from './lib/webhookDeliveryWorker.js';
 import { handleRazorpayWebhook } from './lib/mobileFees.js';
 import { asyncHandler } from './lib/asyncHandler.js';
@@ -187,7 +188,7 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
     message.includes("Can't reach database server") ||
     message.includes('PrismaClientInitializationError');
   res.status(isDb ? 503 : 500).json({
-    error: isDb ? 'Database temporarily unavailable. Please retry in a few seconds.' : 'Internal server error',
+    error: isDb ? 'Database temporarily unavailable. Please retry in a few seconds.' : message,
   });
 });
 
@@ -218,6 +219,7 @@ async function start() {
     startInvigilationScheduler();
     startMobileReminderScheduler();
     startBackupScheduler();
+    startParentCommunicationScheduler();
     startWebhookDeliveryWorker();
   });
 }

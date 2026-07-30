@@ -215,7 +215,7 @@ export function InvoicesView() {
 
         {tab === 'All Invoices' && (
           loading ? <AcademicLoading /> : records.length === 0 ? (
-            <EmptyState>No invoices yet. Generate from fee receipts to get started.</EmptyState>
+            <EmptyState>No invoices for this session yet. Collect admission fees or use Generate from Receipts.</EmptyState>
           ) : (
             <div className={am.tableWrap}>
               <table className="w-full">

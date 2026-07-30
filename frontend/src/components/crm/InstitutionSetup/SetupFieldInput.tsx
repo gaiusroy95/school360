@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, X } from 'lucide-react';
+import { ChevronDown, FileText, Loader2, Upload, X } from 'lucide-react';
 import type { SetupField } from '../../../lib/institutionSetupSchema';
+import { uploadInstitutionLogo, fetchInstitutionLogoMeta } from '../../../lib/institutionApi';
+import { resolveLogoUrl } from '../../../lib/branding';
 
 export const inputBase =
   'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white';
@@ -130,6 +132,113 @@ export function EventMultiselectInput({
   );
 }
 
+function LogoFileUpload({
+  field,
+  value,
+  onChange,
+}: {
+  field: SetupField;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
+  const [fileName, setFileName] = useState('');
+  const [mimeType, setMimeType] = useState('');
+
+  const previewUrl = value ? resolveLogoUrl(value) : '';
+  const isPdf = mimeType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf');
+
+  useEffect(() => {
+    if (!value || value !== '/api/institution/branding/logo') return;
+    void fetchInstitutionLogoMeta()
+      .then((meta) => {
+        if (meta.hasLogo && meta.fileName) setFileName(meta.fileName);
+        if (meta.mimeType) setMimeType(meta.mimeType);
+      })
+      .catch(() => { /* ignore */ });
+  }, [value]);
+
+  const handleFile = async (file: File | null) => {
+    if (!file) return;
+    setUploading(true);
+    setError('');
+    try {
+      const result = await uploadInstitutionLogo(file);
+      setFileName(result.fileName);
+      setMimeType(result.mimeType);
+      onChange(result.logoUrl);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Upload failed');
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  const clearLogo = () => {
+    onChange('');
+    setFileName('');
+    setMimeType('');
+    setError('');
+    if (inputRef.current) inputRef.current.value = '';
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-col sm:flex-row gap-3 items-start">
+        <div className="w-28 h-28 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0">
+          {previewUrl && !isPdf ? (
+            <img src={previewUrl} alt="School logo preview" className="max-w-full max-h-full object-contain p-2" />
+          ) : previewUrl && isPdf ? (
+            <div className="text-center p-2">
+              <FileText size={28} className="mx-auto text-red-500 mb-1" />
+              <p className="text-[10px] text-slate-600 font-medium">PDF logo</p>
+            </div>
+          ) : (
+            <Upload size={24} className="text-slate-300" />
+          )}
+        </div>
+        <div className="flex-1 space-y-2">
+          <input
+            ref={inputRef}
+            type="file"
+            accept={field.accept || 'image/png,image/jpeg,image/jpg,application/pdf'}
+            className="hidden"
+            onChange={(e) => void handleFile(e.target.files?.[0] || null)}
+          />
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={uploading}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium border border-indigo-200 text-indigo-700 rounded-lg hover:bg-indigo-50 disabled:opacity-50"
+          >
+            {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+            {uploading ? 'Uploading…' : value ? 'Replace Logo' : 'Upload Logo'}
+          </button>
+          <p className="text-[10px] text-slate-500">
+            PNG, JPG, or PDF · Max 2MB
+          </p>
+          {fileName && (
+            <p className="text-xs text-slate-600 truncate">{fileName}</p>
+          )}
+          {value && (
+            <button
+              type="button"
+              onClick={clearLogo}
+              className="inline-flex items-center gap-1 text-xs text-red-600 hover:text-red-800"
+            >
+              <X size={12} /> Remove logo
+            </button>
+          )}
+          {error && <p className="text-xs text-red-600">{error}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SetupFieldInput({
   field,
   value,
@@ -222,6 +331,10 @@ export function SetupFieldInput({
         Enabled
       </label>
     );
+  }
+
+  if (field.type === 'file') {
+    return <LogoFileUpload field={field} value={value} onChange={onChange} />;
   }
 
   return (

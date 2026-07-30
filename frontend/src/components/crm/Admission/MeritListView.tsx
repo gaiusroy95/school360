@@ -8,8 +8,11 @@ import {
   Clock,
   Users,
   Filter,
+  Download,
 } from 'lucide-react';
 import { fetchMeritList, type MeritListEntry } from '../../../lib/meritListServices';
+import { downloadMeritListExcel } from '../../../lib/meritListExcel';
+import { ManualEntranceEntryPanel, meritBadgeClass, meritBadgeLabel } from './ManualEntranceEntryPanel';
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—';
@@ -53,6 +56,7 @@ export function MeritListView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [testId, setTestId] = useState('');
   const [classApplied, setClassApplied] = useState('');
+  const [academicSession, setAcademicSession] = useState('');
   const [resultFilter, setResultFilter] = useState<'all' | 'passed' | 'failed' | 'pending'>('all');
 
   const refresh = useCallback(async () => {
@@ -62,6 +66,7 @@ export function MeritListView() {
       const res = await fetchMeritList({
         testId: testId || undefined,
         classApplied: classApplied || undefined,
+        academicSession: academicSession || undefined,
         result: resultFilter,
         q: searchQuery || undefined,
       });
@@ -71,7 +76,7 @@ export function MeritListView() {
     } finally {
       setLoading(false);
     }
-  }, [testId, classApplied, resultFilter, searchQuery]);
+  }, [testId, classApplied, academicSession, resultFilter, searchQuery]);
 
   useEffect(() => {
     void refresh();
@@ -87,9 +92,9 @@ export function MeritListView() {
           Merit List
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          Auto-graded entrance exam results ranked by score. Pass marks default:{' '}
-          <span className="font-semibold text-slate-700">{data?.defaultPassMarksPercent ?? 40}%</span>{' '}
-          (adjustable under Admission Test settings).
+          Published entrance test results and manual merit scores from Applications, ranked by score for all
+          sessions. Pass marks default:{' '}
+          <span className="font-semibold text-slate-700">{data?.defaultPassMarksPercent ?? 40}%</span>.
         </p>
       </div>
 
@@ -119,6 +124,10 @@ export function MeritListView() {
           ))}
         </div>
       )}
+
+      <div className="mb-6">
+        <ManualEntranceEntryPanel onSubmitted={() => void refresh()} />
+      </div>
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
         <div className="p-4 border-b border-slate-100 flex flex-wrap gap-3 items-center">
@@ -158,6 +167,18 @@ export function MeritListView() {
             ))}
           </select>
           <select
+            value={academicSession}
+            onChange={(e) => setAcademicSession(e.target.value)}
+            className="text-sm border border-slate-200 rounded-lg px-3 py-2 min-w-[130px]"
+          >
+            <option value="">All Sessions</option>
+            {(data?.sessions || []).map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          <select
             value={resultFilter}
             onChange={(e) => setResultFilter(e.target.value as typeof resultFilter)}
             className="text-sm border border-slate-200 rounded-lg px-3 py-2"
@@ -174,6 +195,14 @@ export function MeritListView() {
           >
             <Filter size={14} /> Apply
           </button>
+          <button
+            type="button"
+            disabled={!data?.entries.length}
+            onClick={() => data && downloadMeritListExcel(data.entries)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-300 text-slate-700 text-sm font-semibold rounded-lg hover:bg-slate-50 disabled:opacity-50"
+          >
+            <Download size={14} /> Download
+          </button>
         </div>
 
         {loading ? (
@@ -184,7 +213,10 @@ export function MeritListView() {
           <div className="flex flex-col items-center justify-center py-16 text-slate-500">
             <Trophy size={40} className="text-slate-300 mb-3" />
             <p className="text-sm font-medium">No merit list entries yet</p>
-            <p className="text-xs mt-1">Publish a test and assign applicants to see auto-graded results here.</p>
+            <p className="text-xs mt-1 text-center max-w-md">
+              Record manual merit scores on Applications or publish digital entrance tests. Results appear here
+              for all sessions once scores are saved or exams are submitted.
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto flex-1">
@@ -195,8 +227,11 @@ export function MeritListView() {
                   <th className="text-left p-3 font-semibold">Student</th>
                   <th className="text-left p-3 font-semibold">Application</th>
                   <th className="text-left p-3 font-semibold">Class</th>
+                  <th className="text-left p-3 font-semibold">Session</th>
                   <th className="text-left p-3 font-semibold">Test</th>
+                  <th className="text-left p-3 font-semibold">Source</th>
                   <th className="text-left p-3 font-semibold">Score</th>
+                  <th className="text-left p-3 font-semibold">Badge</th>
                   <th className="text-left p-3 font-semibold">Breakdown</th>
                   <th className="text-left p-3 font-semibold">Result</th>
                   <th className="text-left p-3 font-semibold">Submitted</th>
@@ -214,19 +249,58 @@ export function MeritListView() {
                     </td>
                     <td className="p-3 font-mono text-xs text-slate-600">{entry.applicationId}</td>
                     <td className="p-3 text-slate-600">{entry.classApplied || '—'}</td>
+                    <td className="p-3 text-slate-600 text-xs">{entry.academicSession || '—'}</td>
                     <td className="p-3">
                       <p className="text-slate-700 text-xs">{entry.testTitle}</p>
                       <p className="text-[10px] text-slate-400">Pass: {entry.passMarksRequired}%</p>
                     </td>
                     <td className="p-3">
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                          entry.scoreSource === 'manual'
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'bg-violet-100 text-violet-700'
+                        }`}
+                      >
+                        {entry.scoreSource === 'manual' ? 'Manual' : 'Digital'}
+                      </span>
+                    </td>
+                    <td className="p-3">
                       {entry.submitted ? (
-                        <span className="text-lg font-bold text-slate-800">{entry.scorePercent}%</span>
+                        <div>
+                          <span className="text-lg font-bold text-slate-800">{entry.scorePercent}%</span>
+                          {entry.rawScore != null && entry.maxScore != null && (
+                            <p className="text-[10px] text-slate-400">
+                              {entry.rawScore}/{entry.maxScore}
+                            </p>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-slate-400">—</span>
                       )}
                     </td>
+                    <td className="p-3">
+                      {meritBadgeLabel(entry.meritBadge) ? (
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${meritBadgeClass(entry.meritBadge)}`}>
+                          {meritBadgeLabel(entry.meritBadge)}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-xs">—</span>
+                      )}
+                    </td>
                     <td className="p-3 text-xs text-slate-500">
-                      {entry.submitted ? (
+                      {entry.subjects?.length ? (
+                        <div className="space-y-0.5">
+                          {entry.subjects.map((s) => (
+                            <div key={s.name}>
+                              {s.name}: {s.obtainedMarks}/{s.maxMarks}
+                            </div>
+                          ))}
+                          {entry.teacherName && (
+                            <p className="text-[10px] text-slate-400 mt-1">Teacher: {entry.teacherName}</p>
+                          )}
+                        </div>
+                      ) : entry.submitted ? (
                         <span>
                           <span className="text-emerald-600 font-semibold">{entry.correctCount ?? 0}✓</span>
                           {' · '}

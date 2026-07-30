@@ -15,6 +15,7 @@ import {
   FEE_HEAD_LABELS,
   findFeeSchedule,
   loadFeeCollectionContext,
+  resolveCollectionFeeSchedule,
 } from './feeConfig.js';
 import { getInstitutionFilterMeta } from './students.js';
 
@@ -849,6 +850,11 @@ export async function listFeeInvoices(
   institutionId: string,
   opts: { academicYear?: string; status?: FeeInvoiceStatus; q?: string } = {},
 ) {
+  // Backfill invoices for fee receipts collected before auto-sync was enabled.
+  if (opts.academicYear) {
+    await generateInvoicesFromReceipts(institutionId, { academicYear: opts.academicYear });
+  }
+
   const where: Prisma.FeeInvoiceWhereInput = { institutionId };
   if (opts.academicYear) where.academicYear = opts.academicYear;
   if (opts.status) where.status = opts.status;
@@ -900,11 +906,28 @@ export async function generateInvoiceFromReceipt(
   const invoiceNumber = await generateInvoiceNumber(institutionId, receipt.academicYear);
   const status = invoiceStatusFromPayment(totals.netPayable, totals.amountPaid);
 
+  let studentId = '';
+  if (receipt.admissionRecordId) {
+    const linked = await prisma.student.findFirst({
+      where: { institutionId, admissionRecordId: receipt.admissionRecordId },
+      select: { id: true },
+    });
+    studentId = linked?.id || '';
+  }
+  if (!studentId && receipt.admissionNumber) {
+    const linked = await prisma.student.findFirst({
+      where: { institutionId, admissionNumber: receipt.admissionNumber },
+      select: { id: true },
+    });
+    studentId = linked?.id || '';
+  }
+
   const row = await prisma.feeInvoice.create({
     data: {
       institutionId,
       invoiceNumber,
       academicYear: receipt.academicYear,
+      studentId,
       studentName: receipt.studentName,
       admissionNumber: receipt.admissionNumber,
       className: receipt.className,
@@ -1058,6 +1081,68 @@ export async function createFeeInvoice(
     },
   });
   return serializeFeeInvoice(row);
+}
+
+export async function ensurePendingFeeInvoiceForStudent(
+  institutionId: string,
+  student: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    admissionNumber: string;
+    className: string;
+    sectionName: string;
+    academicYear: string;
+    rollNumber?: string;
+    fatherName?: string;
+    fatherMobile?: string;
+    mobile?: string;
+    email?: string;
+    photoUrl?: string;
+  },
+) {
+  const studentName = `${student.firstName} ${student.lastName}`.trim();
+  const existing = await prisma.feeInvoice.findFirst({
+    where: {
+      institutionId,
+      studentId: student.id,
+      academicYear: student.academicYear,
+      status: {
+        in: [FeeInvoiceStatus.PENDING, FeeInvoiceStatus.PARTIAL, FeeInvoiceStatus.DRAFT],
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (existing) return serializeFeeInvoice(existing);
+
+  const schedule = await resolveCollectionFeeSchedule(institutionId, {
+    className: student.className,
+    sectionName: student.sectionName,
+    studentId: student.id,
+    academicYear: student.academicYear,
+  });
+  if (!schedule?.heads.length) return null;
+
+  return createFeeInvoice(institutionId, {
+    academicYear: student.academicYear,
+    studentId: student.id,
+    studentName,
+    admissionNumber: student.admissionNumber,
+    className: student.className,
+    sectionName: student.sectionName,
+    rollNumber: student.rollNumber || '',
+    parentName: student.fatherName || '',
+    parentMobile: student.fatherMobile || student.mobile || '',
+    parentEmail: student.email || '',
+    photoUrl: student.photoUrl || '',
+    lineItems: schedule.heads.map((h) => ({
+      key: h.key,
+      label: h.label,
+      amount: h.amount,
+    })),
+    status: FeeInvoiceStatus.PENDING,
+    remarks: `Auto-generated from ${schedule.source.replace(/_/g, ' ')}`,
+  });
 }
 
 export async function updateInvoiceStatus(

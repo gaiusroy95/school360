@@ -9,8 +9,11 @@ import {
   CheckCircle,
   FileText,
   Save,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
+import { CreateApplicationModal } from './CreateApplicationModal';
 import {
   fetchApplications,
   fetchApplication,
@@ -73,6 +76,7 @@ export function ApplicationsView() {
   const [docFields, setDocFields] = useState<Record<string, string>>({});
   const [scoreInput, setScoreInput] = useState('');
   const [uploadType, setUploadType] = useState('Birth Certificate');
+  const [createModalOpen, setCreateModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   type FormDraft = {
@@ -316,19 +320,34 @@ export function ApplicationsView() {
     }
   };
 
-  const handleDeleteDocument = async () => {
-    if (!selected?.id || !selectedDocId) return;
+  const handleDeleteDocument = async (docId?: string, docType?: string) => {
+    const targetDocId = docId || selectedDocId;
+    if (!selected?.id || !targetDocId) return;
+
+    const doc = selected.documents.find((d) => d.id === targetDocId);
+    const docName = doc?.fileName || docType || 'this document';
+    if (
+      !window.confirm(
+        `Delete "${docName}"? This removes the uploaded file so you can upload the correct document.`,
+      )
+    ) {
+      return;
+    }
+
     setSubmitting(true);
     try {
-      const res = await deleteApplicationDocument(selected.id, selectedDocId);
+      const res = await deleteApplicationDocument(selected.id, targetDocId);
       if (res.application) {
         setSelected(res.application);
         setApplications((prev) =>
           prev.map((a) => (a.id === res.application!.id ? res.application! : a)),
         );
-        const nextDoc = res.application.documents[0];
-        setSelectedDocId(nextDoc?.id || null);
-        setDocFields(nextDoc ? { ...nextDoc.extractedFields } : {});
+        if (selectedDocId === targetDocId) {
+          const nextDoc = res.application.documents[0];
+          setSelectedDocId(nextDoc?.id || null);
+          setDocFields(nextDoc ? { ...nextDoc.extractedFields } : {});
+          if (nextDoc) setUploadType(nextDoc.type);
+        }
       }
       showSuccess('Document removed');
     } catch (err) {
@@ -445,15 +464,26 @@ export function ApplicationsView() {
             Counselor submissions for principal review and admission approval
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => handleUploadClick()}
-          disabled={submitting}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <UploadCloud size={16} />
-          Upload Document
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setCreateModalOpen(true)}
+            disabled={submitting}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 shadow-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Plus size={16} />
+            Create Application
+          </button>
+          <button
+            type="button"
+            onClick={() => handleUploadClick()}
+            disabled={submitting}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <UploadCloud size={16} />
+            Upload Document
+          </button>
+        </div>
         <input
           ref={fileInputRef}
           type="file"
@@ -487,7 +517,7 @@ export function ApplicationsView() {
           <div className="flex-1 overflow-y-auto p-2 space-y-2">
             {filteredApps.length === 0 ? (
               <p className="text-xs text-slate-400 text-center py-8">
-                No applications yet. Create one from Enquiries → Create Application.
+                No applications yet. Click <strong>Create Application</strong> to add one from an enquiry.
               </p>
             ) : (
               filteredApps.map((app) => (
@@ -756,17 +786,30 @@ export function ApplicationsView() {
                                 Formats: {docConfig.acceptedFormats || 'PDF, JPG, PNG'}
                               </p>
                               {uploaded && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setUploadType(docConfig.name);
-                                    setSelectedDocId(uploaded.id);
-                                    setDocFields({ ...uploaded.extractedFields });
-                                  }}
-                                  className="text-[10px] text-indigo-600 font-semibold mt-1 hover:underline"
-                                >
-                                  View: {uploaded.fileName}
-                                </button>
+                                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setUploadType(docConfig.name);
+                                      setSelectedDocId(uploaded.id);
+                                      setDocFields({ ...uploaded.extractedFields });
+                                    }}
+                                    className="text-[10px] text-indigo-600 font-semibold hover:underline"
+                                  >
+                                    View: {uploaded.fileName}
+                                  </button>
+                                  {!isFinalized && (
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleDeleteDocument(uploaded.id, docConfig.name)}
+                                      disabled={submitting}
+                                      className="text-[10px] text-red-600 font-semibold hover:underline inline-flex items-center gap-0.5 disabled:opacity-50"
+                                    >
+                                      <Trash2 size={10} />
+                                      Delete
+                                    </button>
+                                  )}
+                                </div>
                               )}
                             </div>
                             {!isFinalized && (
@@ -854,6 +897,17 @@ export function ApplicationsView() {
           )}
         </div>
       </div>
+
+      <CreateApplicationModal
+        open={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        performer={performer}
+        onCreated={async (applicationId, studentName) => {
+          showSuccess(`Application created${studentName ? ` for ${studentName}` : ''}`);
+          if (applicationId) setSelectedId(applicationId);
+          await refreshList();
+        }}
+      />
 
       {/* Reject Modal */}
       {rejectOpen && selected && (

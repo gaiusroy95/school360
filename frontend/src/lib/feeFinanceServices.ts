@@ -1332,6 +1332,7 @@ export type FeeStructureRecord = {
   examinationFee: number;
   annualCharges: number;
   sportsFee: number;
+  extraHeads?: Record<string, number>;
   totalAmount: number;
   status: FeeStructureStatus;
   effectiveDate: string | null;
@@ -1342,6 +1343,26 @@ export type FeeStructureRecord = {
   updatedAt: string;
   feeHeads: Array<{ key: string; label: string; refundable: boolean; amount: number }>;
 };
+
+export type FeeStructureHeadCatalogItem = {
+  key: string;
+  label: string;
+  refundable: boolean;
+  isStandard: boolean;
+  defaultAmount: number;
+  showInCollection: boolean;
+  showInInvoice: boolean;
+  showInPayment: boolean;
+  masterId: string;
+};
+
+export async function fetchFeeStructureMeta() {
+  return api<{
+    headCatalog: FeeStructureHeadCatalogItem[];
+    frequencies: string[];
+    standardKeys: string[];
+  }>('/api/fee-finance/structures/meta');
+}
 
 export type FeeStructureSummary = {
   academicYear: string;

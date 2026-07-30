@@ -106,6 +106,11 @@ export function loadDocumentIdentitySetup(setup: {
       prefix: readField(id, ['Admission Number', 'admissionNumber'], 'admissionPrefix', 'ADM-'),
       nextNumber: Number(readField(id, ['Admission Number', 'admissionNumber'], 'admissionNext', '1')) || 1,
     },
+    softId: {
+      prefix: readField(id, ['Soft ID (ERP Student ID)', 'softIdNumbering'], 'softIdPrefix', ''),
+      nextNumber: Number(readField(id, ['Soft ID (ERP Student ID)', 'softIdNumbering'], 'softIdNext', '1')) || 1,
+      padLength: Number(readField(id, ['Soft ID (ERP Student ID)', 'softIdNumbering'], 'softIdPadLength', '4')) || 4,
+    },
     employeeCode: {
       prefix: readField(id, ['Employee Code Format', 'employeeCodeFormat'], 'employeePrefix', 'EMP-'),
       format: readField(id, ['Employee Code Format', 'employeeCodeFormat'], 'formatFormula', 'EMP-{YEAR}-{SEQ}'),
@@ -280,6 +285,38 @@ export async function syncDocumentIdentityFromSetup(institutionId: string, actor
     },
   });
 
+  const softIdPrefix =
+    config.softId.prefix.trim() ||
+    deriveSchoolInitials(
+      readField(
+        readSetupSections(institution.setup.basicInformation),
+        ['Institution Profile', 'institutionProfile'],
+        'shortName',
+        '',
+      ) ||
+        readField(
+          readSetupSections(institution.setup.basicInformation),
+          ['Institution Profile', 'institutionProfile'],
+          'institutionName',
+          institution.name,
+        ),
+    );
+
+  await prisma.softIdSequence.upsert({
+    where: { institutionId },
+    create: {
+      institutionId,
+      prefix: softIdPrefix,
+      nextNumber: config.softId.nextNumber,
+      padLength: config.softId.padLength,
+    },
+    update: {
+      prefix: softIdPrefix,
+      nextNumber: config.softId.nextNumber,
+      padLength: config.softId.padLength,
+    },
+  });
+
   await prisma.employeeCodeRule.upsert({
     where: { institutionId },
     create: {
@@ -428,6 +465,76 @@ export async function allocateDocumentNumber(institutionId: string) {
   });
   const padded = String(seq.allocated).padStart(seq.padLength, '0');
   return `${seq.prefix}${padded}${seq.suffix}`;
+}
+
+export function deriveSchoolInitials(institutionName: string): string {
+  const skip = new Set(['the', 'st', 'saint', 'st.', 'of', 'and', 'a', 'an']);
+  const words = institutionName
+    .replace(/['']/g, '')
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 0);
+  if (words.length >= 2) {
+    const significant = words.filter((w) => !skip.has(w.toLowerCase()));
+    const use = (significant.length >= 2 ? significant : words).slice(0, 4);
+    const initials = use.map((w) => w.replace(/[^a-zA-Z0-9]/g, '').charAt(0)).join('');
+    if (initials.length >= 3) return initials.slice(0, 4).toUpperCase();
+  }
+  const clean = institutionName.replace(/[^a-zA-Z0-9]/g, '');
+  return (clean.slice(0, 4) || 'SCH').toUpperCase();
+}
+
+export async function resolveSoftIdPrefix(institutionId: string): Promise<string> {
+  const institution = await prisma.institution.findUnique({
+    where: { id: institutionId },
+    include: { setup: true },
+  });
+  if (!institution) return 'SCH';
+
+  const config = loadDocumentIdentitySetup({
+    idCardNumbering: institution.setup?.idCardNumbering,
+  });
+  if (config.softId.prefix.trim()) return config.softId.prefix.trim().toUpperCase();
+
+  const basic = readSetupSections(institution.setup?.basicInformation);
+  const name =
+    readField(basic, ['Institution Profile', 'institutionProfile'], 'shortName', '') ||
+    readField(basic, ['Institution Profile', 'institutionProfile'], 'institutionName', '') ||
+    institution.name;
+  return deriveSchoolInitials(name);
+}
+
+export async function peekNextSoftId(institutionId: string): Promise<string> {
+  const prefix = await resolveSoftIdPrefix(institutionId);
+  const seq = await prisma.softIdSequence.findUnique({ where: { institutionId } });
+  const num = seq?.nextNumber ?? 1;
+  const padLength = seq?.padLength ?? 4;
+  return `${prefix}${String(num).padStart(padLength, '0')}`;
+}
+
+export async function allocateSoftId(institutionId: string): Promise<string> {
+  const prefix = await resolveSoftIdPrefix(institutionId);
+  const seq = await prisma.$transaction(async (tx) => {
+    let row = await tx.softIdSequence.findUnique({ where: { institutionId } });
+    if (!row) {
+      row = await tx.softIdSequence.create({
+        data: { institutionId, prefix, nextNumber: 1, padLength: 4 },
+      });
+    } else if (row.prefix !== prefix) {
+      row = await tx.softIdSequence.update({
+        where: { id: row.id },
+        data: { prefix },
+      });
+    }
+    const num = row.nextNumber;
+    await tx.softIdSequence.update({
+      where: { id: row.id },
+      data: { nextNumber: num + 1 },
+    });
+    return { ...row, allocated: num };
+  });
+  const padded = String(seq.allocated).padStart(seq.padLength, '0');
+  return `${seq.prefix}${padded}`;
 }
 
 export async function allocateAdmissionNumberFromSeq(institutionId: string) {

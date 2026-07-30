@@ -194,6 +194,7 @@ export async function bulkSendAndRecordCommunications(
     sectionName?: string;
     academicYear?: string;
     parentRelationship?: ParentRelationship;
+    campaignCode?: string;
   },
 ) {
   const students = await loadStudentsForParents(institutionId, {
@@ -202,7 +203,7 @@ export async function bulkSendAndRecordCommunications(
     academicYear: params.academicYear,
   });
   const parents = deriveParentContacts(students);
-  const campaignId = `CAMP-${Date.now()}`;
+  const campaignId = params.campaignCode || `CAMP-${Date.now()}`;
   const sentAt = new Date();
   const rows = [];
 

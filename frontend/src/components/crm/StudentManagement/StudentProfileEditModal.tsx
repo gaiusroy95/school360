@@ -3,6 +3,7 @@ import { Loader2, X } from 'lucide-react';
 import type { Student, StudentInput } from '../../../lib/studentServices';
 import { updateStudent } from '../../../lib/studentServices';
 import { getAdmissionForm } from '../../../lib/idCardUtils';
+import { getFatherPhotoUrl, getMotherPhotoUrl, getStudentPhotoUrl } from '../../../lib/studentPhotoUtils';
 import { ID_CARD_TEMPLATES } from '../InstitutionSetup/idCardTypes';
 import { isIndiaMobileEmpty, isValidIndiaMobile, normalizeIndiaMobile } from '../../../lib/enquiryFormUtils';
 
@@ -65,6 +66,9 @@ type FormState = {
   attendanceToday: string;
   idCardTemplate: string;
   documents: Record<string, boolean>;
+  studentPhoto: string;
+  fatherPhoto: string;
+  motherPhoto: string;
   admissionPatch: AdmissionPatch;
 };
 
@@ -89,7 +93,13 @@ export function StudentProfileEditModal({ student, activeTab, profileMeta, onClo
     }
     setSaving(true);
     try {
-      const admissionForm = { ...getAdmissionForm(student), ...form.admissionPatch };
+      const admissionForm = {
+        ...getAdmissionForm(student),
+        ...form.admissionPatch,
+        studentPhoto: form.studentPhoto,
+        fatherPhoto: form.fatherPhoto,
+        motherPhoto: form.motherPhoto,
+      };
       const profile = {
         feeDueAmount: Number(form.feeDueAmount) || 0,
         attendanceToday: form.attendanceToday,
@@ -122,6 +132,7 @@ export function StudentProfileEditModal({ student, activeTab, profileMeta, onClo
         motherMobile: isIndiaMobileEmpty(form.motherMobile) ? '' : normalizeIndiaMobile(form.motherMobile),
         status: form.status,
         entranceScore: form.entranceScore ? Number(form.entranceScore) : undefined,
+        photoUrl: form.studentPhoto || undefined,
         documents: form.documents,
         customFields: {
           ...student.customFields,
@@ -202,6 +213,9 @@ function buildFormState(student: Student, profileMeta: { feeDueAmount: number; a
     attendanceToday: profileMeta.attendanceToday,
     idCardTemplate: profileMeta.idCardTemplate,
     documents: { ...docs },
+    studentPhoto: getStudentPhotoUrl(student) || '',
+    fatherPhoto: getFatherPhotoUrl(student) || '',
+    motherPhoto: getMotherPhotoUrl(student) || '',
     admissionPatch: {
       allergies: String(af.allergies || ''),
       medicalConditions: String(af.medicalConditions || ''),
@@ -233,9 +247,39 @@ function renderFields(
 ) {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }));
 
+  const readPhoto = (file: File, key: 'studentPhoto' | 'fatherPhoto' | 'motherPhoto') => {
+    const reader = new FileReader();
+    reader.onload = () => set(key, String(reader.result || ''));
+    reader.readAsDataURL(file);
+  };
+
   const fieldsForTab: Record<string, ReactNode> = {
     Overview: (
       <>
+        <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {(['studentPhoto', 'fatherPhoto', 'motherPhoto'] as const).map((key) => (
+            <div key={key} className="border border-slate-200 rounded-lg p-3">
+              <p className="text-xs font-bold text-slate-600 mb-2 capitalize">{key.replace('Photo', ' Photo')}</p>
+              <div className="w-20 h-24 mx-auto border border-slate-300 rounded overflow-hidden bg-slate-50 mb-2">
+                {form[key] ? (
+                  <img src={form[key]} alt={key} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-400">No photo</div>
+                )}
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                className="text-[10px] w-full"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) readPhoto(file, key);
+                  e.target.value = '';
+                }}
+              />
+            </div>
+          ))}
+        </div>
         <Row label="First Name" value={form.firstName} onChange={(v) => set('firstName', v)} />
         <Row label="Last Name" value={form.lastName} onChange={(v) => set('lastName', v)} />
         <Row label="Date of Birth" type="date" value={form.dateOfBirth} onChange={(v) => set('dateOfBirth', v)} />

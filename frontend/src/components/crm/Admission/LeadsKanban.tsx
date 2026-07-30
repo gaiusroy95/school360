@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Enquiry, EnquiryStatus } from '../../../lib/admissionServices';
 import { Edit, Phone, Calendar, User } from 'lucide-react';
 
@@ -12,21 +12,31 @@ export function LeadsKanban({
   onEdit: (enq: Enquiry) => void 
 }) {
   const columns: EnquiryStatus[] = ['New', 'In Process', 'Follow Up', 'Converted', 'Not Interested'];
+  const [dragOverColumn, setDragOverColumn] = useState<EnquiryStatus | null>(null);
 
   const handleDragStart = (e: React.DragEvent, enquiryId: string) => {
     e.dataTransfer.setData('enquiryId', enquiryId);
+    e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = (e: React.DragEvent, status: EnquiryStatus) => {
     e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverColumn(status);
+  };
+
+  const handleDragLeave = (status: EnquiryStatus) => {
+    setDragOverColumn((prev) => (prev === status ? null : prev));
   };
 
   const handleDrop = (e: React.DragEvent, status: EnquiryStatus) => {
     e.preventDefault();
+    setDragOverColumn(null);
     const enquiryId = e.dataTransfer.getData('enquiryId');
-    if (enquiryId) {
-      onStatusUpdate(enquiryId, status);
-    }
+    if (!enquiryId) return;
+    const current = enquiries.find((enq) => enq.id === enquiryId);
+    if (current?.status === status) return;
+    onStatusUpdate(enquiryId, status);
   };
 
   return (
@@ -36,8 +46,13 @@ export function LeadsKanban({
         return (
           <div 
             key={status} 
-            className="flex-shrink-0 w-80 bg-slate-100/50 rounded-xl border border-slate-200 flex flex-col h-full"
-            onDragOver={handleDragOver}
+            className={`flex-shrink-0 w-80 rounded-xl border flex flex-col h-full transition-colors ${
+              dragOverColumn === status
+                ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-200'
+                : 'bg-slate-100/50 border-slate-200'
+            }`}
+            onDragOver={(e) => handleDragOver(e, status)}
+            onDragLeave={() => handleDragLeave(status)}
             onDrop={(e) => handleDrop(e, status)}
           >
             <div className={`p-3 border-b border-slate-200 rounded-t-xl flex justify-between items-center ${
@@ -69,7 +84,14 @@ export function LeadsKanban({
                       <p className="text-sm font-bold text-slate-800">{enq.enquirerName}</p>
                       <p className="text-xs text-indigo-600 font-medium">{enq.enquiryId}</p>
                     </div>
-                    <button onClick={() => onEdit(enq)} className="text-slate-400 hover:text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity p-1">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEdit(enq);
+                      }}
+                      className="text-slate-400 hover:text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                    >
                       <Edit size={14} />
                     </button>
                   </div>

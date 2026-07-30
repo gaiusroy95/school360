@@ -836,6 +836,29 @@ export async function fetchTeacherRosterDashboard(params?: {
   return api<TeacherRosterDashboard>(`/api/academic/teacher-roster/dashboard${qs(params)}`);
 }
 
+export type TeacherAllocationMeta = {
+  academicYear: string;
+  classes: string[];
+  sectionsByClass: Record<string, string[]>;
+  subjects: string[];
+  departments: string[];
+  periodsPerWeek: number[];
+  teachers: Array<{
+    teacherName: string;
+    department: string;
+    classSubjects: Array<{
+      className: string;
+      sectionName: string;
+      subjectName: string;
+      periodsPerWeek: number;
+    }>;
+  }>;
+};
+
+export async function fetchTeacherAllocationMeta(academicYear?: string) {
+  return api<TeacherAllocationMeta>(`/api/academic/teacher-roster/allocation-meta${qs({ academicYear })}`);
+}
+
 export async function createTeacherRosterTask(payload: Record<string, unknown>) {
   return api<{ task: TeacherRosterTask }>('/api/academic/teacher-roster/tasks', {
     method: 'POST',

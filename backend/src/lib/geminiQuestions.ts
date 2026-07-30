@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, type GenerativeModel } from '@google/generative-ai';
 
 export type GeneratedQuestion = {
   type: string;
@@ -18,6 +18,66 @@ export function getGeminiApiKey(): string {
   return key;
 }
 
+function geminiModelCandidates(): string[] {
+  const preferred = process.env.GEMINI_MODEL?.trim();
+  const defaults = ['gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-flash'];
+  return [...new Set([preferred, ...defaults].filter(Boolean))] as string[];
+}
+
+function isRetryableModelError(message: string): boolean {
+  const msg = message.toLowerCase();
+  return (
+    msg.includes('not found') ||
+    msg.includes('404') ||
+    msg.includes('is not supported') ||
+    msg.includes('model') && msg.includes('invalid')
+  );
+}
+
+function formatGeminiError(err: unknown): Error {
+  const message = err instanceof Error ? err.message : String(err);
+  if (message.includes('API key not valid') || message.includes('API_KEY_INVALID')) {
+    return new Error(
+      'GEMINI_API_KEY is invalid. Add a valid Google AI API key to backend/.env and restart the server.',
+    );
+  }
+  if (message.includes('API key') && message.includes('missing')) {
+    return new Error(
+      'GEMINI_API_KEY is not configured on the server. Add it to backend/.env and restart the API.',
+    );
+  }
+  return err instanceof Error ? err : new Error(message);
+}
+
+export async function runGeminiJsonRequest(
+  temperature: number,
+  request: (model: GenerativeModel) => Promise<string>,
+): Promise<string> {
+  const genAI = new GoogleGenerativeAI(getGeminiApiKey());
+  let lastError: Error | null = null;
+
+  for (const modelName of geminiModelCandidates()) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        generationConfig: {
+          temperature,
+          responseMimeType: 'application/json',
+        },
+      });
+      const responseText = await request(model);
+      if (!responseText.trim()) throw new Error('AI returned an empty response');
+      return responseText;
+    } catch (err) {
+      lastError = formatGeminiError(err);
+      if (isRetryableModelError(lastError.message)) continue;
+      throw lastError;
+    }
+  }
+
+  throw lastError || new Error('No compatible Gemini model available. Check GEMINI_MODEL in backend/.env');
+}
+
 export function parseJsonFromModel(text: string): unknown {
   const trimmed = text.trim();
   const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -33,14 +93,6 @@ export async function generateQuestionsFromText(params: {
   title?: string;
 }): Promise<GeneratedQuestion[]> {
   const { sourceText, numQuestions, questionType, difficulty, title } = params;
-  const genAI = new GoogleGenerativeAI(getGeminiApiKey());
-  const model = genAI.getGenerativeModel({
-    model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
-    generationConfig: {
-      temperature: 0.4,
-      responseMimeType: 'application/json',
-    },
-  });
 
   const prompt = `You are an expert school admission test question writer.
 
@@ -73,9 +125,10 @@ Return JSON only in this shape:
 SOURCE MATERIAL:
 ${sourceText}`;
 
-  const result = await model.generateContent(prompt);
-  const responseText = result.response.text();
-  if (!responseText) throw new Error('AI returned an empty response');
+  const responseText = await runGeminiJsonRequest(0.4, async (model) => {
+    const result = await model.generateContent(prompt);
+    return result.response.text();
+  });
 
   let parsed: { questions?: GeneratedQuestion[] };
   try {

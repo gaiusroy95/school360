@@ -82,10 +82,22 @@ export function loadDataModulesUiSetup(setup: {
 
   return {
     import: {
+      studentsEnabled: readField(imp, ['Import Students', 'importStudents'], 'enabled', 'Yes'),
+      studentColumns: readField(
+        imp,
+        ['Import Students', 'importStudents'],
+        'requiredColumns',
+        'Name, Class, Section, DOB, Mobile, Soft ID, SR No, Portal NIC Code',
+      ),
       employeesEnabled: readField(imp, ['Import Employees', 'importEmployees'], 'enabled', 'Yes'),
       employeeColumns: readField(imp, ['Import Employees', 'importEmployees'], 'requiredColumns', 'employeeCode,fullName,department,mobile,email'),
       parentsEnabled: readField(imp, ['Import Parents', 'importParents'], 'enabled', 'Yes'),
-      parentColumns: readField(imp, ['Import Parents', 'importParents'], 'requiredColumns', 'parentName,mobile,studentAdmissionNumber,relationship'),
+      parentColumns: readField(
+        imp,
+        ['Import Parents', 'importParents'],
+        'requiredColumns',
+        'parentName,mobile,studentAdmissionNumber,studentSoftId,studentSrNo,studentPortalNicCode,relationship',
+      ),
       exportFormats: readField(imp, ['Export Data', 'exportData'], 'formats', 'xlsx, csv'),
       scheduledExports: readField(imp, ['Scheduled Exports', 'scheduledExports'], 'jobs', ''),
       mappingNotes: readField(imp, ['Data Mapping', 'dataMapping'], 'mappingNotes', ''),
@@ -364,6 +376,26 @@ export async function bootstrapDataModulesUi(institutionId: string) {
 
 type ImportRow = Record<string, string>;
 
+async function resolveStudentForParentImport(institutionId: string, row: ImportRow) {
+  const admissionNumber = (row.studentAdmissionNumber || row.admissionNumber || '').trim();
+  const softId = (row.studentSoftId || row.softId || '').trim();
+  const srNo = (row.studentSrNo || row.srNo || '').trim();
+  const portalNicCode = (row.studentPortalNicCode || row.portalNicCode || '').trim();
+
+  if (!admissionNumber && !softId && !srNo && !portalNicCode) return null;
+
+  const or = [
+    admissionNumber ? { admissionNumber } : null,
+    softId ? { softId } : null,
+    srNo ? { srNo } : null,
+    portalNicCode ? { portalNicCode } : null,
+  ].filter(Boolean) as Array<{ admissionNumber?: string; softId?: string; srNo?: string; portalNicCode?: string }>;
+
+  return prisma.student.findFirst({
+    where: { institutionId, OR: or },
+  });
+}
+
 export async function importEmployeesBatch(
   institutionId: string,
   rows: ImportRow[],
@@ -441,20 +473,22 @@ export async function importParentsBatch(
   for (let i = 0; i < rows.length; i += 1) {
     const row = rows[i];
     const fullName = (row.parentName || row.fullName || row.name || '').trim();
-    const admissionNumber = (row.studentAdmissionNumber || row.admissionNumber || '').trim();
     const mobile = (row.mobile || row.phone || '').trim();
     const relationship = toParentRelationship(row.relationship || 'GUARDIAN');
 
-    if (!fullName || !admissionNumber) {
-      errors.push({ row: i + 1, message: 'parentName and studentAdmissionNumber are required', data: row });
+    if (!fullName) {
+      errors.push({ row: i + 1, message: 'parentName is required', data: row });
       continue;
     }
 
-    const student = await prisma.student.findFirst({
-      where: { institutionId, admissionNumber },
-    });
+    const student = await resolveStudentForParentImport(institutionId, row);
     if (!student) {
-      errors.push({ row: i + 1, message: `Student not found: ${admissionNumber}`, data: row });
+      errors.push({
+        row: i + 1,
+        message:
+          'Student not found. Provide studentAdmissionNumber, studentSoftId, studentSrNo, or studentPortalNicCode.',
+        data: row,
+      });
       continue;
     }
 

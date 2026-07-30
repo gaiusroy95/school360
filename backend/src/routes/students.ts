@@ -10,6 +10,8 @@ import {
   buildStudentProfileBundle,
   createStudentFromAdmissionRecord,
   generateStudentAdmissionNumber,
+  generateStudentSoftId,
+  previewStudentSoftId,
   getInstitutionFilterMeta,
   getStudentAnalytics,
   parseStudentGender,
@@ -49,7 +51,11 @@ const createSchema = z.object({
   motherMobile: z.string().optional(),
   status: z.string().optional(),
   admissionNumber: z.string().optional(),
+  softId: z.string().optional(),
+  srNo: z.string().optional(),
+  portalNicCode: z.string().optional(),
   entranceScore: z.number().optional(),
+  photoUrl: z.string().optional(),
   documents: z.record(z.unknown()).optional(),
   customFields: z.record(z.unknown()).optional(),
 });
@@ -80,6 +86,9 @@ const importRowSchema = z.object({
   house: z.string().optional(),
   rollNumber: z.string().optional(),
   rollNo: z.string().optional(),
+  softId: z.string().optional(),
+  srNo: z.string().optional(),
+  portalNicCode: z.string().optional(),
   rfidTag: z.string().optional(),
   fatherName: z.string().optional(),
   fatherMobile: z.string().optional(),
@@ -100,6 +109,15 @@ function parseDateInput(v?: string): Date | undefined {
   }
   return undefined;
 }
+
+studentsRouter.get(
+  '/next-soft-id',
+  asyncHandler(async (_req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const softId = await previewStudentSoftId(institutionId);
+    return res.json({ softId });
+  }),
+);
 
 studentsRouter.get(
   '/meta',
@@ -167,6 +185,9 @@ studentsRouter.get(
               { firstName: { contains: parsed.data.q, mode: 'insensitive' as const } },
               { lastName: { contains: parsed.data.q, mode: 'insensitive' as const } },
               { admissionNumber: { contains: parsed.data.q, mode: 'insensitive' as const } },
+              { softId: { contains: parsed.data.q, mode: 'insensitive' as const } },
+              { srNo: { contains: parsed.data.q, mode: 'insensitive' as const } },
+              { portalNicCode: { contains: parsed.data.q, mode: 'insensitive' as const } },
               { rollNumber: { contains: parsed.data.q, mode: 'insensitive' as const } },
               { mobile: { contains: parsed.data.q, mode: 'insensitive' as const } },
               { fatherName: { contains: parsed.data.q, mode: 'insensitive' as const } },
@@ -321,6 +342,14 @@ studentsRouter.post(
     });
     if (dup) return res.status(400).json({ error: 'Admission number already exists' });
 
+    const softId =
+      parsed.data.softId?.trim() || (await generateStudentSoftId(institutionId));
+
+    const softDup = await prisma.student.findFirst({
+      where: { institutionId, softId },
+    });
+    if (softDup) return res.status(400).json({ error: 'Soft ID already exists' });
+
     const gender = parseStudentGender(parsed.data.gender) || StudentGender.OTHER;
     const status = parseStudentStatus(parsed.data.status) || StudentStatus.ACTIVE;
 
@@ -328,6 +357,9 @@ studentsRouter.post(
       data: {
         institutionId,
         admissionNumber,
+        softId,
+        srNo: parsed.data.srNo?.trim() || '',
+        portalNicCode: parsed.data.portalNicCode?.trim() || '',
         firstName: parsed.data.firstName.trim(),
         lastName: parsed.data.lastName?.trim() || '',
         dateOfBirth: parseDateInput(parsed.data.dateOfBirth),
@@ -352,6 +384,7 @@ studentsRouter.post(
         motherName: parsed.data.motherName?.trim() || '',
         motherMobile: parsed.data.motherMobile?.trim() || '',
         status,
+        photoUrl: parsed.data.photoUrl?.trim() || '',
         entranceScore: parsed.data.entranceScore,
         documents: (parsed.data.documents || {}) as Prisma.InputJsonValue,
         customFields: (parsed.data.customFields || {}) as Prisma.InputJsonValue,
@@ -412,6 +445,11 @@ studentsRouter.patch(
         ...(parsed.data.rollNumber !== undefined
           ? { rollNumber: parsed.data.rollNumber.trim() }
           : {}),
+        ...(parsed.data.softId !== undefined ? { softId: parsed.data.softId.trim() } : {}),
+        ...(parsed.data.srNo !== undefined ? { srNo: parsed.data.srNo.trim() } : {}),
+        ...(parsed.data.portalNicCode !== undefined
+          ? { portalNicCode: parsed.data.portalNicCode.trim() }
+          : {}),
         ...(parsed.data.rfidTag !== undefined ? { rfidTag: parsed.data.rfidTag.trim() } : {}),
         ...(parsed.data.fatherName !== undefined
           ? { fatherName: parsed.data.fatherName.trim() }
@@ -426,6 +464,7 @@ studentsRouter.patch(
           ? { motherMobile: parsed.data.motherMobile.trim() }
           : {}),
         ...(status !== undefined ? { status } : {}),
+        ...(parsed.data.photoUrl !== undefined ? { photoUrl: parsed.data.photoUrl.trim() } : {}),
         ...(parsed.data.entranceScore !== undefined
           ? { entranceScore: parsed.data.entranceScore }
           : {}),
@@ -512,9 +551,14 @@ studentsRouter.post(
         const admissionNumber =
           row.admissionNumber?.trim() || (await generateStudentAdmissionNumber(institutionId));
 
+        const softId = row.softId?.trim() || (await generateStudentSoftId(institutionId));
+
         const data = {
           firstName,
           lastName,
+          softId,
+          srNo: row.srNo?.trim() || '',
+          portalNicCode: row.portalNicCode?.trim() || '',
           dateOfBirth: parseDateInput(row.dateOfBirth),
           gender: parseStudentGender(row.gender) || StudentGender.OTHER,
           bloodGroup: row.bloodGroup?.trim() || '',

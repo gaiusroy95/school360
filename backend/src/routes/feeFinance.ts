@@ -35,6 +35,7 @@ import {
   createFeeStructure,
   exportFeeStructures,
   getFeeStructure,
+  getFeeStructureMeta,
   getFeeStructureSummary,
   importFeeStructuresBatch,
   importFeeStructuresFromSetup,
@@ -449,16 +450,10 @@ feeFinanceRouter.post(
 feeFinanceRouter.post(
   '/masters',
   asyncHandler(async (req, res) => {
-    const parsed = createMasterSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-
-    const institutionId = await getDefaultInstitutionId();
-    try {
-      const record = await createFeeMaster(institutionId, parsed.data);
-      return res.status(201).json({ record });
-    } catch (err) {
-      return handleModuleError(err, res, 'Fee master');
-    }
+    return res.status(403).json({
+      error:
+        'Fee headers must be created from Fee Structure. Add a fee component there and it will sync to Fee Masters automatically.',
+    });
   }),
 );
 
@@ -1501,6 +1496,18 @@ const feeStructureAmountsSchema = {
   examinationFee: z.number().optional(),
   annualCharges: z.number().optional(),
   sportsFee: z.number().optional(),
+  headAmounts: z.record(z.number()).optional(),
+  extraHeads: z.record(z.number()).optional(),
+  newHeads: z
+    .array(
+      z.object({
+        code: z.string().min(1),
+        name: z.string().min(1),
+        category: z.string().optional(),
+        isRefundable: z.boolean().optional(),
+      }),
+    )
+    .optional(),
 };
 
 const createFeeStructureSchema = z.object({
@@ -2291,6 +2298,15 @@ feeFinanceRouter.get(
     const institutionId = await getDefaultInstitutionId();
     const data = await exportFeeStructures(institutionId, parsed.data.academicYear);
     return res.json(data);
+  }),
+);
+
+feeFinanceRouter.get(
+  '/structures/meta',
+  asyncHandler(async (_req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const meta = await getFeeStructureMeta(institutionId);
+    return res.json(meta);
   }),
 );
 

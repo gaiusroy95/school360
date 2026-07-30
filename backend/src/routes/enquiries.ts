@@ -1,9 +1,13 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { EnquiryActivityType, EnquiryStatus, Prisma } from '@prisma/client';
+import { AccountStatus, EnquiryActivityType, EnquiryStatus, Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { getDefaultInstitutionId } from '../lib/institution.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, type AuthUser } from '../middleware/auth.js';
+import {
+  isVideoFollowUpMode,
+  syncFollowUpVideoCall,
+} from '../lib/admissionFollowUpMeet.js';
 
 export const enquiriesRouter = Router();
 enquiriesRouter.use(requireAuth);
@@ -110,6 +114,7 @@ const FOLLOW_UP_MODE_UI_TO_DB: Record<string, FollowUpModeKey> = {
   Phone: 'PHONE',
   'Campus Visit': 'CAMPUS_VISIT',
   'Video Call': 'VIDEO_CALL',
+  'Google Meet': 'VIDEO_CALL',
   Email: 'EMAIL',
   'In-person Counselling': 'IN_PERSON_COUNSELLING',
   PHONE: 'PHONE',
@@ -118,6 +123,46 @@ const FOLLOW_UP_MODE_UI_TO_DB: Record<string, FollowUpModeKey> = {
   EMAIL: 'EMAIL',
   IN_PERSON_COUNSELLING: 'IN_PERSON_COUNSELLING',
 };
+
+function isAdminRole(role?: string): boolean {
+  return role === 'SUPER_ADMIN' || role === 'ADMIN';
+}
+
+async function fetchCounselorOptions(institutionId: string): Promise<string[]> {
+  const users = await prisma.user.findMany({
+    where: {
+      accountStatus: AccountStatus.ACTIVE,
+      userType: { in: ['STAFF', 'ADMIN'] },
+    },
+    select: { displayName: true, email: true },
+    orderBy: { displayName: 'asc' },
+  });
+  const fromUsers = users.flatMap((u) => [u.displayName, u.email].filter(Boolean));
+  const assignees = await prisma.enquiry.findMany({
+    where: { institutionId, assignedTo: { not: '' } },
+    select: { assignedTo: true },
+    distinct: ['assignedTo'],
+  });
+  return [...new Set([...fromUsers, ...assignees.map((a) => a.assignedTo)])].sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: 'base' }),
+  );
+}
+
+async function counselorIdentityForUser(userId: string): Promise<string[]> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { displayName: true, email: true },
+  });
+  if (!user) return [];
+  return [user.displayName, user.email].filter(Boolean);
+}
+
+async function enquiryVisibilityFilter(user?: AuthUser): Promise<Prisma.EnquiryWhereInput | null> {
+  if (!user || isAdminRole(user.role)) return null;
+  const identity = await counselorIdentityForUser(user.userId);
+  if (identity.length === 0) return { assignedTo: '__no_match__' };
+  return { assignedTo: { in: identity } };
+}
 
 const FOLLOW_UP_MODE_DB_TO_UI: Record<FollowUpModeKey, string> = {
   PHONE: 'Phone',
@@ -143,12 +188,22 @@ function serializeTask(t: {
   assignedTo: string;
   dueDate: Date;
   status: string;
+  meetingLink?: string | null;
+  calendarEventId?: string | null;
+  calendarSyncStatus?: string | null;
+  syncGoogleCalendar?: boolean | null;
+  notifyEmail?: boolean | null;
+  notifyWhatsApp?: boolean | null;
+  notificationLog?: unknown;
   createdAt: Date;
   updatedAt: Date;
   enquiry: { enquiryId: string; enquirerName: string };
 }) {
   const modeKey = (t.mode || 'PHONE') as FollowUpModeKey;
-  const modeUi = FOLLOW_UP_MODE_DB_TO_UI[modeKey] || 'Phone';
+  const modeUi =
+    modeKey === 'VIDEO_CALL' && t.syncGoogleCalendar
+      ? 'Google Meet'
+      : FOLLOW_UP_MODE_DB_TO_UI[modeKey] || 'Phone';
   const pad = (n: number) => String(n).padStart(2, '0');
   const dueTime = `${pad(t.dueDate.getHours())}:${pad(t.dueDate.getMinutes())}`;
   const hasTime = t.dueDate.getHours() !== 0 || t.dueDate.getMinutes() !== 0;
@@ -167,6 +222,13 @@ function serializeTask(t: {
     dueTime: hasTime ? dueTime : '',
     scheduledAt: t.dueDate.toISOString(),
     status: t.status,
+    meetingLink: t.meetingLink || '',
+    calendarEventId: t.calendarEventId || '',
+    calendarSyncStatus: t.calendarSyncStatus || '',
+    syncGoogleCalendar: Boolean(t.syncGoogleCalendar),
+    notifyEmail: t.notifyEmail !== false,
+    notifyWhatsApp: t.notifyWhatsApp !== false,
+    notificationLog: (t.notificationLog as Record<string, unknown>) || {},
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
   };
@@ -204,18 +266,26 @@ enquiriesRouter.get('/', async (req, res) => {
   const classInterested = req.query.classInterested ? String(req.query.classInterested) : undefined;
   const q = req.query.q ? String(req.query.q).trim().toLowerCase() : undefined;
 
-  const where: Prisma.EnquiryWhereInput = { institutionId };
-  if (status && status !== 'All') where.status = toStatus(status);
-  if (source && source !== 'All') where.source = source;
-  if (classInterested && classInterested !== 'All') where.classInterested = classInterested;
+  const filters: Prisma.EnquiryWhereInput[] = [{ institutionId }];
+  if (status && status !== 'All') filters.push({ status: toStatus(status) });
+  if (source && source !== 'All') filters.push({ source });
+  if (classInterested && classInterested !== 'All') filters.push({ classInterested });
+
+  const visibility = await enquiryVisibilityFilter(req.user);
+  if (visibility) filters.push(visibility);
+
   if (q) {
-    where.OR = [
-      { enquirerName: { contains: q, mode: 'insensitive' } },
-      { enquiryId: { contains: q, mode: 'insensitive' } },
-      { mobile: { contains: q } },
-      { email: { contains: q, mode: 'insensitive' } },
-    ];
+    filters.push({
+      OR: [
+        { enquirerName: { contains: q, mode: 'insensitive' } },
+        { enquiryId: { contains: q, mode: 'insensitive' } },
+        { mobile: { contains: q } },
+        { email: { contains: q, mode: 'insensitive' } },
+      ],
+    });
   }
+
+  const where: Prisma.EnquiryWhereInput = filters.length === 1 ? filters[0] : { AND: filters };
 
   const enquiries = await prisma.enquiry.findMany({
     where,
@@ -254,12 +324,14 @@ enquiriesRouter.get('/meta', async (_req, res) => {
     'Others',
   ];
   const statuses = ['New', 'In Process', 'Follow Up', 'Converted', 'Not Interested'];
+  const counselors = await fetchCounselorOptions(institutionId);
 
   return res.json({
     // Prefer configured Classes & Sections master list; fallback only if empty
     classes: classNames,
     sources,
     statuses,
+    counselors,
     classesFromSetup: classNames.length > 0,
   });
 });
@@ -387,9 +459,14 @@ enquiriesRouter.get('/tasks', async (req, res) => {
   const institutionId = await getDefaultInstitutionId();
   const status = req.query.status ? String(req.query.status) : undefined;
   const mode = req.query.mode ? String(req.query.mode) : undefined;
+
+  const enquiryWhere: Prisma.EnquiryWhereInput = { institutionId };
+  const visibility = await enquiryVisibilityFilter(req.user);
+  if (visibility) Object.assign(enquiryWhere, visibility);
+
   const tasks = await prisma.followUpTask.findMany({
     where: {
-      enquiry: { institutionId },
+      enquiry: enquiryWhere,
       ...(status ? { status } : {}),
       ...(mode ? { mode: toFollowUpMode(mode) } : {}),
     },
@@ -401,21 +478,29 @@ enquiriesRouter.get('/tasks', async (req, res) => {
   });
 });
 
-enquiriesRouter.get('/tasks/meta', async (_req, res) => {
+enquiriesRouter.get('/tasks/meta', async (req, res) => {
   const institutionId = await getDefaultInstitutionId();
+  const enquiryWhere: Prisma.EnquiryWhereInput = { institutionId };
+  const visibility = await enquiryVisibilityFilter(req.user);
+  if (visibility) Object.assign(enquiryWhere, visibility);
+
   const enquiries = await prisma.enquiry.findMany({
-    where: { institutionId },
-    select: { id: true, enquiryId: true, enquirerName: true, assignedTo: true, classInterested: true },
+    where: enquiryWhere,
+    select: {
+      id: true,
+      enquiryId: true,
+      enquirerName: true,
+      assignedTo: true,
+      classInterested: true,
+      email: true,
+      mobile: true,
+    },
     orderBy: { enquirerName: 'asc' },
   });
-  const assignees = await prisma.enquiry.findMany({
-    where: { institutionId, assignedTo: { not: '' } },
-    select: { assignedTo: true },
-    distinct: ['assignedTo'],
-    orderBy: { assignedTo: 'asc' },
-  });
+  const counselors = await fetchCounselorOptions(institutionId);
+  const modes = [...new Set([...Object.values(FOLLOW_UP_MODE_DB_TO_UI), 'Google Meet'])];
   return res.json({
-    modes: Object.values(FOLLOW_UP_MODE_DB_TO_UI),
+    modes,
     modeKeys: Object.keys(FOLLOW_UP_MODE_DB_TO_UI),
     enquiries: enquiries.map((e) => ({
       id: e.id,
@@ -423,8 +508,10 @@ enquiriesRouter.get('/tasks/meta', async (_req, res) => {
       enquirerName: e.enquirerName,
       assignedTo: e.assignedTo,
       classInterested: e.classInterested,
+      email: e.email,
+      mobile: e.mobile,
     })),
-    counselors: assignees.map((a) => a.assignedTo).filter(Boolean),
+    counselors,
   });
 });
 
@@ -439,13 +526,16 @@ enquiriesRouter.patch('/tasks/:taskId', async (req, res) => {
     dueTime: z.string().optional().nullable(),
     assignedTo: z.string().optional(),
     status: z.enum(['Pending', 'Completed']).optional(),
+    syncGoogleCalendar: z.boolean().optional(),
+    notifyEmail: z.boolean().optional(),
+    notifyWhatsApp: z.boolean().optional(),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   const existing = await prisma.followUpTask.findFirst({
     where: { id: req.params.taskId, enquiry: { institutionId } },
-    include: { enquiry: { select: { enquiryId: true, enquirerName: true } } },
+    include: { enquiry: true },
   });
   if (!existing) return res.status(404).json({ error: 'Task not found' });
 
@@ -460,7 +550,17 @@ enquiriesRouter.patch('/tasks/:taskId', async (req, res) => {
     if (next) dueDate = next;
   }
 
-  const task = await prisma.followUpTask.update({
+  const mode = parsed.data.mode !== undefined ? toFollowUpMode(parsed.data.mode) : existing.mode;
+  const syncGoogleCalendar =
+    parsed.data.syncGoogleCalendar !== undefined
+      ? parsed.data.syncGoogleCalendar
+      : existing.syncGoogleCalendar;
+  const notifyEmail =
+    parsed.data.notifyEmail !== undefined ? parsed.data.notifyEmail : existing.notifyEmail;
+  const notifyWhatsApp =
+    parsed.data.notifyWhatsApp !== undefined ? parsed.data.notifyWhatsApp : existing.notifyWhatsApp;
+
+  let task = await prisma.followUpTask.update({
     where: { id: existing.id },
     data: {
       ...(parsed.data.title !== undefined ? { title: parsed.data.title } : {}),
@@ -471,10 +571,46 @@ enquiriesRouter.patch('/tasks/:taskId', async (req, res) => {
         : {}),
       ...(parsed.data.assignedTo !== undefined ? { assignedTo: parsed.data.assignedTo } : {}),
       ...(parsed.data.status !== undefined ? { status: parsed.data.status } : {}),
+      ...(parsed.data.syncGoogleCalendar !== undefined
+        ? { syncGoogleCalendar: parsed.data.syncGoogleCalendar }
+        : {}),
+      ...(parsed.data.notifyEmail !== undefined ? { notifyEmail: parsed.data.notifyEmail } : {}),
+      ...(parsed.data.notifyWhatsApp !== undefined
+        ? { notifyWhatsApp: parsed.data.notifyWhatsApp }
+        : {}),
       dueDate,
     } as Prisma.FollowUpTaskUncheckedUpdateInput,
     include: { enquiry: { select: { enquiryId: true, enquirerName: true } } },
   });
+
+  const shouldSync =
+    isVideoFollowUpMode(mode) &&
+    syncGoogleCalendar &&
+    task.status === 'Pending' &&
+    (parsed.data.dueDate ||
+      parsed.data.dueTime ||
+      parsed.data.mode ||
+      parsed.data.syncGoogleCalendar !== undefined);
+
+  if (shouldSync) {
+    const syncResult = await syncFollowUpVideoCall({
+      institutionId,
+      task: { ...task, syncGoogleCalendar, notifyEmail, notifyWhatsApp },
+      enquiry: existing.enquiry,
+      counselorEmail: req.user?.email,
+      force: true,
+    });
+    task = await prisma.followUpTask.update({
+      where: { id: task.id },
+      data: {
+        meetingLink: syncResult.meetingLink,
+        calendarEventId: syncResult.calendarEventId,
+        calendarSyncStatus: syncResult.calendarSyncStatus,
+        notificationLog: syncResult.notificationLog as Prisma.InputJsonValue,
+      },
+      include: { enquiry: { select: { enquiryId: true, enquirerName: true } } },
+    });
+  }
 
   if (parsed.data.status === 'Completed' && existing.status !== 'Completed') {
     await logActivity(
@@ -506,6 +642,49 @@ enquiriesRouter.patch('/tasks/:taskId', async (req, res) => {
   }
 
   return res.json({ task: serializeTask(task) });
+});
+
+enquiriesRouter.post('/tasks/:taskId/sync-calendar', async (req, res) => {
+  const institutionId = await getDefaultInstitutionId();
+  const existing = await prisma.followUpTask.findFirst({
+    where: { id: req.params.taskId, enquiry: { institutionId } },
+    include: { enquiry: true },
+  });
+  if (!existing) return res.status(404).json({ error: 'Task not found' });
+  if (!isVideoFollowUpMode(existing.mode)) {
+    return res.status(400).json({ error: 'Calendar sync is only available for Google Meet / Video Call follow-ups' });
+  }
+
+  const syncResult = await syncFollowUpVideoCall({
+    institutionId,
+    task: { ...existing, syncGoogleCalendar: true },
+    enquiry: existing.enquiry,
+    counselorEmail: req.user?.email,
+    force: true,
+  });
+
+  const task = await prisma.followUpTask.update({
+    where: { id: existing.id },
+    data: {
+      syncGoogleCalendar: true,
+      meetingLink: syncResult.meetingLink,
+      calendarEventId: syncResult.calendarEventId,
+      calendarSyncStatus: syncResult.calendarSyncStatus,
+      notificationLog: syncResult.notificationLog as Prisma.InputJsonValue,
+    },
+    include: { enquiry: { select: { enquiryId: true, enquirerName: true } } },
+  });
+
+  await logActivity(
+    existing.enquiryId,
+    EnquiryActivityType.SYSTEM,
+    syncResult.meetingLink
+      ? `Google Meet link generated and shared for: ${task.title}`
+      : `Calendar sync attempted for: ${task.title}`,
+    task.assignedTo || 'Admin',
+  );
+
+  return res.json({ task: serializeTask(task), sync: syncResult });
 });
 
 enquiriesRouter.delete('/tasks/:taskId', async (req, res) => {
@@ -767,11 +946,17 @@ enquiriesRouter.post('/:id/tasks', async (req, res) => {
     dueDate: z.string().min(4),
     dueTime: z.string().optional().nullable(),
     assignedTo: z.string().optional(),
+    syncGoogleCalendar: z.boolean().optional(),
+    notifyEmail: z.boolean().optional(),
+    notifyWhatsApp: z.boolean().optional(),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-  const existing = await prisma.enquiry.findUnique({ where: { id: req.params.id } });
+  const institutionId = await getDefaultInstitutionId();
+  const existing = await prisma.enquiry.findFirst({
+    where: { id: req.params.id, institutionId },
+  });
   if (!existing) return res.status(404).json({ error: 'Enquiry not found' });
 
   const dueDate = parseDueDateTime(parsed.data.dueDate, parsed.data.dueTime);
@@ -779,12 +964,18 @@ enquiriesRouter.post('/:id/tasks', async (req, res) => {
 
   const mode = toFollowUpMode(parsed.data.mode);
   const subject = (parsed.data.subject || '').trim();
-  const modeLabel = FOLLOW_UP_MODE_DB_TO_UI[mode];
+  const modeLabel =
+    isVideoFollowUpMode(mode) && parsed.data.syncGoogleCalendar !== false
+      ? 'Google Meet'
+      : FOLLOW_UP_MODE_DB_TO_UI[mode];
   const title =
     (parsed.data.title || '').trim() ||
     (subject ? `${modeLabel}: ${subject}` : `${modeLabel} follow-up`);
 
-  const task = await prisma.followUpTask.create({
+  const syncGoogleCalendar =
+    isVideoFollowUpMode(mode) && parsed.data.syncGoogleCalendar !== false;
+
+  let task = await prisma.followUpTask.create({
     data: {
       enquiryId: existing.id,
       title,
@@ -793,14 +984,39 @@ enquiriesRouter.post('/:id/tasks', async (req, res) => {
       discussionNotes: parsed.data.discussionNotes || null,
       dueDate,
       assignedTo: parsed.data.assignedTo || existing.assignedTo || '',
+      syncGoogleCalendar,
+      notifyEmail: parsed.data.notifyEmail !== false,
+      notifyWhatsApp: parsed.data.notifyWhatsApp !== false,
     } as Prisma.FollowUpTaskUncheckedCreateInput,
     include: { enquiry: { select: { enquiryId: true, enquirerName: true } } },
   });
 
+  if (syncGoogleCalendar) {
+    const syncResult = await syncFollowUpVideoCall({
+      institutionId,
+      task: { ...task, enquiryId: existing.id } as typeof task & { enquiryId: string },
+      enquiry: existing,
+      counselorEmail: req.user?.email,
+      force: true,
+    });
+    task = await prisma.followUpTask.update({
+      where: { id: task.id },
+      data: {
+        meetingLink: syncResult.meetingLink,
+        calendarEventId: syncResult.calendarEventId,
+        calendarSyncStatus: syncResult.calendarSyncStatus,
+        notificationLog: syncResult.notificationLog as Prisma.InputJsonValue,
+      },
+      include: { enquiry: { select: { enquiryId: true, enquirerName: true } } },
+    });
+  }
+
   await logActivity(
     existing.id,
     EnquiryActivityType.SYSTEM,
-    `Follow-up scheduled (${modeLabel}): ${task.title}`,
+    syncGoogleCalendar && task.meetingLink
+      ? `Follow-up scheduled (${modeLabel}) with Google Meet link shared`
+      : `Follow-up scheduled (${modeLabel}): ${task.title}`,
     task.assignedTo || 'Admin',
   );
 

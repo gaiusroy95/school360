@@ -31,7 +31,7 @@ async function renderCardToCanvas(
   const renderScale = idCardRenderScale(templateId);
   const root: Root = createRoot(mount);
   root.render(createElement(IdCardByTemplate, { templateId, student, school, scale: renderScale }));
-  await new Promise((r) => setTimeout(r, 150));
+  await new Promise((r) => setTimeout(r, 600));
 
   try {
     return await captureElementToCanvas(mount, { scale: 1 });

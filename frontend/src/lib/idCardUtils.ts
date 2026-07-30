@@ -1,5 +1,6 @@
 import type { Student } from './studentServices';
 import { resolveLogoUrl } from './branding';
+import { getStudentPhotoUrl } from './studentPhotoUtils';
 import type { IdCardSchool, IdCardStudent, IdCardTemplateId } from '../components/crm/InstitutionSetup/idCardTypes';
 import { ID_CARD_TEMPLATES } from '../components/crm/InstitutionSetup/idCardTypes';
 
@@ -74,7 +75,7 @@ export function studentToIdCardStudent(student: Student): IdCardStudent {
     phone: student.mobile || student.fatherMobile || form.fatherMobile || '—',
     address: student.address || form.address || '—',
     aadhaar: student.aadhaarNumber || form.aadhaarNumber,
-    photoUrl: student.photoUrl || form.studentPhoto,
+    photoUrl: getStudentPhotoUrl(student),
     course: student.className,
     batch: student.academicYear,
     bloodGroup: student.bloodGroup || form.bloodGroup,

@@ -3,7 +3,7 @@ import type { BulkImportBatch } from './studentBulkImportServices';
 import type { Student } from './studentServices';
 
 const STUDENT_HEADERS = [
-  'Admission No.', 'Roll No.', 'First Name', 'Last Name', 'Date of Birth', 'Gender',
+  'Admission No.', 'Soft ID', 'SR No', 'Portal NIC Code', 'Roll No.', 'First Name', 'Last Name', 'Date of Birth', 'Gender',
   'Blood Group', 'Aadhaar Number', 'Category', 'Class', 'Section', 'Academic Year',
   'House', 'Mobile', 'Email', 'Address', 'Father Name', 'Father Mobile', 'Mother Name', 'Mother Mobile', 'Status', 'Entrance Score',
 ];
@@ -31,7 +31,7 @@ export function downloadBulkImportExport(batches: BulkImportBatch[], students: S
   const studentSheet = XLSX.utils.aoa_to_sheet([
     STUDENT_HEADERS,
     ...students.map((s) => [
-      s.admissionNumber, s.rollNumber, s.firstName, s.lastName, s.dateOfBirth, s.gender,
+      s.admissionNumber, s.softId, s.srNo, s.portalNicCode, s.rollNumber, s.firstName, s.lastName, s.dateOfBirth, s.gender,
       s.bloodGroup, s.aadhaarNumber, s.category, s.className, s.sectionName, s.academicYear,
       s.house, s.mobile, s.email, s.address, s.fatherName, s.fatherMobile, s.motherName, s.motherMobile, s.status, s.entranceScore ?? '',
     ]),

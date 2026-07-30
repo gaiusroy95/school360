@@ -3,6 +3,7 @@ import { extractTextFromPdfBase64 } from './pdfText.js';
 import {
   getGeminiApiKey,
   parseJsonFromModel,
+  runGeminiJsonRequest,
   type GeneratedQuestion,
 } from './geminiQuestions.js';
 
@@ -69,33 +70,64 @@ Return JSON only:
 }
 `;
 
+function formatGeminiError(err: unknown): Error {
+  const message = err instanceof Error ? err.message : String(err);
+  if (message.includes('API key not valid') || message.includes('API_KEY_INVALID')) {
+    return new Error(
+      'GEMINI_API_KEY is invalid. Add a valid Google AI API key to backend/.env and restart the server.',
+    );
+  }
+  return err instanceof Error ? err : new Error(message);
+}
+
+async function runGeminiVisionJsonRequest(
+  mimeType: string,
+  base64Data: string,
+  prompt: string,
+): Promise<string> {
+  const genAI = new GoogleGenerativeAI(getGeminiApiKey());
+  const preferred = process.env.GEMINI_MODEL?.trim();
+  const models = [...new Set([preferred, 'gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-flash'].filter((m): m is string => Boolean(m)))];
+  let lastError: Error | null = null;
+
+  for (const modelName of models) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: 'application/json',
+        },
+      });
+      const result = await model.generateContent([
+        { inlineData: { mimeType, data: base64Data } },
+        { text: prompt },
+      ]);
+      const text = result.response.text();
+      if (!text?.trim()) throw new Error('OCR returned an empty response');
+      return text;
+    } catch (err) {
+      lastError = formatGeminiError(err);
+      const msg = lastError.message.toLowerCase();
+      if (msg.includes('not found') || msg.includes('404') || msg.includes('is not supported')) continue;
+      throw lastError;
+    }
+  }
+
+  throw lastError || new Error('No compatible Gemini vision model available');
+}
+
 async function ocrWithVision(
   mimeType: string,
   base64Data: string,
   questionType: string,
   difficulty: string,
 ): Promise<{ title: string; rawText: string; questions: GeneratedQuestion[] }> {
-  const genAI = new GoogleGenerativeAI(getGeminiApiKey());
-  const model = genAI.getGenerativeModel({
-    model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
-    generationConfig: {
-      temperature: 0.1,
-      responseMimeType: 'application/json',
-    },
-  });
-
-  const result = await model.generateContent([
-    {
-      inlineData: {
-        mimeType,
-        data: base64Data,
-      },
-    },
-    { text: OCR_JSON_PROMPT(questionType, difficulty) },
-  ]);
-
-  const responseText = result.response.text();
-  if (!responseText) throw new Error('OCR returned an empty response');
+  const responseText = await runGeminiVisionJsonRequest(
+    mimeType,
+    base64Data,
+    OCR_JSON_PROMPT(questionType, difficulty),
+  );
 
   let parsed: {
     title?: string;
@@ -125,20 +157,12 @@ async function ocrFromPlainText(
   questionType: string,
   difficulty: string,
 ): Promise<{ title: string; rawText: string; questions: GeneratedQuestion[] }> {
-  const genAI = new GoogleGenerativeAI(getGeminiApiKey());
-  const model = genAI.getGenerativeModel({
-    model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
-    generationConfig: {
-      temperature: 0.1,
-      responseMimeType: 'application/json',
-    },
+  const responseText = await runGeminiJsonRequest(0.1, async (model) => {
+    const result = await model.generateContent(
+      `${OCR_JSON_PROMPT(questionType, difficulty)}\n\nEXTRACTED TEXT FROM PDF:\n${text.slice(0, 100_000)}`,
+    );
+    return result.response.text();
   });
-
-  const result = await model.generateContent(
-    `${OCR_JSON_PROMPT(questionType, difficulty)}\n\nEXTRACTED TEXT FROM PDF:\n${text.slice(0, 100_000)}`,
-  );
-  const responseText = result.response.text();
-  if (!responseText) throw new Error('OCR returned an empty response');
 
   const parsed = parseJsonFromModel(responseText) as {
     title?: string;

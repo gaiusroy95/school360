@@ -89,13 +89,17 @@ function SchoolContactFooter({
 }
 
 function Photo({ src, className, style }: { src?: string; className?: string; style?: CSSProperties }) {
+  const validSrc =
+    src && src !== '[attached]' && (src.startsWith('data:') || src.startsWith('http') || src.startsWith('/'))
+      ? src
+      : PHOTO_PLACEHOLDER;
   return (
     <img
-      src={src || PHOTO_PLACEHOLDER}
+      src={validSrc}
       alt=""
       className={className}
       style={style}
-      crossOrigin="anonymous"
+      crossOrigin={validSrc.startsWith('data:') ? undefined : 'anonymous'}
     />
   );
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   RefreshCw, Upload, Users, History, Download, CalendarClock, Power, Settings, GitMerge,
   Key, ListOrdered, Palette, Pipette, Code, Menu, LayoutDashboard, CheckCircle2,
@@ -11,6 +11,8 @@ import {
   syncDataModulesUi,
   type DataModulesUiOverview,
 } from '../../../lib/settingsDataModulesUiServices';
+import { downloadParentImportTemplate, parseParentWorkbook } from '../../../lib/parentImportExcel';
+import { downloadStudentTemplate } from '../../../lib/studentExcel';
 import { AcademicLoading, AcademicPageHeader, AcademicPageShell, am } from '../AcademicManagement/AcademicManagementUi';
 
 type TabKey =
@@ -73,6 +75,8 @@ export function DataModulesUiView() {
   const [tab, setTab] = useState<TabKey>('import-employees');
   const [csvInput, setCsvInput] = useState('');
   const [importDetail, setImportDetail] = useState<Record<string, unknown> | null>(null);
+  const [parentFileName, setParentFileName] = useState('');
+  const parentFileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -87,15 +91,25 @@ export function DataModulesUiView() {
     void load();
   };
 
-  const runImport = async (type: 'employees' | 'parents') => {
-    const rows = parseCsv(csvInput);
-    if (!rows.length) { setMessage('Paste CSV with header row first'); return; }
+  const runImport = async (type: 'employees' | 'parents', rows: Array<Record<string, string>>, fileName = 'paste.csv') => {
+    if (!rows.length) { setMessage('No import rows found'); return; }
     const res = type === 'employees'
-      ? await importEmployees(rows, 'paste.csv')
-      : await importParents(rows, 'paste.csv');
+      ? await importEmployees(rows, fileName)
+      : await importParents(rows, fileName);
     setMessage(`Imported ${res.successCount} rows, ${res.errorCount} errors (log: ${res.logId})`);
     setCsvInput('');
+    setParentFileName('');
     void load();
+  };
+
+  const handleParentExcel = async (file: File) => {
+    const rows = parseParentWorkbook(await file.arrayBuffer());
+    if (!rows.length) {
+      setMessage('No parent rows found in Excel file. Use the template and fill at least Parent Name.');
+      return;
+    }
+    setParentFileName(`${file.name} — ${rows.length} row(s)`);
+    await runImport('parents', rows, file.name);
   };
 
   const viewImportLog = async (logId: string) => {
@@ -103,6 +117,8 @@ export function DataModulesUiView() {
   };
 
   if (loading && !data) return <AcademicLoading label="Loading data management & UI…" />;
+
+  const importConfig = (data?.config as { import?: { employeeColumns?: string; parentColumns?: string } } | undefined)?.import;
 
   return (
     <AcademicPageShell>
@@ -145,17 +161,42 @@ export function DataModulesUiView() {
         {(tab === 'import-employees' || tab === 'import-parents') && (
           <div className={`${am.card} space-y-3`}>
             <p className="text-sm text-slate-600">
-              Paste CSV data (header row required). {tab === 'import-employees'
-                ? 'Columns: employeeCode, fullName, department, mobile, email'
-                : 'Columns: parentName, mobile, studentAdmissionNumber, relationship'}
+              {tab === 'import-employees'
+                ? `Paste CSV data (header row required). Columns: ${importConfig?.employeeColumns || 'employeeCode, fullName, department, mobile, email'}`
+                : `Import parents linked to students. Columns: ${importConfig?.parentColumns || 'parentName, mobile, studentAdmissionNumber, studentSoftId, studentSrNo, studentPortalNicCode, relationship'}`}
             </p>
+            {tab === 'import-parents' && (
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className={am.btnSecondary} onClick={() => downloadParentImportTemplate()}>
+                  <Download size={14} /> Download Excel Template
+                </button>
+                <button type="button" className={am.btnSecondary} onClick={() => parentFileRef.current?.click()}>
+                  <Upload size={14} /> Upload Excel
+                </button>
+                <button type="button" className={am.btnSecondary} onClick={() => downloadStudentTemplate()}>
+                  <Download size={14} /> Student Template (reference)
+                </button>
+                <input
+                  ref={parentFileRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void handleParentExcel(file);
+                    e.target.value = '';
+                  }}
+                />
+                {parentFileName && <span className="text-xs text-slate-500 self-center">{parentFileName}</span>}
+              </div>
+            )}
             <textarea className="w-full h-32 text-xs border border-slate-200 rounded-lg p-2 font-mono" value={csvInput}
               onChange={(e) => setCsvInput(e.target.value)}
               placeholder={tab === 'import-employees'
                 ? 'employeeCode,fullName,department,mobile,email\nEMP001,John Doe,Science,9876543210,john@school.edu'
-                : 'parentName,mobile,studentAdmissionNumber,relationship\nJane Doe,9876543210,ADM2025001,MOTHER'} />
-            <button type="button" className={am.btnPrimary} onClick={() => void runImport(tab === 'import-employees' ? 'employees' : 'parents')}>
-              <Upload size={14} /> Run Import
+                : 'parentName,mobile,studentAdmissionNumber,studentSoftId,studentSrNo,studentPortalNicCode,relationship\nJane Doe,9876543210,ADM2025001,DPS0001,SR-12345,NIC-9876,MOTHER'} />
+            <button type="button" className={am.btnPrimary} onClick={() => void runImport(tab === 'import-employees' ? 'employees' : 'parents', parseCsv(csvInput))}>
+              <Upload size={14} /> Run CSV Import
             </button>
           </div>
         )}

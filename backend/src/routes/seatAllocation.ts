@@ -5,7 +5,7 @@ import { prisma } from '../lib/prisma.js';
 import { getDefaultInstitutionId } from '../lib/institution.js';
 import { requireAuth } from '../middleware/auth.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
-import { getPassMarksForTest, getInstitutionPassMarks } from '../lib/admissionTestSettings.js';
+import { listMeritCandidatesForSeatAllocation } from '../lib/meritListBuilder.js';
 import { ensureAdmissionRecordForApprovedApp } from '../lib/admissionRecords.js';
 
 export const seatAllocationRouter = Router();
@@ -465,77 +465,15 @@ seatAllocationRouter.post(
       });
     }
 
-    // Eligible: submitted entrance attempts that passed (and application not rejected)
-    const attempts = await prisma.entranceExamAttempt.findMany({
-      where: {
-        submittedAt: { not: null },
-        credential: {
-          publication: { institutionId },
-          application: {
-            status: { not: ApplicationStatus.REJECTED },
-          },
-        },
-      },
-      include: {
-        credential: {
-          include: {
-            publication: {
-              include: { test: { select: { id: true, passMarksPercent: true } } },
-            },
-            application: true,
-          },
-        },
-      },
-    });
+    const candidates = await listMeritCandidatesForSeatAllocation(institutionId);
+    const filteredCandidates = parsed.data.className
+      ? candidates.filter((c) => classesMatch(c.classApplied, parsed.data.className!))
+      : candidates;
 
-    const defaultPass = await getInstitutionPassMarks(institutionId);
-    const passMarksCache = new Map<string, number>();
-    type Candidate = {
-      applicationId: string;
-      studentName: string;
-      classApplied: string;
-      score: number;
-      submittedAt: Date;
-    };
-
-    const byApp = new Map<string, Candidate>();
-    for (const attempt of attempts) {
-      const app = attempt.credential.application;
-      const test = attempt.credential.publication.test;
-      let passMarks = passMarksCache.get(test.id);
-      if (passMarks == null) {
-        passMarks =
-          test.passMarksPercent ?? (await getPassMarksForTest(test.id, institutionId)) ?? defaultPass;
-        passMarksCache.set(test.id, passMarks);
-      }
-      const percent = attempt.percentScore ?? 0;
-      const passed = attempt.passed ?? percent >= passMarks;
-      if (!passed) continue;
-      if (parsed.data.className && !classesMatch(app.classApplied, parsed.data.className)) {
-        continue;
-      }
-
-      const existing = byApp.get(app.id);
-      if (!existing || percent > existing.score) {
-        byApp.set(app.id, {
-          applicationId: app.id,
-          studentName: app.studentName,
-          classApplied: app.classApplied || 'Unspecified',
-          score: percent,
-          submittedAt: attempt.submittedAt || new Date(),
-        });
-      }
-    }
-
-    const candidates = [...byApp.values()].sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return a.submittedAt.getTime() - b.submittedAt.getTime();
-    });
-
-    if (candidates.length === 0) {
+    if (filteredCandidates.length === 0) {
       return res.status(400).json({
         error:
-          'No eligible candidates found. Students must submit and pass the entrance exam first (see Merit List).',
+          'No eligible candidates found. Record manual merit scores on Applications or publish digital entrance tests (see Merit List).',
       });
     }
 
@@ -565,8 +503,8 @@ seatAllocationRouter.post(
     const planned: Planned[] = [];
     const classRankCounter = new Map<string, number>();
 
-    for (let i = 0; i < candidates.length; i++) {
-      const cand = candidates[i];
+    for (let i = 0; i < filteredCandidates.length; i++) {
+      const cand = filteredCandidates[i];
       const meritRank = i + 1;
 
       // Find matching capacity class

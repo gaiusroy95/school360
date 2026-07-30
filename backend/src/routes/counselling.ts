@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import {
   ApplicationStatus,
+  AccountStatus,
   EnquiryActivityType,
   EnquiryStatus,
   FollowUpMode,
@@ -166,6 +167,87 @@ function serializeLog(log: {
   };
 }
 
+async function fetchCounselorOptions(institutionId: string): Promise<string[]> {
+  const users = await prisma.user.findMany({
+    where: {
+      accountStatus: AccountStatus.ACTIVE,
+      userType: { in: ['STAFF', 'ADMIN'] },
+    },
+    select: { displayName: true, email: true },
+    orderBy: { displayName: 'asc' },
+  });
+  const fromUsers = users.flatMap((u) => [u.displayName, u.email].filter(Boolean));
+  const assignees = await prisma.enquiry.findMany({
+    where: { institutionId, assignedTo: { not: '' } },
+    select: { assignedTo: true },
+    distinct: ['assignedTo'],
+  });
+  return [...new Set([...fromUsers, ...assignees.map((a) => a.assignedTo)])].sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: 'base' }),
+  );
+}
+
+type CounselorAnalyticsRow = {
+  counselorName: string;
+  totalAssigned: number;
+  new: number;
+  inProcess: number;
+  followUp: number;
+  converted: number;
+  notInterested: number;
+};
+
+async function buildCounselorAnalytics(institutionId: string): Promise<CounselorAnalyticsRow[]> {
+  const enquiries = await prisma.enquiry.findMany({
+    where: { institutionId },
+    select: { assignedTo: true, status: true },
+  });
+
+  const map = new Map<string, CounselorAnalyticsRow>();
+
+  const ensure = (name: string) => {
+    const key = name.trim() || 'Unassigned';
+    if (!map.has(key)) {
+      map.set(key, {
+        counselorName: key,
+        totalAssigned: 0,
+        new: 0,
+        inProcess: 0,
+        followUp: 0,
+        converted: 0,
+        notInterested: 0,
+      });
+    }
+    return map.get(key)!;
+  };
+
+  for (const e of enquiries) {
+    const row = ensure(e.assignedTo || 'Unassigned');
+    row.totalAssigned += 1;
+    switch (e.status) {
+      case EnquiryStatus.NEW:
+        row.new += 1;
+        break;
+      case EnquiryStatus.IN_PROCESS:
+        row.inProcess += 1;
+        break;
+      case EnquiryStatus.FOLLOW_UP:
+        row.followUp += 1;
+        break;
+      case EnquiryStatus.CONVERTED:
+        row.converted += 1;
+        break;
+      case EnquiryStatus.NOT_INTERESTED:
+        row.notInterested += 1;
+        break;
+      default:
+        break;
+    }
+  }
+
+  return [...map.values()].sort((a, b) => b.totalAssigned - a.totalAssigned);
+}
+
 async function logActivity(
   enquiryId: string,
   description: string,
@@ -194,15 +276,45 @@ const sessionSchema = z.object({
   counselorName: z.string().optional(),
 });
 
-counsellingRouter.get('/meta', (_req, res) => {
+counsellingRouter.get('/meta', asyncHandler(async (_req, res) => {
+  const institutionId = await getDefaultInstitutionId();
+  const counselors = await fetchCounselorOptions(institutionId);
   return res.json({
     interactionTypes: INTERACTION_TYPES,
     sentiments: SENTIMENTS,
     engagementLevels: ENGAGEMENT_LEVELS,
     riskFactors: RISK_FACTORS,
     actionIntents: ACTION_INTENTS,
+    counselors,
   });
-});
+}));
+
+counsellingRouter.get(
+  '/counselor-analytics',
+  asyncHandler(async (_req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const counselors = await buildCounselorAnalytics(institutionId);
+    const totals = counselors.reduce(
+      (acc, row) => ({
+        totalAssigned: acc.totalAssigned + row.totalAssigned,
+        new: acc.new + row.new,
+        inProcess: acc.inProcess + row.inProcess,
+        followUp: acc.followUp + row.followUp,
+        converted: acc.converted + row.converted,
+        notInterested: acc.notInterested + row.notInterested,
+      }),
+      {
+        totalAssigned: 0,
+        new: 0,
+        inProcess: 0,
+        followUp: 0,
+        converted: 0,
+        notInterested: 0,
+      },
+    );
+    return res.json({ counselors, totals });
+  }),
+);
 
 counsellingRouter.get(
   '/queue',
@@ -231,6 +343,35 @@ counsellingRouter.get(
     });
 
     return res.json({ leads: sorted.map(serializeLead) });
+  }),
+);
+
+counsellingRouter.patch(
+  '/:enquiryId/assign',
+  asyncHandler(async (req, res) => {
+    const schema = z.object({ assignedTo: z.string() });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const institutionId = await getDefaultInstitutionId();
+    const enquiry = await prisma.enquiry.findFirst({
+      where: { id: req.params.enquiryId, institutionId },
+    });
+    if (!enquiry) return res.status(404).json({ error: 'Enquiry not found' });
+
+    const assignedTo = parsed.data.assignedTo.trim();
+    const updated = await prisma.enquiry.update({
+      where: { id: enquiry.id },
+      data: { assignedTo },
+    });
+
+    await logActivity(
+      enquiry.id,
+      assignedTo ? `Counselor assigned: ${assignedTo}` : 'Counselor unassigned',
+      req.user?.email || assignedTo || 'Admin',
+    );
+
+    return res.json({ lead: serializeLead(updated) });
   }),
 );
 

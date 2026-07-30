@@ -73,6 +73,7 @@ model Institution {
   parentCategoryAssignments ParentCategoryAssignment[]
   parentEngagementEvents ParentEngagementEvent[]
   parentCommunications ParentCommunication[]
+  parentCommunicationCampaigns ParentCommunicationCampaign[]
   parentFeedbacks ParentFeedback[]
   parentMeetings ParentMeeting[]
   parentConsentTemplates ParentConsentTemplate[]
@@ -591,6 +592,7 @@ model Institution {
   idCardTemplates IdCardTemplate[]
   rollNumberRules RollNumberRule[]
   admissionNumberSequences AdmissionNumberSequence[]
+  softIdSequences SoftIdSequence[]
   employeeCodeRules EmployeeCodeRule[]
   profileCustomFields ProfileCustomField[]
   customFieldTypes CustomFieldType[]
@@ -709,6 +711,13 @@ model FollowUpTask {
   assignedTo String   @default("")
   dueDate    DateTime
   status     String   @default("Pending") // Pending | Completed
+  meetingLink String  @default("")
+  calendarEventId String @default("")
+  calendarSyncStatus String @default("") // PENDING | SYNCED | FAILED | SKIPPED
+  syncGoogleCalendar Boolean @default(false)
+  notifyEmail Boolean @default(true)
+  notifyWhatsApp Boolean @default(true)
+  notificationLog Json @default("{}")
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -759,6 +768,13 @@ enum ApplicationDocumentType {
   OTHER
 }
 
+enum MeritBadge {
+  GOLD
+  SILVER
+  BRONZE
+  NONE
+}
+
 /// Admission application submitted by counselor from an enquiry
 model Application {
   id            String   @id @default(cuid())
@@ -793,6 +809,7 @@ model Application {
 
   documents ApplicationDocument[]
   entranceCredentials EntranceExamCredential[]
+  manualEntranceTest ManualEntranceTestEntry?
   seatAllocation SeatAllocation?
   admissionRecord AdmissionRecord?
 
@@ -803,6 +820,28 @@ model Application {
   @@index([institutionId, status])
   @@index([institutionId, submittedAt])
   @@index([enquiryId])
+}
+
+/// Subject-wise manual entrance test marks recorded from Merit List
+model ManualEntranceTestEntry {
+  id              String      @id @default(cuid())
+  institutionId   String
+  applicationId   String      @unique
+  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  teacherName     String
+  classApplied    String
+  subjects        Json        @default("[]")
+  totalMaxMarks   Float
+  totalObtained   Float
+  percentScore    Float
+  meritBadge      MeritBadge  @default(NONE)
+  academicSession String      @default("")
+  recordedBy      String      @default("")
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([institutionId, academicSession])
+  @@index([institutionId, classApplied])
 }
 
 model ApplicationDocument {
@@ -1127,6 +1166,9 @@ model Student {
   admissionRecord   AdmissionRecord? @relation(fields: [admissionRecordId], references: [id], onDelete: SetNull)
 
   admissionNumber   String
+  softId            String         @default("")
+  srNo              String         @default("")
+  portalNicCode     String         @default("")
   rollNumber        String         @default("")
   rfidTag           String         @default("")
 
@@ -1188,6 +1230,7 @@ model Student {
   parentLinks StudentParentLink[]
 
   @@unique([institutionId, admissionNumber])
+  @@index([institutionId, softId])
   @@index([institutionId, academicYear, status])
   @@index([institutionId, className, sectionName])
   @@index([institutionId, gender])
@@ -1497,6 +1540,28 @@ enum ParentCommunicationDirection {
   OUTBOUND
 }
 
+enum ParentCommunicationCampaignStatus {
+  DRAFT
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum ParentCommunicationDeliveryMode {
+  DRAFT
+  SEND_NOW
+  SCHEDULED
+  RECURRING
+}
+
+enum ParentCommunicationRecurrence {
+  NONE
+  WEEKLY
+  MONTHLY
+  DAY_15
+}
+
 enum ParentMeetingStatus {
   SCHEDULED
   COMPLETED
@@ -1568,6 +1633,11 @@ model ParentEngagementEvent {
   outcome              String                 @default("")
   studentFeedbackNotes String                 @default("")
   status               ParentEngagementStatus @default(PLANNED)
+  teacherName          String                 @default("")
+  className            String                 @default("")
+  sectionName          String                 @default("")
+  academicYear         String                 @default("")
+  rosterTaskId         String                 @default("")
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
 
@@ -1575,6 +1645,33 @@ model ParentEngagementEvent {
   @@index([institutionId, plannedAt])
   @@index([institutionId, studentId])
   @@index([institutionId, status])
+  @@index([institutionId, teacherName])
+  @@index([institutionId, className, sectionName])
+}
+
+model ParentCommunicationCampaign {
+  id              String                            @id @default(cuid())
+  institutionId   String
+  institution     Institution                       @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  campaignCode    String
+  channel         ParentCommunicationChannel
+  subject         String
+  body            String
+  category        String                            @default("general")
+  audienceBatches Json                              @default("[]")
+  deliveryMode    ParentCommunicationDeliveryMode   @default(DRAFT)
+  scheduledAt     DateTime?
+  recurrenceType  ParentCommunicationRecurrence     @default(NONE)
+  nextRunAt       DateTime?
+  lastRunAt       DateTime?
+  status          ParentCommunicationCampaignStatus @default(DRAFT)
+  createdBy       String                            @default("")
+  createdAt       DateTime                          @default(now())
+  updatedAt       DateTime                          @updatedAt
+
+  @@unique([institutionId, campaignCode])
+  @@index([institutionId, status])
+  @@index([institutionId, nextRunAt])
 }
 
 model ParentCommunication {
@@ -2785,6 +2882,8 @@ model StudentGatePass {
   exitTime         String         @default("")
   completedAt      DateTime?
   principalNotifiedAt DateTime?
+  otpVerified        Boolean        @default(false)
+  otpVerifiedAt      DateTime?
   source           String         @default("FRONT_DESK")
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
@@ -7583,6 +7682,7 @@ model FeeStructure {
   examinationFee         Float              @default(0)
   annualCharges          Float              @default(0)
   sportsFee              Float              @default(0)
+  extraHeads             Json               @default("{}")
   totalAmount            Float              @default(0)
   status                 FeeStructureStatus @default(DRAFT)
   effectiveDate          DateTime?          @db.Date
@@ -14880,6 +14980,18 @@ model AdmissionNumberSequence {
   updatedAt     DateTime    @updatedAt
 
   @@map("admission_number_seq")
+}
+
+model SoftIdSequence {
+  id            String      @id @default(cuid())
+  institutionId String      @unique
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  prefix        String      @default("SCH")
+  nextNumber    Int         @default(1)
+  padLength     Int         @default(4)
+  updatedAt     DateTime    @updatedAt
+
+  @@map("soft_id_seq")
 }
 
 model EmployeeCodeRule {

@@ -10,12 +10,14 @@ import {
   Printer,
   RefreshCw,
   Search,
+  ShieldCheck,
   Send,
   User,
   X,
   XCircle,
 } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
+import { GatePassPhotoStrip } from '../StudentManagement/StudentPhotoVerificationPanel';
 import {
   approveGatePass,
   completeGatePass,
@@ -26,7 +28,9 @@ import {
   issueGatePass,
   rejectGatePass,
   seedGatePassDemo,
+  sendGatePassOtp,
   submitGatePassToPrincipal,
+  verifyGatePassOtp,
   type GatePassItem,
   type GatePassStatusFilter,
   type GatePassStudentOption,
@@ -93,7 +97,17 @@ export function GatePassView() {
     remarks: '',
     parentName: '',
     parentMobile: '',
-    parentRelation: 'Parent',
+    parentRelation: 'FATHER',
+  });
+  const [otpState, setOtpState] = useState({
+    sent: false,
+    verified: false,
+    verificationToken: '',
+    demoOtp: '',
+    code: '',
+    sending: false,
+    verifying: false,
+    isRegisteredMobile: false,
   });
 
   const selected = useMemo(
@@ -172,24 +186,137 @@ export function GatePassView() {
       .finally(() => setLoadingStudents(false));
   }, [createOpen, academicYear, createForm.className, createForm.sectionName]);
 
+  const selectedStudent = useMemo(
+    () => students.find((s) => s.id === createForm.studentId),
+    [students, createForm.studentId],
+  );
+
+  const resetOtpState = () => {
+    setOtpState({
+      sent: false,
+      verified: false,
+      verificationToken: '',
+      demoOtp: '',
+      code: '',
+      sending: false,
+      verifying: false,
+      isRegisteredMobile: false,
+    });
+  };
+
+  const applyPickupFromRelation = (student: GatePassStudentOption, relation: string) => {
+    if (relation === 'FATHER') {
+      return {
+        parentName: student.fatherName || '',
+        parentMobile: student.fatherMobile || '',
+      };
+    }
+    if (relation === 'MOTHER') {
+      return {
+        parentName: student.motherName || '',
+        parentMobile: student.motherMobile || '',
+      };
+    }
+    return { parentName: '', parentMobile: '' };
+  };
+
   const handleStudentSelect = (studentId: string) => {
     const student = students.find((s) => s.id === studentId);
+    const pickup = student ? applyPickupFromRelation(student, createForm.parentRelation) : { parentName: '', parentMobile: '' };
     setCreateForm((f) => ({
       ...f,
       studentId,
-      parentName: student?.fatherName || student?.motherName || f.parentName,
-      parentMobile: student?.fatherMobile || student?.motherMobile || f.parentMobile,
+      parentName: pickup.parentName || f.parentName,
+      parentMobile: pickup.parentMobile || f.parentMobile,
     }));
+    resetOtpState();
+  };
+
+  const handleRelationChange = (relation: string) => {
+    const student = students.find((s) => s.id === createForm.studentId);
+    const pickup = student ? applyPickupFromRelation(student, relation) : { parentName: '', parentMobile: '' };
+    setCreateForm((f) => ({
+      ...f,
+      parentRelation: relation,
+      parentName: pickup.parentName || f.parentName,
+      parentMobile: pickup.parentMobile || f.parentMobile,
+    }));
+    resetOtpState();
+  };
+
+  const handleSendOtp = async () => {
+    if (!createForm.studentId || !createForm.parentMobile.trim()) {
+      setErrorMsg('Select student and enter mobile number before sending OTP');
+      return;
+    }
+    setOtpState((s) => ({ ...s, sending: true }));
+    setErrorMsg(null);
+    try {
+      const res = await sendGatePassOtp({
+        studentId: createForm.studentId,
+        mobile: createForm.parentMobile.trim(),
+      });
+      setOtpState((s) => ({
+        ...s,
+        sent: true,
+        verified: false,
+        verificationToken: '',
+        demoOtp: res.demoOtp || '',
+        code: '',
+        sending: false,
+        isRegisteredMobile: res.isRegisteredParentMobile,
+      }));
+      setSuccessMsg(res.message);
+    } catch (err) {
+      setOtpState((s) => ({ ...s, sending: false }));
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to send OTP');
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!createForm.studentId || !createForm.parentMobile.trim() || !otpState.code.trim()) {
+      setErrorMsg('Enter the OTP received on mobile');
+      return;
+    }
+    setOtpState((s) => ({ ...s, verifying: true }));
+    setErrorMsg(null);
+    try {
+      const res = await verifyGatePassOtp({
+        studentId: createForm.studentId,
+        mobile: createForm.parentMobile.trim(),
+        otp: otpState.code.trim(),
+      });
+      setOtpState((s) => ({
+        ...s,
+        verified: true,
+        verificationToken: res.verificationToken,
+        verifying: false,
+      }));
+      setSuccessMsg('Mobile verified — you can now create the gate pass request');
+    } catch (err) {
+      setOtpState((s) => ({ ...s, verifying: false }));
+      setErrorMsg(err instanceof Error ? err.message : 'OTP verification failed');
+    }
   };
 
   const handleCreate = async () => {
     if (!createForm.studentId || !createForm.reason.trim() || !createForm.parentName.trim()) {
-      setErrorMsg('Please select student, enter reason and parent name');
+      setErrorMsg('Please select student, enter reason and pickup person name');
+      return;
+    }
+    if (!createForm.parentMobile.trim()) {
+      setErrorMsg('Mobile number is required for OTP verification');
+      return;
+    }
+    if (!otpState.verified || !otpState.verificationToken) {
+      setErrorMsg('Verify mobile OTP before creating gate pass — first step security for child safety');
       return;
     }
     setSubmitting(true);
     setErrorMsg(null);
     try {
+      const relationLabel = (meta?.pickupRelations || []).find((r) => r.id === createForm.parentRelation)?.label
+        || createForm.parentRelation;
       const item = await createGatePass({
         studentId: createForm.studentId,
         academicYear,
@@ -198,7 +325,8 @@ export function GatePassView() {
         remarks: createForm.remarks,
         parentName: createForm.parentName,
         parentMobile: createForm.parentMobile,
-        parentRelation: createForm.parentRelation,
+        parentRelation: relationLabel,
+        otpVerificationToken: otpState.verificationToken,
         source: 'FRONT_DESK',
       });
       setSuccessMsg(`Gate pass request created for ${item.studentName} (${item.passNumber})`);
@@ -212,8 +340,9 @@ export function GatePassView() {
         remarks: '',
         parentName: '',
         parentMobile: '',
-        parentRelation: 'Parent',
+        parentRelation: 'FATHER',
       });
+      resetOtpState();
       await refresh();
       setSelectedId(item.id);
     } catch (err) {
@@ -608,6 +737,7 @@ export function GatePassView() {
                   <InfoField label="Parent / Guardian" value={selected.parentName} icon={<User size={12} />} />
                   <InfoField label="Parent Mobile" value={selected.parentMobile || '—'} />
                   <InfoField label="Relation" value={selected.parentRelation || '—'} />
+                  <InfoField label="OTP Verified" value={selected.otpVerified ? 'Yes' : 'No'} />
                   <InfoField label="Created By" value={selected.createdBy} />
                   <InfoField label="Created At" value={formatDateTime(selected.createdAt)} icon={<Clock size={12} />} />
                   {selected.exitTime && (
@@ -815,6 +945,16 @@ export function GatePassView() {
                   ))}
                 </select>
               </div>
+              {selectedStudent && (
+                <GatePassPhotoStrip
+                  studentPhoto={selectedStudent.studentPhoto}
+                  fatherPhoto={selectedStudent.fatherPhoto}
+                  motherPhoto={selectedStudent.motherPhoto}
+                  studentName={selectedStudent.name}
+                  fatherName={selectedStudent.fatherName}
+                  motherName={selectedStudent.motherName}
+                />
+              )}
               <div>
                 <label className="text-xs text-slate-500 block mb-1">Pass Type</label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -835,28 +975,101 @@ export function GatePassView() {
                   ))}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-500 block mb-1">Parent / Guardian Name</label>
+                  <label className="text-xs text-slate-500 block mb-1">Relationship to Student *</label>
+                  <select
+                    value={createForm.parentRelation}
+                    onChange={(e) => handleRelationChange(e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  >
+                    {(meta?.pickupRelations || [
+                      { id: 'FATHER', label: 'Father' },
+                      { id: 'MOTHER', label: 'Mother' },
+                      { id: 'GUARDIAN', label: 'Guardian' },
+                      { id: 'OTHER', label: 'Other (relative / authorised person)' },
+                    ]).map((r) => (
+                      <option key={r.id} value={r.id}>{r.label}</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Use when pickup person is different from registered parent (uncle, aunt, guardian, etc.)
+                  </p>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Parent / Guardian Name *</label>
                   <input
                     type="text"
                     value={createForm.parentName}
                     onChange={(e) => setCreateForm((f) => ({ ...f, parentName: e.target.value }))}
-                    placeholder="Parent name"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-500 block mb-1">Mobile</label>
-                  <input
-                    type="text"
-                    value={createForm.parentMobile}
-                    onChange={(e) => setCreateForm((f) => ({ ...f, parentMobile: e.target.value }))}
-                    placeholder="Mobile number"
+                    placeholder="Name of person picking up child"
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
                   />
                 </div>
               </div>
+              <div>
+                <label className="text-xs text-slate-500 block mb-1">Mobile * (OTP verification required)</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={createForm.parentMobile}
+                    onChange={(e) => {
+                      setCreateForm((f) => ({ ...f, parentMobile: e.target.value }));
+                      resetOtpState();
+                    }}
+                    placeholder="10-digit mobile number"
+                    className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleSendOtp()}
+                    disabled={!createForm.studentId || !createForm.parentMobile.trim() || otpState.sending}
+                    className="px-3 py-2 text-sm font-medium border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-50 disabled:opacity-50 whitespace-nowrap"
+                  >
+                    {otpState.sending ? <Loader2 size={14} className="animate-spin" /> : 'Send OTP'}
+                  </button>
+                </div>
+              </div>
+              {otpState.sent && (
+                <div className={`rounded-lg border p-3 space-y-3 ${otpState.verified ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+                  <div className="flex items-start gap-2">
+                    <ShieldCheck size={16} className={otpState.verified ? 'text-emerald-600 mt-0.5' : 'text-amber-600 mt-0.5'} />
+                    <div className="flex-1">
+                      <p className="text-xs font-semibold text-slate-800">
+                        {otpState.verified ? 'Mobile verified' : 'OTP sent — verify pickup person mobile'}
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        First-step child security: confirm the person at the gate owns this mobile number.
+                        {!otpState.isRegisteredMobile && ' This number is not the registered parent mobile — verify carefully.'}
+                      </p>
+                      {otpState.demoOtp && !otpState.verified && (
+                        <p className="text-[10px] text-blue-700 mt-1 font-mono">Demo OTP: {otpState.demoOtp}</p>
+                      )}
+                    </div>
+                  </div>
+                  {!otpState.verified && (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        value={otpState.code}
+                        onChange={(e) => setOtpState((s) => ({ ...s, code: e.target.value.replace(/\D/g, '') }))}
+                        placeholder="Enter 6-digit OTP"
+                        className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void handleVerifyOtp()}
+                        disabled={otpState.verifying || otpState.code.length < 4}
+                        className="px-4 py-2 text-sm font-medium bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+                      >
+                        {otpState.verifying ? <Loader2 size={14} className="animate-spin" /> : 'Verify OTP'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
               <div>
                 <label className="text-xs text-slate-500 block mb-1">Reason</label>
                 <textarea
@@ -889,7 +1102,7 @@ export function GatePassView() {
               <button
                 type="button"
                 onClick={() => void handleCreate()}
-                disabled={submitting}
+                disabled={submitting || !otpState.verified}
                 className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
               >
                 {submitting ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
@@ -908,14 +1121,24 @@ export function GatePassView() {
                 <h2 className="text-xl font-bold text-slate-900 uppercase tracking-wide">Gate Pass</h2>
                 <p className="text-sm text-slate-600 mt-1">{selected.passNumber}</p>
               </div>
-              <div className="space-y-3 text-sm">
+              <GatePassPhotoStrip
+                studentPhoto={selected.studentPhoto}
+                fatherPhoto={selected.fatherPhoto}
+                motherPhoto={selected.motherPhoto}
+                studentName={selected.studentName}
+                fatherName={selected.fatherName}
+                motherName={selected.motherName}
+              />
+              <div className="space-y-3 text-sm mt-4">
                 <PrintRow label="Date" value={formatDate(selected.createdAt)} />
                 <PrintRow label="Student" value={selected.studentName} />
                 <PrintRow label="Admission No." value={selected.admissionNumber} />
                 <PrintRow label="Class" value={selected.classGroup} />
                 <PrintRow label="Pass Type" value={selected.passTypeLabel} />
                 <PrintRow label="Parent / Guardian" value={selected.parentName} />
+                <PrintRow label="Relation" value={selected.parentRelation || '—'} />
                 <PrintRow label="Mobile" value={selected.parentMobile || '—'} />
+                {selected.otpVerified && <PrintRow label="OTP Verified" value="Yes" />}
                 <PrintRow label="Reason" value={selected.reason} />
                 {selected.exitTime && <PrintRow label="Exit Time" value={selected.exitTime} />}
                 <PrintRow label="Approved By" value={selected.approvedBy || '—'} />

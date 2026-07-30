@@ -3,6 +3,9 @@ import type { Student } from './studentServices';
 
 const HEADERS = [
   'Admission No.',
+  'Soft ID',
+  'SR No',
+  'Portal NIC Code',
   'Roll No.',
   'First Name',
   'Last Name',
@@ -49,6 +52,9 @@ export function downloadStudentTemplate(existing: Student[] = []) {
     existing.length > 0
       ? existing.map((s) => [
           s.admissionNumber,
+          s.softId,
+          s.srNo,
+          s.portalNicCode,
           s.rollNumber,
           s.firstName,
           s.lastName,
@@ -73,6 +79,9 @@ export function downloadStudentTemplate(existing: Student[] = []) {
         ])
       : [
           [
+            '',
+            '',
+            '',
             '',
             '01',
             'Aarav',
@@ -105,6 +114,9 @@ export function downloadStudentTemplate(existing: Student[] = []) {
   const guide = [
     ['Field', 'Notes'],
     ['Admission No.', 'Optional. Auto-generated if blank.'],
+    ['Soft ID', 'Optional. Auto-generated from school initials + number if blank.'],
+    ['SR No', 'Optional. Government student registration number.'],
+    ['Portal NIC Code', 'Optional. Portal NIC code for the student.'],
     ['First Name', 'Required (or use Student Name column).'],
     ['Class', 'Required. Match Institution Setup → Classes & Sections.'],
     ['Date of Birth', 'YYYY-MM-DD or DD/MM/YYYY'],
@@ -148,6 +160,9 @@ export function parseStudentWorkbook(file: ArrayBuffer): Record<string, unknown>
 
   const col = {
     admissionNumber: idx(['admission no', 'admission number', 'admission no.']),
+    softId: idx(['soft id', 'soft id erp', 'erp student id']),
+    srNo: idx(['sr no', 'sr no.', 'sr number', 'govt registration', 'government registration']),
+    portalNicCode: idx(['portal nic code', 'nic code', 'portal nic']),
     rollNumber: idx(['roll no', 'roll number', 'roll no.']),
     firstName: idx(['first name']),
     lastName: idx(['last name']),
@@ -186,6 +201,9 @@ export function parseStudentWorkbook(file: ArrayBuffer): Record<string, unknown>
 
     rows.push({
       admissionNumber: get(col.admissionNumber),
+      softId: get(col.softId),
+      srNo: get(col.srNo),
+      portalNicCode: get(col.portalNicCode),
       firstName: firstName || fullName,
       lastName,
       fullName: fullName || [firstName, lastName].filter(Boolean).join(' '),

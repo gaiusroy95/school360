@@ -104,7 +104,9 @@ export function loadIntegrationsNotificationSetup(setup: {
         || readField(integration, ['Single Sign-On (SSO)', 'sso'], 'clientId', ''),
       clientSecret: readField(integration, ['Google Workspace', 'googleWorkspace'], 'clientSecret')
         || readField(integration, ['Single Sign-On (SSO)', 'sso'], 'clientSecret', ''),
-      scopes: readField(integration, ['Google Workspace', 'googleWorkspace'], 'scopes', 'openid,email,profile,classroom'),
+      scopes: readField(integration, ['Google Workspace', 'googleWorkspace'], 'scopes', 'openid,email,profile,https://www.googleapis.com/auth/calendar'),
+      calendarRefreshToken: readField(integration, ['Google Workspace', 'googleWorkspace'], 'calendarRefreshToken', ''),
+      calendarId: readField(integration, ['Google Workspace', 'googleWorkspace'], 'calendarId', 'primary'),
       directorySync: readField(integration, ['Google Workspace', 'googleWorkspace'], 'directorySync', 'Yes') === 'Yes',
     },
     microsoft: {

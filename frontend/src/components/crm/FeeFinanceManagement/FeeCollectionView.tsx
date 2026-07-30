@@ -3,6 +3,7 @@ import { Download, Filter, Plus, RefreshCcw, Upload } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
   collectFee,
+  feeStudentOptionKey,
   fetchFeeCollectionMeta,
   fetchFeeReceipt,
   fetchFeeSchedule,
@@ -93,6 +94,7 @@ export function FeeCollectionView() {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [paymentMode, setPaymentMode] = useState('Cash');
   const [remarks, setRemarks] = useState('');
+  const [pendingInvoiceNumber, setPendingInvoiceNumber] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -142,11 +144,12 @@ export function FeeCollectionView() {
       const meta = await fetchFeeCollectionMeta();
       setStudents(meta.students);
       setPaymentModes(meta.paymentModes);
-      if (meta.students[0]) setSelectedStudentId(meta.students[0].admissionRecordId);
+      if (meta.students[0]) setSelectedStudentId(feeStudentOptionKey(meta.students[0]));
       setScheduleHeads([]);
       setSelectedKeys(new Set());
       setPaymentMode('Cash');
       setRemarks('');
+      setPendingInvoiceNumber(null);
       setShowModal(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to open collection form');
@@ -155,19 +158,26 @@ export function FeeCollectionView() {
 
   const loadScheduleForStudent = async (student: FeeStudent) => {
     try {
-      const res = await fetchFeeSchedule(student.className, student.sectionName);
+      const res = await fetchFeeSchedule(student.className, student.sectionName, {
+        studentId: student.studentId || undefined,
+        academicYear: student.academicYear,
+      });
       setScheduleHeads(res.schedule.heads);
       setSelectedKeys(new Set(res.schedule.heads.map((h) => h.key)));
+      setPendingInvoiceNumber(
+        res.pendingInvoice?.invoiceNumber || student.pendingInvoiceNumber || null,
+      );
     } catch (e) {
       setScheduleHeads([]);
       setSelectedKeys(new Set());
+      setPendingInvoiceNumber(null);
       setError(e instanceof Error ? e.message : 'No fee schedule for this class');
     }
   };
 
   useEffect(() => {
     if (!showModal || !selectedStudentId) return;
-    const student = students.find((s) => s.admissionRecordId === selectedStudentId);
+    const student = students.find((s) => feeStudentOptionKey(s) === selectedStudentId);
     if (student) void loadScheduleForStudent(student);
   }, [showModal, selectedStudentId, students]);
 
@@ -182,6 +192,11 @@ export function FeeCollectionView() {
       setError('Select a student');
       return;
     }
+    const student = students.find((s) => feeStudentOptionKey(s) === selectedStudentId);
+    if (!student) {
+      setError('Select a student');
+      return;
+    }
     const feeItems = scheduleHeads
       .filter((h) => selectedKeys.has(h.key) && h.amount > 0)
       .map((h) => ({ key: h.key, label: h.label, amount: h.amount }));
@@ -191,7 +206,8 @@ export function FeeCollectionView() {
     }
     try {
       const res = await collectFee({
-        admissionRecordId: selectedStudentId,
+        studentId: student.studentId || undefined,
+        admissionRecordId: student.studentId ? undefined : student.admissionRecordId,
         paymentMode,
         feeItems,
         remarks: remarks.trim() || undefined,
@@ -415,12 +431,18 @@ export function FeeCollectionView() {
             >
               <option value="">Select student</option>
               {students.map((s) => (
-                <option key={s.admissionRecordId} value={s.admissionRecordId}>
+                <option key={feeStudentOptionKey(s)} value={feeStudentOptionKey(s)}>
                   {s.studentName} — Class {s.className}-{s.sectionName} ({s.admissionNumber || 'no adm no'})
                 </option>
               ))}
             </select>
           </div>
+
+          {pendingInvoiceNumber && (
+            <p className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+              Pending invoice <strong>{pendingInvoiceNumber}</strong> is ready. Collecting fees will update Finance → Invoices.
+            </p>
+          )}
 
           {scheduleHeads.length > 0 ? (
             <div className="border border-slate-200 rounded-lg overflow-hidden">

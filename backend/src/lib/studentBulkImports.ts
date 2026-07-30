@@ -11,6 +11,7 @@ import { prisma } from './prisma.js';
 import {
   formatClassSection,
   generateStudentAdmissionNumber,
+  generateStudentSoftId,
   parseStudentGender,
   parseStudentStatus,
   splitFullName,
@@ -209,7 +210,19 @@ export async function runBulkImportBatch(opts: {
         String(row.admissionNumber || '').trim() ||
         (await generateStudentAdmissionNumber(opts.institutionId));
 
+      const existing = await prisma.student.findFirst({
+        where: { institutionId: opts.institutionId, admissionNumber },
+      });
+
+      let softId = String(row.softId || '').trim();
+      if (!softId) {
+        softId = existing?.softId || (await generateStudentSoftId(opts.institutionId));
+      }
+
       const data = {
+        softId,
+        srNo: String(row.srNo || '').trim(),
+        portalNicCode: String(row.portalNicCode || '').trim(),
         firstName,
         lastName,
         dateOfBirth: parseDateInput(String(row.dateOfBirth || '')),
@@ -238,10 +251,6 @@ export async function runBulkImportBatch(opts: {
             ? Number(row.entranceScore)
             : undefined,
       };
-
-      const existing = await prisma.student.findFirst({
-        where: { institutionId: opts.institutionId, admissionNumber },
-      });
 
       if (existing) {
         if (opts.updateExisting) {

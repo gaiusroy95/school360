@@ -73,7 +73,9 @@ import {
   listStudentsForGatePass,
   rejectGatePass,
   seedGatePassDemo,
+  sendGatePassOtp,
   submitGatePassToPrincipal,
+  verifyGatePassOtp,
   type GatePassStatusFilter,
 } from '../lib/gatePass.js';
 import { GatePassType } from '@prisma/client';
@@ -693,6 +695,43 @@ attendanceRouter.get(
   }),
 );
 
+attendanceRouter.post(
+  '/gate-passes/send-otp',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const schema = z.object({
+      studentId: z.string().min(1),
+      mobile: z.string().min(10),
+    });
+    const body = schema.parse(req.body);
+    try {
+      return res.json(await sendGatePassOtp(institutionId, body));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to send OTP';
+      return res.status(400).json({ error: message });
+    }
+  }),
+);
+
+attendanceRouter.post(
+  '/gate-passes/verify-otp',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const schema = z.object({
+      studentId: z.string().min(1),
+      mobile: z.string().min(10),
+      otp: z.string().min(4),
+    });
+    const body = schema.parse(req.body);
+    try {
+      return res.json(verifyGatePassOtp(institutionId, body));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'OTP verification failed';
+      return res.status(400).json({ error: message });
+    }
+  }),
+);
+
 attendanceRouter.get(
   '/gate-passes/:id',
   asyncHandler(async (req, res) => {
@@ -713,8 +752,9 @@ const createGatePassSchema = z.object({
   reason: z.string().min(3),
   remarks: z.string().optional(),
   parentName: z.string().min(2),
-  parentMobile: z.string().optional(),
+  parentMobile: z.string().min(10),
   parentRelation: z.string().optional(),
+  otpVerificationToken: z.string().min(1),
   source: z.string().optional(),
 });
 

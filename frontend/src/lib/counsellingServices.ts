@@ -69,6 +69,22 @@ export type CounselingMeta = {
   engagementLevels: EngagementLevel[];
   riskFactors: RiskFactor[];
   actionIntents: ActionIntent[];
+  counselors: string[];
+};
+
+export type CounselorAnalyticsRow = {
+  counselorName: string;
+  totalAssigned: number;
+  new: number;
+  inProcess: number;
+  followUp: number;
+  converted: number;
+  notInterested: number;
+};
+
+export type CounselorAnalytics = {
+  counselors: CounselorAnalyticsRow[];
+  totals: Omit<CounselorAnalyticsRow, 'counselorName'>;
 };
 
 export type CounselingSessionInput = {
@@ -85,6 +101,17 @@ export type CounselingSessionInput = {
 
 export async function fetchCounselingMeta() {
   return api<CounselingMeta>('/api/counselling/meta');
+}
+
+export async function fetchCounselorAnalytics() {
+  return api<CounselorAnalytics>('/api/counselling/counselor-analytics');
+}
+
+export async function assignCounselorToLead(enquiryDbId: string, assignedTo: string) {
+  return api<{ lead: CounselingLead }>(`/api/counselling/${enquiryDbId}/assign`, {
+    method: 'PATCH',
+    body: JSON.stringify({ assignedTo }),
+  });
 }
 
 export async function fetchCounselingQueue(params?: {

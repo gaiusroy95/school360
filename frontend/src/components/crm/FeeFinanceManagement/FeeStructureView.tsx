@@ -5,12 +5,14 @@ import {
   createFeeStructure,
   exportFeeStructures,
   fetchFeeDashboardMeta,
+  fetchFeeStructureMeta,
   formatInr,
   getFeeStructureSummary,
   importFeeStructuresBatch,
   importFeeStructuresFromSetup,
   listFeeStructures,
   updateFeeStructure,
+  type FeeStructureHeadCatalogItem,
   type FeeStructureRecord,
   type FeeStructureStatus,
   type FeeStructureSummary,
@@ -28,20 +30,6 @@ import {
 
 const FREQUENCIES = ['Monthly', 'Quarterly', 'Yearly', 'One-time'];
 
-const FEE_HEAD_FIELDS = [
-  { key: 'tuitionFee', label: 'Tuition Fee' },
-  { key: 'admissionFee', label: 'Admission Fee' },
-  { key: 'registrationFee', label: 'Registration Fee' },
-  { key: 'librarySecurityDeposit', label: 'Library Security Deposit (Refundable)' },
-  { key: 'cautionMoney', label: 'Caution Money (Refundable)' },
-  { key: 'computerLabFee', label: 'Computer Lab Fee' },
-  { key: 'picnicFieldTrip', label: 'Picnic / Field Trip' },
-  { key: 'addOnFee', label: 'Add-on Fee' },
-  { key: 'examinationFee', label: 'Examination Fee' },
-  { key: 'annualCharges', label: 'Annual Charges' },
-  { key: 'sportsFee', label: 'Sports Fee' },
-] as const;
-
 const STATUS_OPTIONS: FeeStructureStatus[] = [
   'DRAFT',
   'OPEN',
@@ -51,7 +39,7 @@ const STATUS_OPTIONS: FeeStructureStatus[] = [
   'COMPLETED',
 ];
 
-const emptyForm = {
+const BASE_FORM = {
   className: '',
   sectionName: 'A',
   frequency: 'Yearly',
@@ -60,17 +48,6 @@ const emptyForm = {
   status: 'DRAFT' as FeeStructureStatus,
   effectiveDate: new Date().toISOString().slice(0, 10),
   remarks: '',
-  tuitionFee: '',
-  admissionFee: '',
-  registrationFee: '',
-  librarySecurityDeposit: '',
-  cautionMoney: '',
-  computerLabFee: '',
-  picnicFieldTrip: '',
-  addOnFee: '',
-  examinationFee: '',
-  annualCharges: '',
-  sportsFee: '',
 };
 
 function formatDisplayDate(iso: string) {
@@ -85,59 +62,24 @@ function formatDisplayDate(iso: string) {
   }
 }
 
-function recordToForm(row: FeeStructureRecord) {
-  return {
-    className: row.className,
-    sectionName: row.sectionName,
-    frequency: row.frequency,
-    studentName: row.studentName,
-    admissionNumber: row.admissionNumber,
-    status: row.status,
-    effectiveDate: row.effectiveDate || row.displayDate,
-    remarks: row.remarks,
-    tuitionFee: String(row.tuitionFee || ''),
-    admissionFee: String(row.admissionFee || ''),
-    registrationFee: String(row.registrationFee || ''),
-    librarySecurityDeposit: String(row.librarySecurityDeposit || ''),
-    cautionMoney: String(row.cautionMoney || ''),
-    computerLabFee: String(row.computerLabFee || ''),
-    picnicFieldTrip: String(row.picnicFieldTrip || ''),
-    addOnFee: String(row.addOnFee || ''),
-    examinationFee: String(row.examinationFee || ''),
-    annualCharges: String(row.annualCharges || ''),
-    sportsFee: String(row.sportsFee || ''),
-  };
+function amountForKey(row: FeeStructureRecord, key: string) {
+  const standard = row[key as keyof FeeStructureRecord];
+  if (typeof standard === 'number') return standard;
+  return row.extraHeads?.[key] ?? 0;
 }
 
-function formToPayload(form: typeof emptyForm, academicYear: string) {
-  const num = (v: string) => (v ? Number(v) : 0);
-  return {
-    academicYear,
-    className: form.className.trim(),
-    sectionName: form.sectionName.trim() || 'A',
-    frequency: form.frequency,
-    studentName: form.studentName.trim() || undefined,
-    admissionNumber: form.admissionNumber.trim() || undefined,
-    status: form.status,
-    effectiveDate: form.effectiveDate || undefined,
-    remarks: form.remarks.trim() || undefined,
-    tuitionFee: num(form.tuitionFee),
-    admissionFee: num(form.admissionFee),
-    registrationFee: num(form.registrationFee),
-    librarySecurityDeposit: num(form.librarySecurityDeposit),
-    cautionMoney: num(form.cautionMoney),
-    computerLabFee: num(form.computerLabFee),
-    picnicFieldTrip: num(form.picnicFieldTrip),
-    addOnFee: num(form.addOnFee),
-    examinationFee: num(form.examinationFee),
-    annualCharges: num(form.annualCharges),
-    sportsFee: num(form.sportsFee),
-  };
+function recordToHeadAmounts(row: FeeStructureRecord) {
+  const amounts: Record<string, string> = {};
+  for (const head of row.feeHeads) {
+    if (head.amount > 0) amounts[head.key] = String(head.amount);
+  }
+  return amounts;
 }
 
 export function FeeStructureView() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [records, setRecords] = useState<FeeStructureRecord[]>([]);
+  const [headCatalog, setHeadCatalog] = useState<FeeStructureHeadCatalogItem[]>([]);
   const [summary, setSummary] = useState<FeeStructureSummary | null>(null);
   const [academicYear, setAcademicYear] = useState('2025-26');
   const [years, setYears] = useState<string[]>(['2025-26']);
@@ -150,7 +92,11 @@ export function FeeStructureView() {
   const [showModal, setShowModal] = useState(false);
   const [viewRow, setViewRow] = useState<FeeStructureRecord | null>(null);
   const [editRow, setEditRow] = useState<FeeStructureRecord | null>(null);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState(BASE_FORM);
+  const [headAmounts, setHeadAmounts] = useState<Record<string, string>>({});
+  const [newHeads, setNewHeads] = useState<Array<{ code: string; name: string }>>([]);
+  const [newHeadCode, setNewHeadCode] = useState('');
+  const [newHeadName, setNewHeadName] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -161,12 +107,14 @@ export function FeeStructureView() {
       const year = academicYear || meta.defaultAcademicYear || '2025-26';
       if (!academicYear && meta.defaultAcademicYear) setAcademicYear(meta.defaultAcademicYear);
 
-      const [rows, sum] = await Promise.all([
+      const [rows, sum, structureMeta] = await Promise.all([
         listFeeStructures({ academicYear: year }),
         getFeeStructureSummary(year),
+        fetchFeeStructureMeta(),
       ]);
       setRecords(rows);
       setSummary(sum);
+      setHeadCatalog(structureMeta.headCatalog);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load fee structures');
     } finally {
@@ -177,6 +125,29 @@ export function FeeStructureView() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const tableHeads = useMemo(() => {
+    const map = new Map<string, FeeStructureHeadCatalogItem>();
+    for (const head of headCatalog) map.set(head.key, head);
+    for (const row of records) {
+      for (const head of row.feeHeads) {
+        if (!map.has(head.key)) {
+          map.set(head.key, {
+            key: head.key,
+            label: head.label,
+            refundable: head.refundable,
+            isStandard: false,
+            defaultAmount: head.amount,
+            showInCollection: true,
+            showInInvoice: true,
+            showInPayment: true,
+            masterId: '',
+          });
+        }
+      }
+    }
+    return Array.from(map.values());
+  }, [headCatalog, records]);
 
   const filtered = useMemo(() => {
     let rows = records;
@@ -194,28 +165,123 @@ export function FeeStructureView() {
     return rows;
   }, [records, search, statusFilter]);
 
+  const resetModal = () => {
+    setForm(BASE_FORM);
+    setHeadAmounts({});
+    setNewHeads([]);
+    setNewHeadCode('');
+    setNewHeadName('');
+  };
+
   const openCreate = () => {
     setEditRow(null);
-    setForm(emptyForm);
+    resetModal();
+    const defaults: Record<string, string> = {};
+    for (const head of headCatalog) {
+      if (head.defaultAmount > 0) defaults[head.key] = String(head.defaultAmount);
+    }
+    setHeadAmounts(defaults);
     setShowModal(true);
   };
 
   const openEdit = (row: FeeStructureRecord) => {
     setEditRow(row);
-    setForm(recordToForm(row));
+    setForm({
+      className: row.className,
+      sectionName: row.sectionName,
+      frequency: row.frequency,
+      studentName: row.studentName,
+      admissionNumber: row.admissionNumber,
+      status: row.status,
+      effectiveDate: row.effectiveDate || row.displayDate,
+      remarks: row.remarks,
+    });
+    setHeadAmounts(recordToHeadAmounts(row));
+    setNewHeads([]);
+    setNewHeadCode('');
+    setNewHeadName('');
     setShowModal(true);
+  };
+
+  const formHeadFields = useMemo(() => {
+    const keys = new Set(headCatalog.map((h) => h.key));
+    for (const head of newHeads) keys.add(head.code);
+    for (const key of Object.keys(headAmounts)) keys.add(key);
+    const fields: FeeStructureHeadCatalogItem[] = [];
+    for (const key of keys) {
+      const catalog = headCatalog.find((h) => h.key === key);
+      const custom = newHeads.find((h) => h.code === key);
+      fields.push(
+        catalog || {
+          key,
+          label: custom?.name || key.replace(/_/g, ' '),
+          refundable: false,
+          isStandard: false,
+          defaultAmount: 0,
+          showInCollection: true,
+          showInInvoice: true,
+          showInPayment: true,
+          masterId: '',
+        },
+      );
+    }
+    return fields;
+  }, [headCatalog, headAmounts, newHeads]);
+
+  const previewTotal = useMemo(
+    () =>
+      Object.values(headAmounts).reduce((sum, value) => sum + (value ? Number(value) : 0), 0),
+    [headAmounts],
+  );
+
+  const addCustomHead = () => {
+    const code = newHeadCode.trim().replace(/\s+/g, '_');
+    const name = newHeadName.trim();
+    if (!code || !name) {
+      setError('Enter both code and name for the new fee component');
+      return;
+    }
+    if (formHeadFields.some((h) => h.key.toLowerCase() === code.toLowerCase())) {
+      setError('A fee component with this code already exists');
+      return;
+    }
+    setNewHeads((rows) => [...rows, { code, name }]);
+    setHeadAmounts((amounts) => ({ ...amounts, [code]: amounts[code] || '' }));
+    setNewHeadCode('');
+    setNewHeadName('');
+    setError('');
   };
 
   const handleSave = async () => {
     setError('');
     try {
-      const payload = formToPayload(form, academicYear);
+      const amounts = Object.fromEntries(
+        Object.entries(headAmounts)
+          .map(([key, value]) => [key, value ? Number(value) : 0] as const)
+          .filter(([, value]) => value > 0),
+      );
+      const payload = {
+        academicYear,
+        className: form.className.trim(),
+        sectionName: form.sectionName.trim() || 'A',
+        frequency: form.frequency,
+        studentName: form.studentName.trim() || undefined,
+        admissionNumber: form.admissionNumber.trim() || undefined,
+        status: form.status,
+        effectiveDate: form.effectiveDate || undefined,
+        remarks: form.remarks.trim() || undefined,
+        headAmounts: amounts,
+        newHeads: newHeads.map((head) => ({
+          code: head.code,
+          name: head.name,
+        })),
+      };
       if (editRow) {
         await updateFeeStructure(editRow.id, payload);
-        setMessage(`Fee structure ${editRow.recordId} updated`);
+        setMessage(`Fee structure ${editRow.recordId} updated and synced to Fee Masters`);
       } else {
         const record = await createFeeStructure(payload);
-        setMessage(`Fee structure ${record.recordId} created`);
+        setMessage(`Fee structure ${record.recordId} created and synced to Fee Masters`);
       }
       setShowModal(false);
       void load();
@@ -236,17 +302,7 @@ export function FeeStructureView() {
         Frequency: r.frequency,
         'Student / Party': r.partyName,
         'Admission No': r.admissionNumber,
-        'Tuition Fee': r.tuitionFee,
-        'Admission Fee': r.admissionFee,
-        'Registration Fee': r.registrationFee,
-        'Library Security Deposit': r.librarySecurityDeposit,
-        'Caution Money': r.cautionMoney,
-        'Computer Lab Fee': r.computerLabFee,
-        'Picnic / Field Trip': r.picnicFieldTrip,
-        'Add-on Fee': r.addOnFee,
-        'Examination Fee': r.examinationFee,
-        'Annual Charges': r.annualCharges,
-        'Sports Fee': r.sportsFee,
+        ...Object.fromEntries(r.feeHeads.map((h) => [h.label, h.amount])),
         'Total Amount': r.totalAmount,
         Status: r.status,
         Date: r.displayDate,
@@ -284,25 +340,7 @@ export function FeeStructureView() {
         const buf = await file.arrayBuffer();
         const wb = XLSX.read(buf, { type: 'array' });
         const sheet = wb.Sheets[wb.SheetNames[0]];
-        rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet).map((row) => ({
-          className: row.Class ?? row.className ?? row.class,
-          sectionName: row.Section ?? row.sectionName ?? row.section ?? 'A',
-          frequency: row.Frequency ?? row.frequency ?? 'Yearly',
-          studentName: row['Student / Party'] ?? row.studentName ?? '',
-          admissionNumber: row['Admission No'] ?? row.admissionNumber ?? '',
-          tuitionFee: row['Tuition Fee'] ?? row.tuitionFee ?? 0,
-          admissionFee: row['Admission Fee'] ?? row.admissionFee ?? 0,
-          registrationFee: row['Registration Fee'] ?? row.registrationFee ?? 0,
-          librarySecurityDeposit: row['Library Security Deposit'] ?? row.librarySecurityDeposit ?? 0,
-          cautionMoney: row['Caution Money'] ?? row.cautionMoney ?? 0,
-          computerLabFee: row['Computer Lab Fee'] ?? row.computerLabFee ?? 0,
-          picnicFieldTrip: row['Picnic / Field Trip'] ?? row.picnicFieldTrip ?? 0,
-          addOnFee: row['Add-on Fee'] ?? row.addOnFee ?? 0,
-          examinationFee: row['Examination Fee'] ?? row.examinationFee ?? 0,
-          annualCharges: row['Annual Charges'] ?? row.annualCharges ?? 0,
-          sportsFee: row['Sports Fee'] ?? row.sportsFee ?? 0,
-          status: row.Status ?? row.status ?? 'DRAFT',
-        }));
+        rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
       }
       if (!rows.length) throw new Error('No rows found in file');
       const res = await importFeeStructuresBatch(rows, academicYear);
@@ -316,23 +354,6 @@ export function FeeStructureView() {
     }
   };
 
-  const previewTotal = useMemo(() => {
-    const num = (v: string) => (v ? Number(v) : 0);
-    return (
-      num(form.tuitionFee) +
-      num(form.admissionFee) +
-      num(form.registrationFee) +
-      num(form.librarySecurityDeposit) +
-      num(form.cautionMoney) +
-      num(form.computerLabFee) +
-      num(form.picnicFieldTrip) +
-      num(form.addOnFee) +
-      num(form.examinationFee) +
-      num(form.annualCharges) +
-      num(form.sportsFee)
-    );
-  }, [form]);
-
   if (loading && !records.length) {
     return <AcademicLoading label="Loading fee structures…" />;
   }
@@ -342,7 +363,7 @@ export function FeeStructureView() {
       <AcademicPageHeader
         breadcrumb="Fees & Finance › Fee Structure"
         title="Fee Structure"
-        subtitle="Define class-wise fee components — tuition, admission, deposits, lab, sports & more"
+        subtitle="Define class-wise fee components — synced automatically to Fee Masters for visibility & collection"
         actions={
           <>
             <select
@@ -387,6 +408,10 @@ export function FeeStructureView() {
       <div className={am.content}>
         {message && <FeeMessage message={message} type="success" />}
         {error && <FeeMessage message={error} type="error" />}
+
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-800">
+          Fee components created here are automatically synced to <strong>Fee Masters</strong> for visibility in collection, invoices, and payments.
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="bg-gradient-to-r from-blue-600 to-blue-500 rounded-xl px-5 py-4 text-white shadow-sm">
@@ -450,36 +475,22 @@ export function FeeStructureView() {
             <table className="w-full min-w-[1400px]">
               <thead>
                 <tr>
-                  <th className={am.th} rowSpan={2}>
-                    Ref ID
-                  </th>
-                  <th className={am.th} rowSpan={2}>
-                    Student / Party
-                  </th>
-                  <th className={am.th} rowSpan={2}>
-                    Class
-                  </th>
+                  <th className={am.th} rowSpan={2}>Ref ID</th>
+                  <th className={am.th} rowSpan={2}>Student / Party</th>
+                  <th className={am.th} rowSpan={2}>Class</th>
                   <th
                     className={`${am.th} text-center border-l border-slate-200/80`}
-                    colSpan={FEE_HEAD_FIELDS.length}
+                    colSpan={Math.max(tableHeads.length, 1)}
                   >
                     Fee Components
                   </th>
-                  <th className={`${am.th} border-l border-slate-200/80`} rowSpan={2}>
-                    Total Amount
-                  </th>
-                  <th className={am.th} rowSpan={2}>
-                    Date
-                  </th>
-                  <th className={am.th} rowSpan={2}>
-                    Status
-                  </th>
-                  <th className={am.th} rowSpan={2}>
-                    Action
-                  </th>
+                  <th className={`${am.th} border-l border-slate-200/80`} rowSpan={2}>Total Amount</th>
+                  <th className={am.th} rowSpan={2}>Date</th>
+                  <th className={am.th} rowSpan={2}>Status</th>
+                  <th className={am.th} rowSpan={2}>Action</th>
                 </tr>
                 <tr>
-                  {FEE_HEAD_FIELDS.map((field) => (
+                  {tableHeads.map((field) => (
                     <th
                       key={field.key}
                       className={`${am.th} text-xs font-semibold normal-case tracking-normal whitespace-nowrap min-w-[120px] border-l border-slate-200/80 first:border-l-0`}
@@ -496,8 +507,8 @@ export function FeeStructureView() {
                     <td className={`${am.td} font-mono text-xs whitespace-nowrap`}>{row.recordId}</td>
                     <td className={`${am.td} font-medium whitespace-nowrap`}>{row.partyName}</td>
                     <td className={`${am.td} whitespace-nowrap`}>{row.classLabel}</td>
-                    {FEE_HEAD_FIELDS.map((field) => {
-                      const amount = row[field.key as keyof FeeStructureRecord] as number;
+                    {tableHeads.map((field) => {
+                      const amount = amountForKey(row, field.key);
                       return (
                         <td
                           key={field.key}
@@ -511,17 +522,24 @@ export function FeeStructureView() {
                       {formatInr(row.totalAmount)}
                     </td>
                     <td className={`${am.td} text-xs whitespace-nowrap`}>{formatDisplayDate(row.displayDate)}</td>
+                    <td className={am.td}><StatusBadge status={row.status} /></td>
                     <td className={am.td}>
-                      <StatusBadge status={row.status} />
-                    </td>
-                    <td className={am.td}>
-                      <button
-                        type="button"
-                        onClick={() => setViewRow(row)}
-                        className="text-xs font-semibold text-amber-700 hover:underline"
-                      >
-                        View
-                      </button>
+                      <div className="flex flex-col gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setViewRow(row)}
+                          className="text-xs font-semibold text-amber-700 hover:underline text-left"
+                        >
+                          View
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openEdit(row)}
+                          className="text-xs font-semibold text-blue-700 hover:underline text-left"
+                        >
+                          Edit
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -531,7 +549,6 @@ export function FeeStructureView() {
         )}
       </div>
 
-      {/* Create / Edit Modal */}
       <AcademicModal
         open={showModal}
         onClose={() => setShowModal(false)}
@@ -606,19 +623,48 @@ export function FeeStructureView() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {FEE_HEAD_FIELDS.map((field) => (
-              <div key={field.key}>
-                <label className="text-xs font-semibold text-slate-600">{field.label}</label>
-                <input
-                  type="number"
-                  className={am.input}
-                  value={form[field.key]}
-                  onChange={(e) => setForm((f) => ({ ...f, [field.key]: e.target.value }))}
-                  placeholder="0"
-                />
-              </div>
-            ))}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-semibold text-slate-600">Fee Components</label>
+              <span className="text-[10px] text-slate-500">Synced to Fee Masters on save</span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {formHeadFields.map((field) => (
+                <div key={field.key}>
+                  <label className="text-xs font-semibold text-slate-600">{field.label}</label>
+                  <input
+                    type="number"
+                    className={am.input}
+                    value={headAmounts[field.key] || ''}
+                    onChange={(e) =>
+                      setHeadAmounts((amounts) => ({ ...amounts, [field.key]: e.target.value }))
+                    }
+                    placeholder="0"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="border border-dashed border-slate-300 rounded-lg p-3 space-y-2">
+            <p className="text-xs font-semibold text-slate-600">Add New Fee Component</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              <input
+                className={am.input}
+                value={newHeadCode}
+                onChange={(e) => setNewHeadCode(e.target.value)}
+                placeholder="Code e.g. LAB_FEE"
+              />
+              <input
+                className={am.input}
+                value={newHeadName}
+                onChange={(e) => setNewHeadName(e.target.value)}
+                placeholder="Display name"
+              />
+              <button type="button" onClick={addCustomHead} className={am.btnSecondary}>
+                <Plus size={14} /> Add Component
+              </button>
+            </div>
           </div>
 
           <div className="bg-green-50 border border-green-100 rounded-lg px-3 py-2 flex justify-between items-center">
@@ -656,13 +702,12 @@ export function FeeStructureView() {
               className={am.btnPrimary}
               disabled={!form.className.trim() || previewTotal <= 0}
             >
-              {editRow ? 'Update' : 'Save'}
+              {editRow ? 'Update & Sync' : 'Save & Sync'}
             </button>
           </div>
         </div>
       </AcademicModal>
 
-      {/* View Modal */}
       <AcademicModal
         open={!!viewRow}
         onClose={() => setViewRow(null)}
@@ -699,16 +744,12 @@ export function FeeStructureView() {
                   </tr>
                 </thead>
                 <tbody>
-                  {FEE_HEAD_FIELDS.map((f) => {
-                    const amount = viewRow[f.key as keyof FeeStructureRecord] as number;
-                    if (!amount) return null;
-                    return (
-                      <tr key={f.key}>
-                        <td className={am.td}>{f.label}</td>
-                        <td className={`${am.td} font-semibold`}>{formatInr(amount)}</td>
-                      </tr>
-                    );
-                  })}
+                  {viewRow.feeHeads.map((head) => (
+                    <tr key={head.key}>
+                      <td className={am.td}>{head.label}</td>
+                      <td className={`${am.td} font-semibold`}>{formatInr(head.amount)}</td>
+                    </tr>
+                  ))}
                   <tr className="bg-slate-50 font-bold">
                     <td className={am.td}>Total</td>
                     <td className={am.td}>{formatInr(viewRow.totalAmount)}</td>

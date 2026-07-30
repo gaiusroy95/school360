@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Student, StudentProfileMeta } from '../../../lib/studentServices';
 import { getAdmissionForm } from '../../../lib/idCardUtils';
+import { StudentPhotoVerificationPanel } from './StudentPhotoVerificationPanel';
 
 type Activity = { title: string; time: string; type: string };
 
@@ -28,7 +29,9 @@ export function StudentProfileTabContent({
   switch (tab) {
     case 'Overview':
       return (
-        <Panel title="Student Overview">
+        <div className="space-y-4">
+          <StudentPhotoVerificationPanel student={student} size="lg" />
+          <Panel title="Student Overview">
           <Grid>
             <Info label="Date of Birth" value={`${student.dob || '—'}${student.age != null ? ` (${student.age} yrs)` : ''}`} />
             <Info label="Gender" value={student.gender} />
@@ -50,6 +53,7 @@ export function StudentProfileTabContent({
             {student.entranceScore != null && <Info label="Entrance Score" value={`${student.entranceScore}%`} />}
           </Grid>
         </Panel>
+        </div>
       );
 
     case 'Academics':

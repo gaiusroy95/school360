@@ -3,6 +3,9 @@ import { api } from './api';
 export type Student = {
   id: string;
   admissionNumber: string;
+  softId: string;
+  srNo: string;
+  portalNicCode: string;
   rollNumber: string;
   rfidTag: string;
   firstName: string;
@@ -100,6 +103,9 @@ export type StudentInput = {
   academicYear?: string;
   house?: string;
   rollNumber?: string;
+  softId?: string;
+  srNo?: string;
+  portalNicCode?: string;
   rfidTag?: string;
   fatherName?: string;
   fatherMobile?: string;
@@ -108,6 +114,7 @@ export type StudentInput = {
   status?: string;
   admissionNumber?: string;
   entranceScore?: number;
+  photoUrl?: string;
   documents?: Record<string, unknown>;
   customFields?: Record<string, unknown>;
 };
@@ -116,6 +123,10 @@ export const STUDENT_PROFILE_ID_KEY = 'studentManagement.profileStudentId';
 
 export async function fetchStudentsMeta() {
   return api<{ filters: StudentFilters; summary: StudentSummary }>('/api/students/meta');
+}
+
+export async function fetchNextSoftId() {
+  return api<{ softId: string }>('/api/students/next-soft-id');
 }
 
 export async function fetchStudents(params?: {

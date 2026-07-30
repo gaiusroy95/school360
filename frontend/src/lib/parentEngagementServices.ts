@@ -21,15 +21,40 @@ export type EngagementRecord = {
   studentFeedbackNotes: string;
   status: string;
   statusLabel: string;
+  teacherName?: string;
+  className?: string;
+  sectionName?: string;
+  academicYear?: string;
+  rosterTaskId?: string;
+  mobilePublished?: boolean;
+};
+
+export type EngagementHierarchyMeta = {
+  academicYear: string;
+  teachers: {
+    teacherName: string;
+    assignments: { className: string; sectionName: string; classGroup: string }[];
+  }[];
+  classes: string[];
+  sectionsByClass: Record<string, string[]>;
 };
 
 export async function fetchParentEngagementsMeta() {
   return api<{ summary: { total: number; planned: number; completed: number; missed: number } }>('/api/parent-engagements/meta');
 }
 
+export async function fetchParentEngagementHierarchy(academicYear?: string) {
+  const q = academicYear ? `?academicYear=${encodeURIComponent(academicYear)}` : '';
+  return api<EngagementHierarchyMeta>(`/api/parent-engagements/hierarchy-meta${q}`);
+}
+
 export async function fetchParentEngagements(params?: {
   studentId?: string;
   parentKey?: string;
+  teacherName?: string;
+  className?: string;
+  sectionName?: string;
+  academicYear?: string;
   status?: string;
   from?: string;
   to?: string;
@@ -37,6 +62,10 @@ export async function fetchParentEngagements(params?: {
   const q = new URLSearchParams();
   if (params?.studentId) q.set('studentId', params.studentId);
   if (params?.parentKey) q.set('parentKey', params.parentKey);
+  if (params?.teacherName) q.set('teacherName', params.teacherName);
+  if (params?.className) q.set('className', params.className);
+  if (params?.sectionName) q.set('sectionName', params.sectionName);
+  if (params?.academicYear) q.set('academicYear', params.academicYear);
   if (params?.status) q.set('status', params.status);
   if (params?.from) q.set('from', params.from);
   if (params?.to) q.set('to', params.to);
@@ -44,7 +73,7 @@ export async function fetchParentEngagements(params?: {
   return api<{ records: EngagementRecord[] }>(`/api/parent-engagements${qs ? `?${qs}` : ''}`);
 }
 
-export async function createParentEngagement(payload: {
+type EngagementPayload = {
   studentId: string;
   parentRelationship: string;
   title: string;
@@ -56,19 +85,18 @@ export async function createParentEngagement(payload: {
   studentFeedbackNotes?: string;
   status?: string;
   completedAt?: string;
-}) {
+  teacherName?: string;
+  className?: string;
+  sectionName?: string;
+  academicYear?: string;
+  publishToMobile?: boolean;
+};
+
+export async function createParentEngagement(payload: EngagementPayload) {
   return api<{ record: EngagementRecord }>('/api/parent-engagements', { method: 'POST', body: JSON.stringify(payload) });
 }
 
-export async function createParentEngagementsBatch(engagements: {
-  studentId: string;
-  parentRelationship: string;
-  title: string;
-  description?: string;
-  engagementType?: string;
-  plannedAt: string;
-  status?: string;
-}[]) {
+export async function createParentEngagementsBatch(engagements: EngagementPayload[]) {
   return api<{ records: EngagementRecord[] }>('/api/parent-engagements/batch', {
     method: 'POST',
     body: JSON.stringify({ engagements }),

@@ -5,7 +5,7 @@ import type {
   TeacherRosterTaskType,
 } from '@prisma/client';
 import { prisma } from './prisma.js';
-import { formatClassSection } from './students.js';
+import { formatClassSection, getInstitutionFilterMeta } from './students.js';
 import { nextAcademicRecordId } from './academicManagement.js';
 
 export const ROSTER_TASK_TYPES: { id: TeacherRosterTaskType; label: string; description: string }[] = [
@@ -387,4 +387,119 @@ export async function updateMobileTeacherTask(
   if (!existing) throw new Error('Task not found');
 
   return updateRosterTask(institutionId, taskId, data);
+}
+
+export type TeacherAllocationMetaTeacher = {
+  teacherName: string;
+  department: string;
+  classSubjects: Array<{
+    className: string;
+    sectionName: string;
+    subjectName: string;
+    periodsPerWeek: number;
+  }>;
+};
+
+export async function getTeacherAllocationMeta(institutionId: string, academicYear: string) {
+  const filters = await getInstitutionFilterMeta(institutionId);
+
+  const [subjectsRows, allocations, subjectAllocs, profiles, classSections] = await Promise.all([
+    prisma.academicSubject.findMany({
+      where: { institutionId, isActive: true },
+      select: { subjectName: true },
+      orderBy: { subjectName: 'asc' },
+    }),
+    prisma.academicTeacherAllocation.findMany({ where: { institutionId, academicYear } }),
+    prisma.academicSubjectAllocation.findMany({
+      where: { institutionId, academicYear },
+      include: { subject: { select: { subjectName: true } } },
+    }),
+    prisma.teacherAttendanceProfile.findMany({
+      where: { institutionId, academicYear, isActive: true },
+      select: { teacherName: true, department: true },
+    }),
+    prisma.academicClassSection.findMany({
+      where: { institutionId, academicYear },
+      select: { classTeacher: true, className: true, sectionName: true },
+    }),
+  ]);
+
+  const teacherMap = new Map<string, TeacherAllocationMetaTeacher>();
+
+  const ensureTeacher = (name: string, department = 'General') => {
+    const n = name.trim();
+    if (!n) return;
+    if (!teacherMap.has(n)) {
+      teacherMap.set(n, { teacherName: n, department: department || 'General', classSubjects: [] });
+    } else if (department && teacherMap.get(n)!.department === 'General' && department !== 'General') {
+      teacherMap.get(n)!.department = department;
+    }
+  };
+
+  const addClassSubject = (
+    teacherName: string,
+    cs: { className: string; sectionName: string; subjectName: string; periodsPerWeek?: number },
+  ) => {
+    const n = teacherName.trim();
+    if (!n || !cs.className || !cs.subjectName) return;
+    ensureTeacher(n);
+    const entry = teacherMap.get(n)!;
+    const exists = entry.classSubjects.some(
+      (x) =>
+        x.className === cs.className &&
+        x.sectionName === (cs.sectionName || '') &&
+        x.subjectName === cs.subjectName,
+    );
+    if (!exists) {
+      entry.classSubjects.push({
+        className: cs.className,
+        sectionName: cs.sectionName || '',
+        subjectName: cs.subjectName,
+        periodsPerWeek: cs.periodsPerWeek ?? 18,
+      });
+    }
+  };
+
+  for (const p of profiles) ensureTeacher(p.teacherName, p.department || 'General');
+  for (const a of allocations) {
+    ensureTeacher(a.teacherName, a.department || 'General');
+    addClassSubject(a.teacherName, {
+      className: a.className,
+      sectionName: a.sectionName,
+      subjectName: a.subjectName,
+      periodsPerWeek: a.periodsPerWeek,
+    });
+  }
+  for (const sa of subjectAllocs) {
+    if (sa.teacherName) {
+      ensureTeacher(sa.teacherName, 'General');
+      addClassSubject(sa.teacherName, {
+        className: sa.className,
+        sectionName: sa.sectionName,
+        subjectName: sa.subject.subjectName,
+      });
+    }
+  }
+  for (const cs of classSections) {
+    if (cs.classTeacher) ensureTeacher(cs.classTeacher, 'Class Teacher');
+  }
+
+  const subjects = [...new Set(subjectsRows.map((s) => s.subjectName))].sort();
+  const departments = [...new Set([...teacherMap.values()].map((t) => t.department).filter(Boolean))].sort();
+  const periodsPerWeek = [
+    ...new Set([
+      ...allocations.map((a) => a.periodsPerWeek).filter((p) => p > 0),
+      12, 15, 18, 20, 24, 30,
+    ]),
+  ].sort((a, b) => a - b);
+
+  return {
+    academicYear,
+    classes: filters.classes,
+    sectionsByClass: filters.sectionsByClass,
+    subjects,
+    departments: departments.length ? departments : ['General'],
+    periodsPerWeek,
+    teachers: [...teacherMap.values()].sort((a, b) => a.teacherName.localeCompare(b.teacherName)),
+  };
 }

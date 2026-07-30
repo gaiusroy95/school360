@@ -156,7 +156,7 @@ export function AdmissionFormPage1({
       }`}
       style={{
         fontFamily: 'Arial, Helvetica, sans-serif',
-        ...(exportMode ? { width: A4_WIDTH_PX, height: A4_HEIGHT_PX, minHeight: A4_HEIGHT_PX } : {}),
+        ...(exportMode ? { width: A4_WIDTH_PX, minHeight: A4_HEIGHT_PX } : {}),
       }}
     >
       <FormHeader school={school} page={1} exportMode={exportMode} />
@@ -167,7 +167,20 @@ export function AdmissionFormPage1({
         <PhotoBox label="Mother" src={form.motherPhoto} exportMode={exportMode} />
       </div>
 
-      <div className={exportMode ? 'flex-1 flex flex-col justify-between gap-3 min-h-0' : ''}>
+      <div className={exportMode ? 'flex flex-col gap-3' : ''}>
+        <section>
+          <SectionTitle exportMode={exportMode}>Registration & Identification</SectionTitle>
+          <table className={`w-full border border-slate-300 border-collapse ${exportMode ? '' : 'mb-2'}`}>
+            <tbody>
+              <Row exportMode={exportMode} label="Soft ID (ERP)" value={form.softId} />
+              <Row exportMode={exportMode} label="SR No (Govt. Registration)" value={form.srNo} />
+              <Row exportMode={exportMode} label="Portal NIC Code" value={form.portalNicCode} />
+              <Row exportMode={exportMode} label="Roll Number" value={form.rollNumber} />
+              <Row exportMode={exportMode} label="House" value={form.house} />
+            </tbody>
+          </table>
+        </section>
+
         <section>
           <SectionTitle exportMode={exportMode}>Admission Details</SectionTitle>
           <table className={`w-full border border-slate-300 border-collapse ${exportMode ? '' : 'mb-2'}`}>
@@ -196,21 +209,7 @@ export function AdmissionFormPage1({
               <Row exportMode={exportMode} label="Nationality" value={form.nationality} />
               <Row exportMode={exportMode} label="Mobile" value={form.mobile} />
               <Row exportMode={exportMode} label="Email" value={form.email} />
-            </tbody>
-          </table>
-        </section>
-
-        <section>
-          <SectionTitle exportMode={exportMode}>Parent Information</SectionTitle>
-          <table className="w-full border border-slate-300 border-collapse">
-            <tbody>
-              <Row exportMode={exportMode} label="Father's Name" value={form.fatherName} />
-              <Row exportMode={exportMode} label="Father Mobile" value={form.fatherMobile} />
-              <Row exportMode={exportMode} label="Father Occupation" value={form.fatherOccupation} />
-              <Row exportMode={exportMode} label="Mother's Name" value={form.motherName} />
-              <Row exportMode={exportMode} label="Mother Mobile" value={form.motherMobile} />
-              <Row exportMode={exportMode} label="Mother Occupation" value={form.motherOccupation} />
-              <Row exportMode={exportMode} label="Guardian" value={form.guardianName} />
+              <Row exportMode={exportMode} label="Place of Birth" value={form.placeOfBirth} />
             </tbody>
           </table>
         </section>
@@ -248,12 +247,30 @@ export function AdmissionFormPage2({
       }`}
       style={{
         fontFamily: 'Arial, Helvetica, sans-serif',
-        ...(exportMode ? { width: A4_WIDTH_PX, height: A4_HEIGHT_PX, minHeight: A4_HEIGHT_PX } : {}),
+        ...(exportMode ? { width: A4_WIDTH_PX, minHeight: A4_HEIGHT_PX } : {}),
       }}
     >
       <FormHeader school={school} page={2} exportMode={exportMode} />
 
-      <div className={exportMode ? 'flex-1 flex flex-col justify-between gap-3 min-h-0' : ''}>
+      <div className={exportMode ? 'flex flex-col gap-3' : ''}>
+        <section>
+          <SectionTitle exportMode={exportMode}>Parent / Guardian Information</SectionTitle>
+          <table className={`w-full border border-slate-300 border-collapse ${exportMode ? '' : 'mb-2'}`}>
+            <tbody>
+              <Row exportMode={exportMode} label="Father's Name" value={form.fatherName} />
+              <Row exportMode={exportMode} label="Father Mobile" value={form.fatherMobile} />
+              <Row exportMode={exportMode} label="Father Email" value={form.fatherEmail} />
+              <Row exportMode={exportMode} label="Father Occupation" value={form.fatherOccupation} />
+              <Row exportMode={exportMode} label="Mother's Name" value={form.motherName} />
+              <Row exportMode={exportMode} label="Mother Mobile" value={form.motherMobile} />
+              <Row exportMode={exportMode} label="Mother Email" value={form.motherEmail} />
+              <Row exportMode={exportMode} label="Mother Occupation" value={form.motherOccupation} />
+              <Row exportMode={exportMode} label="Guardian Name" value={form.guardianName} />
+              <Row exportMode={exportMode} label="Guardian Mobile" value={form.guardianMobile} />
+            </tbody>
+          </table>
+        </section>
+
         <section>
           <SectionTitle exportMode={exportMode}>Address</SectionTitle>
           <table className={`w-full border border-slate-300 border-collapse ${exportMode ? '' : 'mb-2'}`}>
@@ -262,7 +279,6 @@ export function AdmissionFormPage2({
               <Row exportMode={exportMode} label="City" value={form.city} />
               <Row exportMode={exportMode} label="State" value={form.state} />
               <Row exportMode={exportMode} label="Pincode" value={form.pincode} />
-              <Row exportMode={exportMode} label="Place of Birth" value={form.placeOfBirth} />
             </tbody>
           </table>
         </section>
@@ -286,10 +302,23 @@ export function AdmissionFormPage2({
           <table className={`w-full border border-slate-300 border-collapse ${exportMode ? '' : 'mb-2'}`}>
             <tbody>
               <Row exportMode={exportMode} label="Transport" value={form.transportRequired} />
-              <Row exportMode={exportMode} label="Route / Stop" value={[form.transportRoute, form.transportStop].filter(Boolean).join(' — ')} />
+              <Row exportMode={exportMode} label="Route" value={form.transportRoute} />
+              <Row exportMode={exportMode} label="Pickup / Drop Stop" value={form.transportStop} />
+              <Row exportMode={exportMode} label="Vehicle Preference" value={form.vehiclePreference} />
               <Row exportMode={exportMode} label="Hostel" value={form.hostelRequired} />
-              <Row exportMode={exportMode} label="Room / Mess" value={[form.hostelRoomType, form.messPreference].filter(Boolean).join(' / ')} />
+              <Row exportMode={exportMode} label="Room Type" value={form.hostelRoomType} />
+              <Row exportMode={exportMode} label="Mess Preference" value={form.messPreference} />
+            </tbody>
+          </table>
+        </section>
+
+        <section>
+          <SectionTitle exportMode={exportMode}>Fee Details</SectionTitle>
+          <table className={`w-full border border-slate-300 border-collapse ${exportMode ? '' : 'mb-2'}`}>
+            <tbody>
               <Row exportMode={exportMode} label="Fee Group" value={form.feeGroup} />
+              <Row exportMode={exportMode} label="Payment Mode" value={form.paymentMode} />
+              <Row exportMode={exportMode} label="Fee Remarks" value={form.feeRemarks} />
             </tbody>
           </table>
         </section>
@@ -310,7 +339,7 @@ export function AdmissionFormPage2({
           </table>
         </section>
 
-        <section className={exportMode ? 'shrink-0' : ''}>
+        <section className={exportMode ? '' : ''}>
           <SectionTitle exportMode={exportMode}>Document Submission Declaration</SectionTitle>
           <div className={`text-slate-700 leading-relaxed border border-slate-300 bg-slate-50 rounded ${exportMode ? 'text-[10px] p-3 mb-3' : 'text-[6px] mb-2 p-1.5'}`}>
             {submittedCount > 0 ? (
@@ -337,7 +366,7 @@ export function AdmissionFormPage2({
           </div>
         </section>
 
-        <section className={exportMode ? 'mt-auto shrink-0' : ''}>
+        <section>
           <SectionTitle exportMode={exportMode}>General Declaration</SectionTitle>
           <p className={`text-slate-600 leading-snug border border-slate-200 bg-slate-50 rounded ${exportMode ? 'text-[10px] p-3 mb-4' : 'text-[6px] mb-2 p-1.5'}`}>
             I hereby declare that all information provided in this admission application is true and correct to the best of my knowledge. I agree to abide by the rules and regulations of <strong>{school.name}</strong>.

@@ -1,6 +1,7 @@
 import { FeeDueStatus, FeePaymentMode } from '@prisma/client';
 import { prisma } from './prisma.js';
 import { FEE_HEAD_LABELS, findFeeSchedule, loadFeeCollectionContext, generateReceiptNumber } from './feeConfig.js';
+import { generateInvoiceFromReceipt } from './feeFinanceModules.js';
 import type { MobileAuthUser } from './mobileAuth.js';
 import { resolveStudentId } from './mobileScope.js';
 import { createRazorpayOrder, isRazorpayConfigured, verifyRazorpayPaymentSignature } from './razorpay.js';
@@ -172,7 +173,7 @@ async function markFeeDuePaid(
   const student = await prisma.student.findUnique({ where: { id: due.studentId } });
   if (!student) throw new Error('Student not found');
 
-  await prisma.$transaction([
+  const [, , receipt] = await prisma.$transaction([
     prisma.feeDue.update({
       where: { id: feeDueId },
       data: { status: FeeDueStatus.PAID },
@@ -198,6 +199,8 @@ async function markFeeDuePaid(
       },
     }),
   ]);
+
+  await generateInvoiceFromReceipt(institutionId, receipt.id, { preparedBy: 'Razorpay' });
 
   return due;
 }

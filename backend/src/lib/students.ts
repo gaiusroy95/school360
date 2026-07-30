@@ -6,6 +6,7 @@ import {
 } from '@prisma/client';
 import { prisma } from './prisma.js';
 import { generateAdmissionNumber } from './admissionRecords.js';
+import { allocateSoftId, peekNextSoftId } from './documentIdentityCustomFields.js';
 
 const DEFAULT_YEAR = '2025-26';
 
@@ -34,6 +35,35 @@ const GENDER_DB: Record<string, StudentGender> = {
   female: StudentGender.FEMALE,
   other: StudentGender.OTHER,
 };
+
+function isValidPhotoSrc(src?: string | null): boolean {
+  if (!src || src === '[attached]') return false;
+  return src.startsWith('data:') || src.startsWith('http://') || src.startsWith('https://') || src.startsWith('/');
+}
+
+export function resolveStudentPhotos(student: {
+  photoUrl?: string | null;
+  customFields?: unknown;
+}) {
+  const form =
+    typeof student.customFields === 'object' &&
+    student.customFields &&
+    'admissionForm' in (student.customFields as object)
+      ? ((student.customFields as { admissionForm?: Record<string, string> }).admissionForm || {})
+      : {};
+
+  const studentPhoto = isValidPhotoSrc(student.photoUrl)
+    ? student.photoUrl!
+    : isValidPhotoSrc(form.studentPhoto)
+      ? form.studentPhoto
+      : '';
+
+  return {
+    studentPhoto,
+    fatherPhoto: isValidPhotoSrc(form.fatherPhoto) ? form.fatherPhoto : '',
+    motherPhoto: isValidPhotoSrc(form.motherPhoto) ? form.motherPhoto : '',
+  };
+}
 
 export function parseStudentStatus(input?: string): StudentStatus | undefined {
   if (!input || input === 'all' || input === 'All') return undefined;
@@ -90,6 +120,9 @@ export function serializeStudent(student: Student) {
   return {
     id: student.id,
     admissionNumber: student.admissionNumber,
+    softId: student.softId,
+    srNo: student.srNo,
+    portalNicCode: student.portalNicCode,
     rollNumber: student.rollNumber,
     rfidTag: student.rfidTag,
     firstName: student.firstName,
@@ -160,12 +193,14 @@ export async function createStudentFromAdmissionRecord(
   if (dup) return dup;
 
   const { firstName, lastName } = splitFullName(record.application.studentName);
+  const softId = await allocateSoftId(institutionId);
 
   return prisma.student.create({
     data: {
       institutionId,
       admissionRecordId: record.id,
       admissionNumber: record.admissionNumber,
+      softId,
       firstName,
       lastName,
       dateOfBirth: record.application.dateOfBirth,
@@ -222,6 +257,14 @@ export async function generateStudentAdmissionNumber(institutionId: string): Pro
     if (!taken) return candidate;
   }
   return `STU-${year}-${Date.now().toString().slice(-6)}`;
+}
+
+export async function generateStudentSoftId(institutionId: string): Promise<string> {
+  return allocateSoftId(institutionId);
+}
+
+export async function previewStudentSoftId(institutionId: string): Promise<string> {
+  return peekNextSoftId(institutionId);
 }
 
 export async function getInstitutionFilterMeta(institutionId: string) {
