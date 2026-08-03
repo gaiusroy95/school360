@@ -396,14 +396,23 @@ const awardScholarshipSchema = z.object({
   lastClassObtain: z.number().optional(),
 });
 
-const vendorDocumentSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  type: z.string().optional().default('OTHER'),
-  mimeType: z.string().optional().default('application/octet-stream'),
-  fileData: z.string().min(1),
-  uploadedAt: z.string().optional(),
-});
+const vendorDocumentSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    type: z.string().optional().default('OTHER'),
+    mimeType: z.string().optional().default('application/octet-stream'),
+    fileData: z.string().min(1),
+    uploadedAt: z.string().optional(),
+  })
+  .transform((doc) => ({
+    id: doc.id,
+    name: doc.name,
+    type: doc.type,
+    mimeType: doc.mimeType,
+    fileData: doc.fileData,
+    uploadedAt: doc.uploadedAt ?? new Date().toISOString(),
+  }));
 
 const createTransportVendorSchema = z.object({
   vendorCode: z.string().min(1),

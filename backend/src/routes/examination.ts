@@ -1664,7 +1664,7 @@ examinationRouter.post(
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
     return res.json(await createRevaluationPaymentOrder(institutionId, req.params.id, {
-      accountId: req.user?.id || '',
+      accountId: req.user?.userId || '',
     }));
   }),
 );
@@ -1674,7 +1674,7 @@ examinationRouter.post(
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
     return res.json(await createBackPaperPaymentOrder(institutionId, req.params.id, {
-      accountId: req.user?.id || '',
+      accountId: req.user?.userId || '',
     }));
   }),
 );

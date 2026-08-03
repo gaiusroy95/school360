@@ -17,11 +17,12 @@ export default defineConfig(() => {
         output: {
           manualChunks(id) {
             if (!id.includes('node_modules')) return;
+            // Heavy optional libs only — do not split react / lucide-react into separate
+            // chunks (causes circular init + "Cannot set properties of undefined (setting 'Activity')").
             if (id.includes('recharts') || id.includes('d3-')) return 'charts';
-            if (id.includes('xlsx') || id.includes('jspdf') || id.includes('html2canvas')) return 'docs';
-            if (id.includes('lucide-react')) return 'icons';
-            if (id.includes('react-dom') || id.includes('/react/')) return 'react-vendor';
-            return 'vendor';
+            if (id.includes('xlsx') || id.includes('jspdf') || id.includes('html2canvas')) {
+              return 'docs';
+            }
           },
         },
       },
