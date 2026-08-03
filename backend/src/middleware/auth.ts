@@ -18,6 +18,7 @@ declare global {
   namespace Express {
     interface Request {
       user?: AuthUser;
+      institutionId?: string;
     }
   }
 }
@@ -80,9 +81,12 @@ function actionFromMethod(method: string): 'create' | 'read' | 'update' | 'delet
   return 'read';
 }
 
-async function assertActiveSession(user: AuthUser) {
+/** Throttle session lastActivity writes — avoid a DB update on every API call. */
+const SESSION_TOUCH_INTERVAL_MS = 60_000;
+const lastSessionTouch = new Map<string, number>();
+
+async function assertActiveSession(user: AuthUser, institutionId: string) {
   if (!user.sessionId) return;
-  const institutionId = await getDefaultInstitutionId();
   const timeoutMinutes = await getSessionTimeoutMinutes(institutionId);
   const session = await prisma.securityLoginSession.findUnique({ where: { id: user.sessionId } });
   if (!session || session.status !== 'ACTIVE' || session.userId !== user.userId) {
@@ -94,12 +98,19 @@ async function assertActiveSession(user: AuthUser) {
       where: { id: user.sessionId },
       data: { status: 'EXPIRED' },
     });
+    lastSessionTouch.delete(user.sessionId);
     throw new Error('SESSION_INVALID');
   }
-  await prisma.securityLoginSession.update({
-    where: { id: user.sessionId },
-    data: { lastActivityAt: new Date() },
-  });
+
+  const lastTouch = lastSessionTouch.get(user.sessionId) || 0;
+  if (Date.now() - lastTouch >= SESSION_TOUCH_INTERVAL_MS) {
+    lastSessionTouch.set(user.sessionId, Date.now());
+    // Fire-and-forget — don't block the request on activity touch
+    void prisma.securityLoginSession.update({
+      where: { id: user.sessionId },
+      data: { lastActivityAt: new Date() },
+    }).catch(() => undefined);
+  }
 }
 
 function clientIpFromRequest(req: Request) {
@@ -118,8 +129,11 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     if (!secret) throw new Error('JWT_SECRET is not set');
     const token = header.slice(7);
     const decoded = jwt.verify(token, secret) as AuthUser;
+    const institutionId = await getDefaultInstitutionId();
+    req.institutionId = institutionId;
+
     try {
-      await assertActiveSession(decoded);
+      await assertActiveSession(decoded, institutionId);
     } catch (e) {
       if (e instanceof Error && e.message === 'SESSION_INVALID') {
         return res.status(401).json({ error: 'Session expired or revoked. Please login again.' });
@@ -128,13 +142,14 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     }
     req.user = decoded;
 
-    const institutionId = await getDefaultInstitutionId();
     const clientIp = clientIpFromRequest(req);
-    const firewall = await checkFirewallBlocked(institutionId, clientIp);
+    const [firewall, ipCheck] = await Promise.all([
+      checkFirewallBlocked(institutionId, clientIp),
+      checkIpAccessAllowed(institutionId, clientIp),
+    ]);
     if (firewall.blocked) {
       return res.status(403).json({ error: firewall.message ?? 'Blocked by firewall' });
     }
-    const ipCheck = await checkIpAccessAllowed(institutionId, clientIp);
     if (!ipCheck.allowed) {
       return res.status(403).json({ error: ipCheck.message ?? 'IP not allowed' });
     }
@@ -142,7 +157,6 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     if (decoded.role !== 'SUPER_ADMIN' && decoded.role !== 'ADMIN') {
       const feature = resolveFeatureArea(req.originalUrl.split('?')[0]);
       if (feature && !req.originalUrl.startsWith('/api/auth')) {
-        const institutionId = await getDefaultInstitutionId();
         const action = actionFromMethod(req.method);
         const allowed = await userHasPermission(decoded.userId, institutionId, feature, action);
         if (!allowed) {

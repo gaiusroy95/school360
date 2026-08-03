@@ -5,7 +5,8 @@ import {
 import {
   createCoScholastic, fetchAcademicMeta, fetchCoScholasticDashboard, fetchCoScholasticDetail,
   publishCoScholasticActivities, recordCoScholasticPerformances,
-  type CoScholasticActivity, type CoScholasticDashboard, type CoScholasticPerformance,
+  type AcademicTeachingStaffOption, type CoScholasticActivity, type CoScholasticDashboard,
+  type CoScholasticPerformance,
 } from '../../../lib/academicServices';
 import { fetchStudents } from '../../../lib/studentServices';
 import {
@@ -66,7 +67,8 @@ function ActivityDetail({
 
       <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-lg">
         <div><p className="text-[10px] font-bold text-slate-400 uppercase">Class</p><p className="font-semibold">{activity.classGroup}</p></div>
-        <div><p className="text-[10px] font-bold text-slate-400 uppercase">Teacher</p><p className="font-semibold">{activity.teacherName || '—'}</p></div>
+        <div><p className="text-[10px] font-bold text-slate-400 uppercase">Teacher In-Charge</p><p className="font-semibold">{activity.teacherName || '—'}</p></div>
+        <div><p className="text-[10px] font-bold text-slate-400 uppercase">Co-Teacher</p><p className="font-semibold">{activity.coTeacherName || '—'}</p></div>
         <div><p className="text-[10px] font-bold text-slate-400 uppercase">Date</p><p className="font-semibold">{new Date(activity.activityDate).toLocaleDateString('en-IN')}</p></div>
         <div><p className="text-[10px] font-bold text-slate-400 uppercase">Venue</p><p className="font-semibold">{activity.venue || '—'}</p></div>
         <div><p className="text-[10px] font-bold text-slate-400 uppercase">Max Score</p><p className="font-semibold">{activity.maxScore}</p></div>
@@ -147,6 +149,9 @@ export function CoScholasticView() {
   const [loading, setLoading] = useState(true);
   const [academicYear, setAcademicYear] = useState('2025-26');
   const [years, setYears] = useState<string[]>(['2025-26']);
+  const [classes, setClasses] = useState<string[]>([]);
+  const [sectionsByClass, setSectionsByClass] = useState<Record<string, string[]>>({});
+  const [teachingStaff, setTeachingStaff] = useState<AcademicTeachingStaffOption[]>([]);
   const [categoryFilter, setCategoryFilter] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -161,6 +166,9 @@ export function CoScholasticView() {
     try {
       const meta = await fetchAcademicMeta();
       setYears(meta.academicYears);
+      setClasses(meta.classes || []);
+      setSectionsByClass(meta.sectionsByClass || {});
+      setTeachingStaff(meta.teachingStaff || []);
       const d = await fetchCoScholasticDashboard({ academicYear, category: categoryFilter || undefined });
       setDashboard(d);
     } finally { setLoading(false); }
@@ -202,7 +210,22 @@ export function CoScholasticView() {
     setShowPerfForm(true);
   };
 
+  const sectionOptions = form.className ? (sectionsByClass[form.className] || []) : [];
+  const coTeacherOptions = teachingStaff.filter((t) => t.teacherName !== form.teacherName);
+
   const saveActivity = async () => {
+    if (!form.title.trim()) {
+      setMessage('Activity title is required');
+      return;
+    }
+    if (!form.activityDate) {
+      setMessage('Activity date is required');
+      return;
+    }
+    if (!form.teacherName.trim()) {
+      setMessage('Select Teacher In-Charge from the HR teaching staff list');
+      return;
+    }
     await createCoScholastic({ ...form, academicYear });
     setMessage(`Activity "${form.title}" planned successfully`);
     setShowForm(false);
@@ -362,40 +385,135 @@ export function CoScholasticView() {
       {/* Plan Activity Modal */}
       <AcademicModal open={showForm} onClose={() => setShowForm(false)} title="Plan Co-Scholastic Activity" large>
         <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-          <input placeholder="Activity Title *" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} className={am.input} />
-
-          <select value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value, subCategory: '', activityType: '' }))} className={am.input}>
-            {(dashboard?.categories || []).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-          </select>
-
-          <select value={form.subCategory} onChange={(e) => setForm((f) => ({ ...f, subCategory: e.target.value, activityType: '' }))} className={am.input}>
-            <option value="">Select Sub-Category</option>
-            {(selectedCategory?.subCategories || []).map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-          </select>
-
-          <select value={form.activityType} onChange={(e) => setForm((f) => ({ ...f, activityType: e.target.value }))} className={am.input}>
-            <option value="">Select Activity Type</option>
-            {(selectedSubCategory?.activities || []).map((a) => <option key={a} value={a}>{a}</option>)}
-          </select>
-
-          <div className="grid grid-cols-2 gap-2">
-            <input placeholder="Class" value={form.className} onChange={(e) => setForm((f) => ({ ...f, className: e.target.value }))} className={am.input} />
-            <input placeholder="Section" value={form.sectionName} onChange={(e) => setForm((f) => ({ ...f, sectionName: e.target.value }))} className={am.input} />
-            <input placeholder="Teacher In-Charge" value={form.teacherName} onChange={(e) => setForm((f) => ({ ...f, teacherName: e.target.value }))} className={am.input} />
-            <input placeholder="Co-Teacher" value={form.coTeacherName} onChange={(e) => setForm((f) => ({ ...f, coTeacherName: e.target.value }))} className={am.input} />
-            <input type="date" value={form.activityDate} onChange={(e) => setForm((f) => ({ ...f, activityDate: e.target.value }))} className={am.input} />
-            <input placeholder="Venue" value={form.venue} onChange={(e) => setForm((f) => ({ ...f, venue: e.target.value }))} className={am.input} />
-            <input type="date" value={form.startDate} onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))} className={am.input} title="Plan Start Date" />
-            <input type="date" value={form.endDate} onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))} className={am.input} title="Plan End Date" />
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase">Activity Title *</label>
+            <input placeholder="Activity Title *" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} className={am.input} />
           </div>
 
-          <textarea placeholder="Performance Measurement Criteria (how students will be evaluated)" value={form.measurementCriteria} onChange={(e) => setForm((f) => ({ ...f, measurementCriteria: e.target.value }))} className={am.input} rows={2} />
-          <textarea placeholder="Description" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} className={am.input} rows={2} />
-          <input type="number" placeholder="Max Score" value={form.maxScore} onChange={(e) => setForm((f) => ({ ...f, maxScore: Number(e.target.value) }))} className={am.input} />
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase">Category</label>
+            <select value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value, subCategory: '', activityType: '' }))} className={am.input}>
+              {(dashboard?.categories || []).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase">Sub-Category</label>
+            <select value={form.subCategory} onChange={(e) => setForm((f) => ({ ...f, subCategory: e.target.value, activityType: '' }))} className={am.input}>
+              <option value="">Select Sub-Category</option>
+              {(selectedCategory?.subCategories || []).map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase">Activity Type</label>
+            <select value={form.activityType} onChange={(e) => setForm((f) => ({ ...f, activityType: e.target.value }))} className={am.input}>
+              <option value="">Select Activity Type</option>
+              {(selectedSubCategory?.activities || []).map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase">Class</label>
+              <select
+                value={form.className}
+                onChange={(e) => setForm((f) => ({ ...f, className: e.target.value, sectionName: '' }))}
+                className={am.input}
+              >
+                <option value="">All Classes</option>
+                {classes.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase">Section</label>
+              <select
+                value={form.sectionName}
+                onChange={(e) => setForm((f) => ({ ...f, sectionName: e.target.value }))}
+                className={am.input}
+                disabled={!form.className}
+              >
+                <option value="">All Sections</option>
+                {sectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase">Teacher In-Charge *</label>
+              <select
+                value={form.teacherName}
+                onChange={(e) => setForm((f) => ({
+                  ...f,
+                  teacherName: e.target.value,
+                  coTeacherName: f.coTeacherName === e.target.value ? '' : f.coTeacherName,
+                }))}
+                className={am.input}
+              >
+                <option value="">Select teacher…</option>
+                {teachingStaff.map((t) => (
+                  <option key={t.id} value={t.teacherName}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase">Co-Teacher</label>
+              <select
+                value={form.coTeacherName}
+                onChange={(e) => setForm((f) => ({ ...f, coTeacherName: e.target.value }))}
+                className={am.input}
+              >
+                <option value="">None</option>
+                {coTeacherOptions.map((t) => (
+                  <option key={t.id} value={t.teacherName}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase">Activity Date *</label>
+              <input type="date" value={form.activityDate} onChange={(e) => setForm((f) => ({ ...f, activityDate: e.target.value }))} className={am.input} />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase">Venue</label>
+              <input placeholder="Venue" value={form.venue} onChange={(e) => setForm((f) => ({ ...f, venue: e.target.value }))} className={am.input} />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase">Plan Start</label>
+              <input type="date" value={form.startDate} onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))} className={am.input} />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase">Plan End</label>
+              <input type="date" value={form.endDate} onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))} className={am.input} />
+            </div>
+          </div>
+
+          {teachingStaff.length === 0 && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              No teaching staff found in HR. Add teaching employees in HR → Employee Directory so Teacher In-Charge and Co-Teacher lists populate.
+            </p>
+          )}
+
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase">Performance Measurement Criteria</label>
+            <textarea placeholder="(how students will be evaluated)" value={form.measurementCriteria} onChange={(e) => setForm((f) => ({ ...f, measurementCriteria: e.target.value }))} className={am.input} rows={2} />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase">Description</label>
+            <textarea placeholder="Description" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} className={am.input} rows={2} />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase">Points / Max Marks</label>
+            <input type="number" placeholder="100" value={form.maxScore} onChange={(e) => setForm((f) => ({ ...f, maxScore: Number(e.target.value) }))} className={am.input} />
+          </div>
         </div>
         <div className="flex justify-end gap-2 pt-4 border-t mt-3">
           <button type="button" onClick={() => setShowForm(false)} className={am.btnSecondary}>Cancel</button>
-          <button type="button" onClick={() => void saveActivity()} className={am.btnPrimary} disabled={!form.title.trim() || !form.activityDate}>Save Activity</button>
+          <button
+            type="button"
+            onClick={() => void saveActivity()}
+            className={am.btnPrimary}
+            disabled={!form.title.trim() || !form.activityDate || !form.teacherName.trim()}
+          >
+            Save Activity
+          </button>
         </div>
       </AcademicModal>
 

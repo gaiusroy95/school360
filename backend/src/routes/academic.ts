@@ -44,6 +44,7 @@ import {
   serializeSyllabusChapter,
 } from '../lib/curriculumHub.js';
 import {
+  bulkDeleteTimetableSlots,
   bulkUpsertTimetableSlots,
   createTimetableSlotRecord,
   getDailySchedule,
@@ -59,10 +60,18 @@ import {
   submitClassTestScores,
 } from '../lib/lessonPlanning.js';
 import {
+  assertTeacherHomeworkAllocation,
   getHomeworkDashboard,
   getHomeworkDetail,
   getMobileHomeworkForStudent,
+  remapHomeworkTeachersForAllocation,
 } from '../lib/homework.js';
+import {
+  isYouTubeUrl,
+  normalizeHomeworkAttachments,
+  resolveHomeworkFile,
+  saveHomeworkUpload,
+} from '../lib/homeworkUploads.js';
 import {
   confirmCalendarUpload,
   createCalendarUploadAndScan,
@@ -92,10 +101,12 @@ import {
 import {
   addTeacherToSubject,
   bulkSetSyllabusRevisionDeadlines,
+  bulkUpsertSubjectTeacherMappings,
   createSubjectWithTeachers,
   getSubjectManagementDashboard,
   updateSubjectOffering,
 } from '../lib/subjectManagement.js';
+import { listTeachingStaffForAcademic } from '../lib/employeeDirectory.js';
 import {
   CO_SCHOLASTIC_CATEGORIES,
   createCoScholasticActivity,
@@ -139,6 +150,7 @@ academicRouter.get(
     const institutionId = await getDefaultInstitutionId();
     const filters = await getInstitutionFilterMeta(institutionId);
     const setupMeta = await getAcademicMetaFromSetup(institutionId);
+    const teachingStaff = await listTeachingStaffForAcademic(institutionId);
     return res.json({
       defaultAcademicYear: setupMeta.defaultAcademicYear || filters.defaultAcademicYear,
       academicYears: filters.academicYears,
@@ -146,6 +158,7 @@ academicRouter.get(
       sectionsByClass: filters.sectionsByClass,
       terms: setupMeta.terms,
       framework: setupMeta.framework,
+      teachingStaff,
     });
   }),
 );
@@ -366,9 +379,50 @@ academicRouter.post(
     const { teachers, academicYear, ...subjectData } = parsed.data;
     const recordId = await nextAcademicRecordId(institutionId, 'subject');
     const row = await prisma.academicSubject.create({
-      data: { institutionId, recordId, ...subjectData },
+      data: {
+        institutionId,
+        recordId,
+        ...subjectData,
+        subjectType: subjectData.subjectType || 'Core',
+        isElective: subjectData.isElective ?? /elective/i.test(subjectData.subjectType || ''),
+      },
     });
     return res.status(201).json({ record: serializeSubject(row) });
+  }),
+);
+
+academicRouter.post(
+  '/subjects/bulk',
+  asyncHandler(async (req, res) => {
+    const rowSchema = z.object({
+      subjectName: z.string().min(1),
+      subjectCode: z.string().optional(),
+      subjectType: z.string().optional(),
+      subjectGroup: z.string().optional(),
+      teacherName: z.string().min(1),
+      teacherEmail: z.string().optional(),
+      teacherPhone: z.string().optional(),
+      className: z.string().min(1),
+      sectionName: z.string().min(1),
+      courseStartDate: z.string().optional(),
+      courseCompletionDeadline: z.string().optional(),
+      revisionDeadline: z.string().optional(),
+    });
+    const schema = z.object({
+      academicYear: z.string().default('2025-26'),
+      rows: z.array(rowSchema).min(1),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const institutionId = await getDefaultInstitutionId();
+    const result = await bulkUpsertSubjectTeacherMappings(
+      institutionId,
+      parsed.data.academicYear,
+      parsed.data.rows,
+    );
+    await syncTeacherProfilesFromAcademic(institutionId, parsed.data.academicYear);
+    return res.json(result);
   }),
 );
 
@@ -570,6 +624,20 @@ academicRouter.post(
 );
 
 academicRouter.post(
+  '/timetable/bulk-delete',
+  asyncHandler(async (req, res) => {
+    const schema = z.object({
+      ids: z.array(z.string().min(1)).min(1),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const institutionId = await getDefaultInstitutionId();
+    const result = await bulkDeleteTimetableSlots(institutionId, parsed.data.ids);
+    return res.json(result);
+  }),
+);
+
+academicRouter.post(
   '/timetable/publish',
   asyncHandler(async (req, res) => {
     const schema = z.object({
@@ -759,6 +827,78 @@ academicRouter.post(
   }),
 );
 
+academicRouter.post(
+  '/lesson-plans/bulk',
+  asyncHandler(async (req, res) => {
+    const itemSchema = lessonPlanSchema.extend({
+      createClassTest: z.union([z.boolean(), z.string()]).optional(),
+    });
+    const schema = z.object({
+      academicYear: z.string().default('2025-26'),
+      share: z.boolean().optional().default(true),
+      plans: z.array(itemSchema).min(1),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const institutionId = await getDefaultInstitutionId();
+    let created = 0;
+    let classTestsCreated = 0;
+    const errors: string[] = [];
+
+    for (let i = 0; i < parsed.data.plans.length; i++) {
+      const plan = parsed.data.plans[i];
+      try {
+        const createClassTest = typeof plan.createClassTest === 'string'
+          ? ['yes', 'y', 'true', '1'].includes(plan.createClassTest.trim().toLowerCase())
+          : plan.createClassTest !== false;
+
+        const recordId = await nextAcademicRecordId(institutionId, 'lessonPlan');
+        const row = await prisma.academicLessonPlan.create({
+          data: {
+            institutionId,
+            recordId,
+            academicYear: plan.academicYear || parsed.data.academicYear,
+            term: plan.term || 'Term 1',
+            className: plan.className,
+            sectionName: plan.sectionName,
+            subjectName: plan.subjectName,
+            department: plan.department || 'General',
+            title: plan.title,
+            teacherName: plan.teacherName || '',
+            objective: plan.objective || '',
+            teachingMethod: plan.teachingMethod || '',
+            propsUsed: plan.propsUsed || '',
+            bloomsLevel: (plan.bloomsLevel as BloomsTaxonomyLevel) || 'UNDERSTAND',
+            resultMeasurement: plan.resultMeasurement || '',
+            syllabusChapterId: plan.syllabusChapterId || null,
+            plannedDate: plan.plannedDate ? new Date(plan.plannedDate) : null,
+            notes: plan.notes || '',
+            resources: (plan.resources || []) as object,
+            status: parsed.data.share ? 'IN_PROGRESS' : 'DRAFT',
+            sharedAt: parsed.data.share ? new Date() : null,
+          },
+        });
+        created += 1;
+        if (createClassTest) {
+          await createClassTestForLessonPlan(institutionId, row.id);
+          classTestsCreated += 1;
+        }
+      } catch (e) {
+        errors.push(`Row ${i + 1} (${plan.title || 'untitled'}): ${e instanceof Error ? e.message : 'Failed'}`);
+      }
+    }
+
+    return res.status(201).json({
+      created,
+      classTestsCreated,
+      failed: errors.length,
+      errors,
+      total: parsed.data.plans.length,
+    });
+  }),
+);
+
 academicRouter.patch(
   '/lesson-plans/:id',
   asyncHandler(async (req, res) => {
@@ -941,6 +1081,39 @@ academicRouter.get(
 );
 
 academicRouter.get(
+  '/homework/files/:institutionId/:fileName',
+  asyncHandler(async (req, res) => {
+    try {
+      const fullPath = await resolveHomeworkFile(req.params.institutionId, req.params.fileName);
+      return res.sendFile(fullPath);
+    } catch {
+      return res.status(404).json({ error: 'File not found' });
+    }
+  }),
+);
+
+academicRouter.post(
+  '/homework/uploads',
+  asyncHandler(async (req, res) => {
+    const schema = z.object({
+      fileName: z.string().min(1),
+      mimeType: z.string().min(1),
+      dataBase64: z.string().min(1),
+      title: z.string().optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const institutionId = await getDefaultInstitutionId();
+    try {
+      const attachment = await saveHomeworkUpload(institutionId, parsed.data);
+      return res.status(201).json({ attachment });
+    } catch (e) {
+      return res.status(400).json({ error: e instanceof Error ? e.message : 'Upload failed' });
+    }
+  }),
+);
+
+academicRouter.get(
   '/homework/:id',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
@@ -953,6 +1126,14 @@ academicRouter.get(
 academicRouter.post(
   '/homework',
   asyncHandler(async (req, res) => {
+    const attachmentSchema = z.object({
+      id: z.string().optional(),
+      type: z.enum(['pdf', 'image', 'video', 'link']).optional(),
+      title: z.string().optional(),
+      url: z.string().min(1),
+      fileName: z.string().optional(),
+      mimeType: z.string().optional(),
+    });
     const schema = z.object({
       academicYear: z.string().default('2025-26'),
       term: z.string().default('Term 1'),
@@ -966,10 +1147,47 @@ academicRouter.post(
       dueDate: z.string().optional(),
       totalStudents: z.number().optional(),
       share: z.boolean().optional(),
+      youtubeUrl: z.string().optional(),
+      attachments: z.array(attachmentSchema).optional(),
     });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const institutionId = await getDefaultInstitutionId();
+
+    if (parsed.data.teacherName) {
+      const check = await assertTeacherHomeworkAllocation(institutionId, {
+        academicYear: parsed.data.academicYear,
+        teacherName: parsed.data.teacherName,
+        className: parsed.data.className,
+        sectionName: parsed.data.sectionName,
+        subjectName: parsed.data.subjectName,
+      });
+      if (!check.ok) return res.status(400).json({ error: check.message });
+    }
+
+    const attachments = normalizeHomeworkAttachments(parsed.data.attachments || []);
+    if (parsed.data.youtubeUrl?.trim()) {
+      const yt = parsed.data.youtubeUrl.trim();
+      if (!isYouTubeUrl(yt) && !/^https?:\/\//i.test(yt)) {
+        return res.status(400).json({ error: 'Invalid YouTube / video link' });
+      }
+      attachments.push({
+        id: `yt_${Date.now()}`,
+        type: isYouTubeUrl(yt) ? 'video' : 'link',
+        title: 'Video / supporting link',
+        url: yt,
+      });
+    }
+
+    const studentCount = parsed.data.totalStudents ?? await prisma.student.count({
+      where: {
+        institutionId,
+        className: parsed.data.className,
+        sectionName: parsed.data.sectionName,
+        status: 'ACTIVE',
+      },
+    });
+
     const recordId = await nextAcademicRecordId(institutionId, 'homework');
     const now = new Date();
     const row = await prisma.academicHomework.create({
@@ -986,7 +1204,8 @@ academicRouter.post(
         description: parsed.data.description || '',
         assignedDate: parsed.data.assignedDate ? new Date(parsed.data.assignedDate) : now,
         dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : null,
-        totalStudents: parsed.data.totalStudents ?? 0,
+        totalStudents: studentCount,
+        attachments: attachments as object,
         sharedAt: parsed.data.share ? now : null,
         publishedAt: parsed.data.share ? now : null,
         status: 'ASSIGNED',
@@ -1011,6 +1230,9 @@ academicRouter.patch(
     if (body.submittedCount !== undefined) data.submittedCount = body.submittedCount;
     if (body.totalStudents !== undefined) data.totalStudents = body.totalStudents;
     if (body.dueDate) data.dueDate = new Date(String(body.dueDate));
+    if (body.attachments !== undefined) {
+      data.attachments = normalizeHomeworkAttachments(body.attachments) as object;
+    }
     if (body.share || body.sharedAt) {
       data.sharedAt = new Date();
       data.publishedAt = new Date();
@@ -1062,12 +1284,25 @@ academicRouter.post(
     });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-    const institutionId = await getDefaultInstitutionId();
+
+    const raw = parsed.data.fileData.includes(',')
+      ? parsed.data.fileData.split(',')[1]
+      : parsed.data.fileData;
+    const approxBytes = Math.floor((raw.length * 3) / 4);
+    if (approxBytes > 20 * 1024 * 1024) {
+      return res.status(413).json({
+        error: 'Uploaded file is too large. Please upload a PDF/image under 20 MB.',
+      });
+    }
+
     try {
+      const institutionId = await getDefaultInstitutionId();
       const result = await createCalendarUploadAndScan(institutionId, parsed.data);
       return res.status(201).json(result);
     } catch (e) {
-      return res.status(400).json({ error: e instanceof Error ? e.message : 'OCR scan failed' });
+      const msg = e instanceof Error ? e.message : 'OCR scan failed';
+      const status = msg.toLowerCase().includes('too large') ? 413 : 400;
+      return res.status(status).json({ error: msg });
     }
   }),
 );
@@ -1677,7 +1912,14 @@ academicRouter.post(
       },
     });
     await syncTeacherProfilesFromAcademic(institutionId, parsed.data.academicYear);
-    return res.status(201).json({ record: row });
+    const remap = await remapHomeworkTeachersForAllocation(institutionId, {
+      academicYear: parsed.data.academicYear,
+      className: parsed.data.className,
+      sectionName: parsed.data.sectionName || '',
+      subjectName: parsed.data.subjectName,
+      teacherName: parsed.data.teacherName,
+    });
+    return res.status(201).json({ record: row, homeworkRemapped: remap.remapped });
   }),
 );
 

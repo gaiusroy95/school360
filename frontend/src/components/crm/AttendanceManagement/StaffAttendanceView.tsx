@@ -13,8 +13,7 @@ import {
   fetchStaffAttendanceCalendar,
   fetchStaffAttendanceMeta,
   fetchStaffAttendanceReport,
-  seedStaffAttendanceDemo,
-  syncStaffProfiles,
+  pullStaffAttendanceFromMobile,
   type StaffAttendanceReport,
   type StaffCalendar,
   type StaffPeriod,
@@ -54,7 +53,8 @@ export function StaffAttendanceView() {
   const [half, setHalf] = useState<1 | 2>(1);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [seeding, setSeeding] = useState(false);
+  const [pulling, setPulling] = useState(false);
+  const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const reportParams = useMemo(() => ({
@@ -122,16 +122,22 @@ export function StaffAttendanceView() {
     setCalMonth(d.getUTCMonth() + 1);
   };
 
-  const handleSeed = async () => {
-    setSeeding(true);
+  const handlePullFromMobile = async () => {
+    setPulling(true);
+    setErrorMsg(null);
+    setInfoMsg(null);
     try {
-      await syncStaffProfiles(academicYear);
-      await seedStaffAttendanceDemo(academicYear);
+      const res = await pullStaffAttendanceFromMobile({
+        academicYear,
+        year: calYear,
+        month: calMonth,
+      });
+      setInfoMsg(res.message);
       await refreshData();
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Seed failed');
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to pull mobile attendance');
     } finally {
-      setSeeding(false);
+      setPulling(false);
     }
   };
 
@@ -200,11 +206,16 @@ export function StaffAttendanceView() {
             <button type="button" onClick={() => void refreshData()} disabled={loading} className="p-2 border border-slate-200 rounded-lg bg-white hover:bg-slate-50" title="Refresh">
               <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             </button>
-            {(meta?.staffCount === 0 || !calendar?.days.some((d) => d.hasData)) && (
-              <button type="button" disabled={seeding} onClick={() => void handleSeed()} className="px-3 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg">
-                {seeding ? 'Loading…' : 'Load Demo Data'}
-              </button>
-            )}
+            <button
+              type="button"
+              disabled={pulling}
+              onClick={() => void handlePullFromMobile()}
+              className="px-3 py-2 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-lg flex items-center gap-1.5"
+              title="Sync staff profiles and reload attendance marked from the Staff mobile app"
+            >
+              <Smartphone size={14} />
+              {pulling ? 'Pulling…' : 'Pull from Mobile App'}
+            </button>
             {report && (
               <button type="button" onClick={() => downloadStaffAttendanceReportExcel(report)} className="px-3 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 text-xs font-bold rounded-lg flex items-center gap-1.5">
                 <Download size={14} />
@@ -220,6 +231,12 @@ export function StaffAttendanceView() {
           <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
             <AlertCircle size={16} />
             {errorMsg}
+          </div>
+        )}
+        {infoMsg && (
+          <div className="flex items-center gap-2 text-sm text-indigo-800 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
+            <Smartphone size={16} />
+            {infoMsg}
           </div>
         )}
 

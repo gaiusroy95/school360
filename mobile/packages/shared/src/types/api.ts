@@ -85,12 +85,103 @@ export type TestPaper = {
   purposeLabel?: string;
   durationMinutes?: number;
   questionCount?: number;
+  passMarksPercent?: number;
+  isDigitalExam?: boolean;
   mobilePublishedAt?: string | null;
 };
 
 export type TestsResponse = {
   studentId: string;
+  studentName?: string;
   papers: TestPaper[];
+};
+
+export type TestAttemptStart = {
+  attemptId: string;
+  durationMinutes: number;
+  passMarksPercent: number;
+  questions: {
+    id: string;
+    sortOrder: number;
+    type: string;
+    questionText: string;
+    options: string[];
+  }[];
+};
+
+export type TestSubmitResult = {
+  attemptId: string;
+  score: number;
+  passed: boolean;
+  correctCount: number;
+  wrongCount: number;
+  unansweredCount: number;
+  rawScore?: number;
+  maxScore?: number;
+  paperTitle?: string;
+};
+
+export type MobileRevaluationOverview = {
+  studentId: string;
+  academicYear: string;
+  paymentsEnabled: boolean;
+  config: {
+    revaluationFee: number;
+    recheckFee: number;
+    backPaperFee: number;
+    gracePeriodDays: number;
+    passingPercent: number;
+  };
+  requests: {
+    id: string;
+    recordId: string;
+    subjectName: string;
+    requestType: string;
+    status: string;
+    originalMarks: number;
+    originalMaxMarks: number;
+    revisedMarks: number | null;
+    feeAmount: number;
+    feePaid: boolean;
+    canPayFee: boolean;
+    daysLeftInGrace: number;
+    withinGracePeriod: boolean;
+    examinationName: string;
+  }[];
+  backPapers: {
+    id: string;
+    recordId: string;
+    subjectName: string;
+    status: string;
+    feeAmount: number;
+    feePaid: boolean;
+    canPayFee: boolean;
+    examinationName: string;
+    originalMarks: number;
+    originalMaxMarks: number;
+    newMarks: number | null;
+  }[];
+  eligible: {
+    studentResultId: string;
+    subjectName: string;
+    examinationName: string;
+    obtained: number;
+    max: number;
+    grade: string;
+    gracePeriodEndsAt: string;
+    revaluationFee: number;
+    recheckFee: number;
+  }[];
+  failed: {
+    studentResultId: string;
+    subjectName: string;
+    examinationName: string;
+    obtained: number;
+    max: number;
+    grade: string;
+    passingMarks: number;
+    backPaperFee?: number;
+  }[];
 };
 
 export type ProfileResponse = {

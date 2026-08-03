@@ -303,11 +303,15 @@ export async function updateExamSubjectSyllabus(
 }
 
 export async function seedExamSyllabusDemo(institutionId: string, academicYear = '2025-26') {
-  const existing = await prisma.examSubjectSyllabus.count({ where: { institutionId, academicYear } });
-  if (existing > 0) {
-    return { seeded: false, records: existing };
-  }
+  // Legacy alias — prefer syncExamSyllabusFromSystem (idempotent upsert from Academic Management).
+  return syncExamSyllabusFromSystem(institutionId, academicYear);
+}
 
+/**
+ * Fetch subjects & syllabus from Academic Management (allocations + curriculum chapters)
+ * into Examination Subjects & Syllabus records (upsert per class/section/subject/category).
+ */
+export async function syncExamSyllabusFromSystem(institutionId: string, academicYear = '2025-26') {
   const allocations = await prisma.academicSubjectAllocation.findMany({
     where: { institutionId, academicYear },
     include: { subject: true },
@@ -318,6 +322,17 @@ export async function seedExamSyllabusDemo(institutionId: string, academicYear =
     where: { institutionId, academicYear },
     orderBy: [{ className: 'asc' }, { subjectName: 'asc' }, { unitNumber: 'asc' }],
   });
+
+  if (!allocations.length && !chapters.length) {
+    return {
+      synced: false,
+      created: 0,
+      updated: 0,
+      subjects: 0,
+      chapters: 0,
+      message: 'No subjects or syllabus chapters found in Academic Management. Add them under Subject Management / Curriculum & Syllabus first.',
+    };
+  }
 
   const chapterKey = (className: string, sectionName: string, subjectName: string) =>
     `${className}::${sectionName}::${subjectName}`;
@@ -330,22 +345,25 @@ export async function seedExamSyllabusDemo(institutionId: string, academicYear =
     chaptersByKey.set(key, list);
   }
 
-  const pairs = allocations.length
-    ? allocations.map((a) => ({
-        className: a.className,
-        sectionName: a.sectionName,
-        subjectName: a.subject.subjectName,
-      }))
-    : [
-        { className: 'Class 8', sectionName: 'A', subjectName: 'Mathematics' },
-        { className: 'Class 8', sectionName: 'A', subjectName: 'Science' },
-        { className: 'Class 8', sectionName: 'A', subjectName: 'English' },
-        { className: 'Class 9', sectionName: 'A', subjectName: 'Mathematics' },
-        { className: 'Class 9', sectionName: 'A', subjectName: 'Science' },
-        { className: 'Class 10', sectionName: 'A', subjectName: 'Mathematics' },
-        { className: 'Class 10', sectionName: 'A', subjectName: 'Science' },
-        { className: 'Class 10', sectionName: 'A', subjectName: 'English' },
-      ];
+  // Prefer allocations; if none, derive pairs from syllabus chapters
+  const pairMap = new Map<string, { className: string; sectionName: string; subjectName: string }>();
+  for (const a of allocations) {
+    const subjectName = a.subject.subjectName;
+    const key = chapterKey(a.className, a.sectionName, subjectName);
+    pairMap.set(key, { className: a.className, sectionName: a.sectionName, subjectName });
+  }
+  if (!pairMap.size) {
+    for (const ch of chapters) {
+      const key = chapterKey(ch.className, ch.sectionName, ch.subjectName);
+      if (!pairMap.has(key)) {
+        pairMap.set(key, {
+          className: ch.className,
+          sectionName: ch.sectionName,
+          subjectName: ch.subjectName,
+        });
+      }
+    }
+  }
 
   const categorySlices: Record<ExamSyllabusCategory, number> = {
     CLASS_TEST_SERIES: 1,
@@ -354,55 +372,171 @@ export async function seedExamSyllabusDemo(institutionId: string, academicYear =
     ANNUAL_EXAM: 99,
   };
 
-  let recordNum = 1001;
   let created = 0;
+  let updated = 0;
+  let nextNum = (await prisma.examSubjectSyllabus.count({ where: { institutionId } })) + 1;
 
-  for (const pair of pairs) {
+  for (const pair of pairMap.values()) {
     const key = chapterKey(pair.className, pair.sectionName, pair.subjectName);
-    const subjectChapters = chaptersByKey.get(key) || chapters
-      .filter((c) => c.className === pair.className && c.subjectName === pair.subjectName)
-      .sort((a, b) => a.unitNumber - b.unitNumber);
+    const subjectChapters = chaptersByKey.get(key)
+      || chapters
+        .filter((c) => c.className === pair.className && c.subjectName === pair.subjectName)
+        .sort((a, b) => a.unitNumber - b.unitNumber);
 
     for (const category of CATEGORY_ORDER) {
-      const take = Math.min(categorySlices[category], subjectChapters.length || 3);
+      const take = Math.min(
+        categorySlices[category],
+        subjectChapters.length || 1,
+      );
       const chapterSlice = subjectChapters.length
         ? subjectChapters
-        : [
-            { unitNumber: 1, chapterTitle: `${pair.subjectName} — Fundamentals` },
-            { unitNumber: 2, chapterTitle: `${pair.subjectName} — Core Concepts` },
-            { unitNumber: 3, chapterTitle: `${pair.subjectName} — Advanced Topics` },
-          ];
+        : [{ unitNumber: 1, chapterTitle: `${pair.subjectName} — Fundamentals` }];
 
       const topics = buildTopicsFromChapters(chapterSlice, take);
       const defaults = CATEGORY_DEFAULTS[category];
       const units = unitsLabel(chapterSlice, take) || `Units 1–${take}`;
+      const title = `${pair.className} ${pair.subjectName} — ${CATEGORY_LABELS[category]}`;
+      const notes = category === ExamSyllabusCategory.CLASS_TEST_SERIES
+        ? 'Fetched from Academic subject allocations & class-test syllabus coverage'
+        : 'Fetched from Academic Curriculum & Syllabus chapters';
 
-      await prisma.examSubjectSyllabus.create({
-        data: {
+      const existing = await prisma.examSubjectSyllabus.findFirst({
+        where: {
           institutionId,
-          recordId: `ESY-${recordNum++}`,
           academicYear,
           category,
           className: pair.className,
           sectionName: pair.sectionName,
           subjectName: pair.subjectName,
-          title: `${pair.className} ${pair.subjectName} — ${CATEGORY_LABELS[category]}`,
-          unitsCovered: units,
-          topics: topics as Prisma.InputJsonValue,
-          maxMarks: defaults.maxMarks,
-          weightagePercent: defaults.weightage,
-          durationMinutes: defaults.duration,
-          plannedMonth: defaults.plannedMonth,
-          status: 'Published',
-          notes: category === ExamSyllabusCategory.CLASS_TEST_SERIES
-            ? 'Synced from lesson planning class test series'
-            : 'Mapped from curriculum syllabus chapters',
-          sortOrder: CATEGORY_ORDER.indexOf(category) + 1,
         },
       });
-      created++;
+
+      if (existing) {
+        await prisma.examSubjectSyllabus.update({
+          where: { id: existing.id },
+          data: {
+            title,
+            unitsCovered: units,
+            topics: topics as Prisma.InputJsonValue,
+            maxMarks: defaults.maxMarks,
+            weightagePercent: defaults.weightage,
+            durationMinutes: defaults.duration,
+            plannedMonth: defaults.plannedMonth,
+            status: 'Published',
+            notes,
+            sortOrder: CATEGORY_ORDER.indexOf(category) + 1,
+          },
+        });
+        updated += 1;
+      } else {
+        const recordId = `ESY-${String(1000 + nextNum++)}`;
+        await prisma.examSubjectSyllabus.create({
+          data: {
+            institutionId,
+            recordId,
+            academicYear,
+            category,
+            className: pair.className,
+            sectionName: pair.sectionName,
+            subjectName: pair.subjectName,
+            title,
+            unitsCovered: units,
+            topics: topics as Prisma.InputJsonValue,
+            maxMarks: defaults.maxMarks,
+            weightagePercent: defaults.weightage,
+            durationMinutes: defaults.duration,
+            plannedMonth: defaults.plannedMonth,
+            status: 'Published',
+            notes,
+            sortOrder: CATEGORY_ORDER.indexOf(category) + 1,
+          },
+        });
+        created += 1;
+      }
     }
   }
 
-  return { seeded: true, records: created };
+  return {
+    synced: true,
+    created,
+    updated,
+    subjects: pairMap.size,
+    chapters: chapters.length,
+    message: `Fetched ${pairMap.size} subject offering(s) from system — ${created} created, ${updated} updated (${chapters.length} curriculum chapter(s) used).`,
+  };
+}
+
+export async function getExamSyllabusSystemSource(institutionId: string, academicYear = '2025-26') {
+  const [allocations, chapters, examRecords, subjects] = await Promise.all([
+    prisma.academicSubjectAllocation.findMany({
+      where: { institutionId, academicYear },
+      include: { subject: { select: { subjectName: true, subjectCode: true, subjectType: true } } },
+      orderBy: [{ className: 'asc' }, { sectionName: 'asc' }],
+    }),
+    prisma.academicSyllabusChapter.findMany({
+      where: { institutionId, academicYear },
+      orderBy: [{ className: 'asc' }, { subjectName: 'asc' }, { unitNumber: 'asc' }],
+      select: {
+        id: true,
+        className: true,
+        sectionName: true,
+        subjectName: true,
+        unitNumber: true,
+        chapterTitle: true,
+        completionPercent: true,
+        term: true,
+      },
+    }),
+    prisma.examSubjectSyllabus.count({ where: { institutionId, academicYear } }),
+    prisma.academicSubject.findMany({
+      where: { institutionId, isActive: true },
+      orderBy: { subjectName: 'asc' },
+      select: { subjectName: true, subjectCode: true, subjectType: true },
+    }),
+  ]);
+
+  const offeringKeys = new Set(
+    allocations.map((a) => `${a.className}::${a.sectionName}::${a.subject.subjectName}`),
+  );
+  for (const ch of chapters) {
+    offeringKeys.add(`${ch.className}::${ch.sectionName}::${ch.subjectName}`);
+  }
+
+  return {
+    academicYear,
+    summary: {
+      academicSubjects: subjects.length,
+      subjectOfferings: allocations.length,
+      curriculumChapters: chapters.length,
+      examSyllabusRecords: examRecords,
+      uniqueClassSubjectPairs: offeringKeys.size,
+    },
+    subjects: subjects.map((s) => ({
+      subjectName: s.subjectName,
+      subjectCode: s.subjectCode,
+      subjectType: s.subjectType,
+    })),
+    offerings: allocations.map((a) => ({
+      className: a.className,
+      sectionName: a.sectionName,
+      classGroup: a.sectionName ? `${a.className} — ${a.sectionName}` : a.className,
+      subjectName: a.subject.subjectName,
+      teacherName: a.teacherName || '',
+      chapterCount: chapters.filter(
+        (c) => c.className === a.className
+          && c.subjectName === a.subject.subjectName
+          && (!c.sectionName || !a.sectionName || c.sectionName === a.sectionName),
+      ).length,
+    })),
+    chapters: chapters.map((c) => ({
+      id: c.id,
+      className: c.className,
+      sectionName: c.sectionName,
+      subjectName: c.subjectName,
+      unitNumber: c.unitNumber,
+      chapterTitle: c.chapterTitle,
+      completionPercent: c.completionPercent,
+      term: c.term,
+    })),
+  };
 }

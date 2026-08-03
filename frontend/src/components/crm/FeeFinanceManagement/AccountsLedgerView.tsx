@@ -288,7 +288,7 @@ export function AccountsLedgerView() {
       <AcademicPageHeader
         breadcrumb="Fees & Finance › Accounts & Ledger"
         title="Accounts & Ledger"
-        subtitle="Income Statement, Balance Sheet, Cash Flow & Financial Ratios"
+        subtitle="Posted only from approved Payment Reconciliation day closings — refunds & expenses never bypass"
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <select
@@ -327,10 +327,21 @@ export function AccountsLedgerView() {
       />
 
       <div className={am.content}>
-      {error && <FeeMessage message={error} type="error" />}
-      {message && <FeeMessage message={message} type="success" />}
+        {data?.posting && (
+          <div className="text-xs text-sky-900 bg-sky-50 border border-sky-100 rounded-lg px-3 py-2">
+            {data.posting.message}
+            {data.posting.closedDays === 0 && (
+              <span className="block mt-1 text-slate-600">
+                Flow: Online Payments / Fees / Expenses / Payroll / Refunds → Payment Reconciliation →
+                Send for Approval → Accounts &amp; Ledger.
+              </span>
+            )}
+          </div>
+        )}
+        {error && <FeeMessage message={error} type="error" />}
+        {message && <FeeMessage message={message} type="success" />}
 
-      {data && (
+        {data && (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <RatioCard

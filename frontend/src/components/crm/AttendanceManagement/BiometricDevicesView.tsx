@@ -24,7 +24,6 @@ import {
   fetchBiometricPunches,
   fetchGeoFences,
   recordBiometricPunch,
-  seedBiometricDevicesDemo,
   type BiometricDeviceItem,
   type BiometricDeviceType,
   type BiometricEnrollmentItem,
@@ -66,7 +65,6 @@ export function BiometricDevicesView() {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [seeding, setSeeding] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -117,19 +115,6 @@ export function BiometricDevicesView() {
     const pch = await fetchBiometricPunches({ date });
     setPunches(pch.items);
     setPunchSummary(pch.summary);
-  };
-
-  const handleSeed = async () => {
-    setSeeding(true);
-    try {
-      const res = await seedBiometricDevicesDemo(academicYear);
-      setSuccessMsg(`Demo loaded: ${res.geoFences} geo-fences, ${res.devices} devices, ${res.enrollments} enrollments`);
-      await load();
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Seed failed');
-    } finally {
-      setSeeding(false);
-    }
   };
 
   const handleCreateGeoFence = async () => {
@@ -262,11 +247,6 @@ export function BiometricDevicesView() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => void handleSeed()} disabled={seeding}
-            className="flex items-center gap-2 px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">
-            {seeding ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-            Load Demo Data
-          </button>
           <button type="button" onClick={() => void load()}
             className="flex items-center gap-2 px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">
             <RefreshCw size={16} /> Refresh
@@ -336,7 +316,7 @@ export function BiometricDevicesView() {
                   </span>
                 </div>
               ))}
-              {!geoFences.length && <p className="text-sm text-slate-400">No geo-fences configured. Add one or load demo data.</p>}
+              {!geoFences.length && <p className="text-sm text-slate-400">No geo-fences configured yet.</p>}
             </div>
           </div>
           <div className="bg-white rounded-xl border border-slate-200 p-5">

@@ -2,14 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   AlertCircle, ArrowUp, Award, BarChart2, CalendarDays, CheckCircle2, CheckSquare,
   ClipboardCheck, Clock, Eye, FileEdit, FileText, Loader2, PlusCircle, Printer,
-  RefreshCw, Share2, ShieldAlert, Upload, User, UserCheck, Users, XCircle,
+  Share2, ShieldAlert, Upload, User, UserCheck, Users, XCircle,
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, Legend } from 'recharts';
 import { toViewKey } from '../../../lib/navigation';
 import {
   fetchExamDashboard,
   fetchExamDashboardMeta,
-  seedExamDashboardDemo,
   type ExamDashboard,
 } from '../../../lib/examinationServices';
 
@@ -50,7 +49,6 @@ export function ExamDashboardView({ onNavigate }: Props) {
   const [academicYear, setAcademicYear] = useState('2025-26');
   const [examType, setExamType] = useState('FINAL_EXAMINATION');
   const [loading, setLoading] = useState(true);
-  const [seeding, setSeeding] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const nav = (page: string) => onNavigate?.(toViewKey('Examination Management', page));
@@ -82,18 +80,6 @@ export function ExamDashboardView({ onNavigate }: Props) {
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { if (meta) void refresh(); }, [academicYear, examType]);
-
-  const handleSeed = async () => {
-    setSeeding(true);
-    try {
-      await seedExamDashboardDemo(academicYear);
-      await refresh();
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Seed failed');
-    } finally {
-      setSeeding(false);
-    }
-  };
 
   if (loading && !data) {
     return (
@@ -133,11 +119,6 @@ export function ExamDashboardView({ onNavigate }: Props) {
               {(meta?.examTypes || []).map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
             </select>
           </div>
-          <button type="button" onClick={() => void handleSeed()} disabled={seeding}
-            className="flex items-center gap-1 px-3 py-2 text-xs border border-slate-200 rounded hover:bg-slate-50">
-            {seeding ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            Reload Demo
-          </button>
           <button type="button" onClick={() => nav('Exam Schedule')}
             className="bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold text-xs px-4 py-2 rounded flex items-center gap-2 shadow-sm">
             <PlusCircle size={14} />

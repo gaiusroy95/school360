@@ -94,7 +94,7 @@ function SectionTitle({ children, exportMode }: { children: ReactNode; exportMod
   );
 }
 
-function FormHeader({ school, page, exportMode }: { school: SchoolBranding; page: 1 | 2; exportMode?: boolean }) {
+function FormHeader({ school, page, exportMode }: { school: SchoolBranding; page: number; exportMode?: boolean }) {
   if (exportMode) {
     return (
       <div className="border-b-[3px] border-slate-800 pb-3 mb-4 shrink-0">
@@ -107,7 +107,7 @@ function FormHeader({ school, page, exportMode }: { school: SchoolBranding; page
             <p className="text-[10px] text-slate-600 leading-snug mt-1">{school.address}</p>
             <p className="text-[10px] text-slate-500">Ph: {school.phone} | {school.email}</p>
             <p className="text-[13px] font-bold text-indigo-800 mt-2 uppercase">Student Admission Application Form</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Session: {school.session} · Page {page} of 2</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">Session: {school.session} · Page {page}</p>
           </div>
         </div>
       </div>
@@ -124,12 +124,38 @@ function FormHeader({ school, page, exportMode }: { school: SchoolBranding; page
           <p className="text-[6px] text-slate-600 leading-snug">{school.address}</p>
           <p className="text-[6px] text-slate-500">Ph: {school.phone} | {school.email}</p>
           <p className="text-[7px] font-bold text-indigo-800 mt-1 uppercase">Student Admission Application Form</p>
-          <p className="text-[6px] text-slate-500">Session: {school.session} · Page {page} of 2</p>
+          <p className="text-[6px] text-slate-500">Session: {school.session} · Page {page}</p>
         </div>
       </div>
     </div>
   );
 }
+
+const ROOM_TYPE_DISPLAY: Record<string, string> = { AC: 'AC', NON_AC: 'Non-AC' };
+const MESS_PREF_DISPLAY: Record<string, string> = {
+  VEG: 'Vegetarian',
+  NON_VEG: 'Non-Vegetarian',
+  EGGETARIAN: 'Eggetarian',
+};
+
+function displayRoomType(value: string) {
+  return ROOM_TYPE_DISPLAY[value] || value;
+}
+
+function displayMessPref(value: string) {
+  return MESS_PREF_DISPLAY[value] || value;
+}
+
+export const ADMISSION_TERMS_AND_CONDITIONS = [
+  'Admission is subject to verification of all submitted documents and payment of applicable fees within the stipulated timelines.',
+  'The school reserves the right to cancel or withdraw admission if any information furnished is found to be incorrect, incomplete, or misleading.',
+  'Transport facility, where opted, is subject to route availability, seat capacity, and the applicable transport fee schedule for the academic year.',
+  'Hostel accommodation and mess services, where opted, are subject to allotment rules, room availability, and mess regulations of the institution.',
+  'Students and parents/guardians must abide by the code of conduct, attendance norms, fee policies, and all other rules notified by the school from time to time.',
+  'Fee once paid is governed by the institution’s fee refund and adjustment policy. Mid-session withdrawals may attract deductions as per policy.',
+  'The school may update academic calendars, fee structures, transport routes, and hostel arrangements as operationally required, with due notice to parents.',
+  'By submitting this application, the parent/guardian consents to the use of student data for academic, administrative, transport/hostel, and statutory compliance purposes within the ERP system.',
+];
 
 export function AdmissionFormPage1({
   form,
@@ -306,8 +332,8 @@ export function AdmissionFormPage2({
               <Row exportMode={exportMode} label="Pickup / Drop Stop" value={form.transportStop} />
               <Row exportMode={exportMode} label="Vehicle Preference" value={form.vehiclePreference} />
               <Row exportMode={exportMode} label="Hostel" value={form.hostelRequired} />
-              <Row exportMode={exportMode} label="Room Type" value={form.hostelRoomType} />
-              <Row exportMode={exportMode} label="Mess Preference" value={form.messPreference} />
+              <Row exportMode={exportMode} label="Room Type" value={displayRoomType(form.hostelRoomType)} />
+              <Row exportMode={exportMode} label="Mess Preference" value={displayMessPref(form.messPreference)} />
             </tbody>
           </table>
         </section>
@@ -337,6 +363,17 @@ export function AdmissionFormPage2({
               ))}
             </tbody>
           </table>
+        </section>
+
+        <section>
+          <SectionTitle exportMode={exportMode}>Terms and Conditions</SectionTitle>
+          <div className={`text-slate-700 leading-relaxed border border-slate-300 bg-slate-50 rounded ${exportMode ? 'text-[10px] p-3 mb-3' : 'text-[6px] mb-2 p-1.5'}`}>
+            <ol className={`list-decimal pl-4 space-y-1 ${exportMode ? 'text-[10px]' : 'text-[6px]'}`}>
+              {ADMISSION_TERMS_AND_CONDITIONS.map((term) => (
+                <li key={term}>{term}</li>
+              ))}
+            </ol>
+          </div>
         </section>
 
         <section className={exportMode ? '' : ''}>

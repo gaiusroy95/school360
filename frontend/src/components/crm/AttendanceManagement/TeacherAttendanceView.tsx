@@ -17,7 +17,6 @@ import {
   fetchTeacherAttendanceReport,
   fetchTeachers,
   registerTeacher,
-  seedTeacherAttendanceDemo,
   syncTeacherProfiles,
   type TeacherAttendanceReport,
   type TeacherCalendar,
@@ -59,7 +58,6 @@ export function TeacherAttendanceView() {
   const [half, setHalf] = useState<1 | 2>(1);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [seeding, setSeeding] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -176,19 +174,6 @@ export function TeacherAttendanceView() {
     }
   };
 
-  const handleSeed = async () => {
-    setSeeding(true);
-    try {
-      await syncTeacherProfiles(academicYear);
-      await seedTeacherAttendanceDemo(academicYear);
-      await refreshData();
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Seed failed');
-    } finally {
-      setSeeding(false);
-    }
-  };
-
   const calendarCells = useMemo(() => {
     if (!calendar) return [];
     const first = new Date(Date.UTC(calYear, calMonth - 1, 1));
@@ -262,11 +247,6 @@ export function TeacherAttendanceView() {
               <Plus size={14} />
               Register Teacher
             </button>
-            {(meta?.teacherCount === 0 || !calendar?.days.some((d) => d.hasData)) && (
-              <button type="button" disabled={seeding} onClick={() => void handleSeed()} className="px-3 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg">
-                {seeding ? 'Loading…' : 'Load Demo Data'}
-              </button>
-            )}
             {report && (
               <button type="button" onClick={() => downloadTeacherAttendanceReportExcel(report)} className="px-3 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 text-xs font-bold rounded-lg flex items-center gap-1.5">
                 <Download size={14} />

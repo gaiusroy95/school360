@@ -16,6 +16,10 @@ function resolveApiUrl(): string {
 const API_URL = resolveApiUrl();
 
 const TOKEN_KEY = 'erp_token';
+const DEFAULT_TIMEOUT_MS = 20_000;
+
+/** In-flight GET dedupe — parallel identical requests share one network call. */
+const inflightGets = new Map<string, Promise<unknown>>();
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -28,12 +32,21 @@ export function setToken(token: string | null) {
 
 export async function api<T>(
   path: string,
-  options: RequestInit = {},
+  options: RequestInit & { timeoutMs?: number } = {},
 ): Promise<T> {
   if (!API_URL) {
     throw new Error(
       'API URL is not configured. Set VITE_API_URL to your backend URL in Vercel and redeploy.',
     );
+  }
+
+  const method = (options.method || 'GET').toUpperCase();
+  const url = `${API_URL}${path.startsWith('/') ? path : `/${path}`}`;
+  const dedupeKey = method === 'GET' && !options.body ? `${method}:${url}` : '';
+
+  if (dedupeKey) {
+    const existing = inflightGets.get(dedupeKey);
+    if (existing) return existing as Promise<T>;
   }
 
   const headers = new Headers(options.headers || {});
@@ -43,28 +56,59 @@ export async function api<T>(
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
-  const url = `${API_URL}${path.startsWith('/') ? path : `/${path}`}`;
+  const { timeoutMs: customTimeout, ...fetchOptions } = options;
+  const timeoutMs = customTimeout ?? DEFAULT_TIMEOUT_MS;
+  const controller = new AbortController();
+  const externalSignal = fetchOptions.signal;
+  const onExternalAbort = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort();
+    else externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+  }
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  let res: Response;
-  try {
-    res = await fetch(url, { ...options, headers });
-  } catch {
-    throw new Error(
-      'Cannot reach the API server. Check that the backend is running and VITE_API_URL is correct.',
-    );
+  const run = (async () => {
+    let res: Response;
+    try {
+      res = await fetch(url, { ...fetchOptions, headers, signal: controller.signal });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new Error('Request timed out. Please try again.');
+      }
+      throw new Error(
+        'Cannot reach the API server. Check that the backend is running and VITE_API_URL is correct.',
+      );
+    } finally {
+      clearTimeout(timer);
+      if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
+    }
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const rawError = (data as { error?: unknown }).error;
+      let message: string;
+      if (typeof rawError === 'string') {
+        message = rawError;
+      } else if (rawError && typeof rawError === 'object') {
+        message = JSON.stringify(rawError);
+      } else if (res.status === 404) {
+        message = `API not found (${url}). Check VITE_API_URL and backend routes.`;
+      } else {
+        message = res.statusText || 'Request failed';
+      }
+      throw new Error(message);
+    }
+    return data as T;
+  })();
+
+  if (dedupeKey) {
+    inflightGets.set(dedupeKey, run);
+    run.finally(() => {
+      if (inflightGets.get(dedupeKey) === run) inflightGets.delete(dedupeKey);
+    });
   }
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const message =
-      (data as { error?: string }).error ||
-      (res.status === 404
-        ? `API not found (${url}). Check VITE_API_URL and backend routes.`
-        : res.statusText) ||
-      'Request failed';
-    throw new Error(typeof message === 'string' ? message : JSON.stringify(message));
-  }
-  return data as T;
+  return run;
 }
 
 export { API_URL };

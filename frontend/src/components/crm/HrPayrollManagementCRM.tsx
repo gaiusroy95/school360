@@ -1,24 +1,73 @@
+import { lazy, Suspense, type ReactNode } from 'react';
 import { SubModuleView } from './shared/SubModuleView';
-import { PayrollCalendarView } from './hr/PayrollCalendarView';
-import { EmployeeDashboardView } from './hr/EmployeeDashboardView';
-import { EmployeesDirectoryView } from './hr/EmployeesDirectoryView';
-import { DepartmentsView } from './hr/DepartmentsView';
-import { DesignationsView } from './hr/DesignationsView';
-import { AttendanceLeaveView } from './hr/AttendanceLeaveView';
-import { LeaveManagementView } from './hr/LeaveManagementView';
-import { PayrollManagementView } from './hr/PayrollManagementView';
-import { SalaryStructureView } from './hr/SalaryStructureView';
-import { AllowancesDeductionsView } from './hr/AllowancesDeductionsView';
-import { AttendancePolicyView } from './hr/AttendancePolicyView';
-import { ShiftManagementView } from './hr/ShiftManagementView';
-import { PerformanceAppraisalView } from './hr/PerformanceAppraisalView';
-import { RecruitmentView } from './hr/RecruitmentView';
-import { TrainingDevelopmentView } from './hr/TrainingDevelopmentView';
-import { DocumentsView } from './hr/DocumentsView';
-import { ResignationExitView } from './hr/ResignationExitView';
-import { HrReportsView } from './hr/HrReportsView';
+
+const PayrollCalendarView = lazy(() =>
+  import('./hr/PayrollCalendarView').then((m) => ({ default: m.PayrollCalendarView })),
+);
+const EmployeeDashboardView = lazy(() =>
+  import('./hr/EmployeeDashboardView').then((m) => ({ default: m.EmployeeDashboardView })),
+);
+const EmployeesDirectoryView = lazy(() =>
+  import('./hr/EmployeesDirectoryView').then((m) => ({ default: m.EmployeesDirectoryView })),
+);
+const DepartmentsView = lazy(() =>
+  import('./hr/DepartmentsView').then((m) => ({ default: m.DepartmentsView })),
+);
+const DesignationsView = lazy(() =>
+  import('./hr/DesignationsView').then((m) => ({ default: m.DesignationsView })),
+);
+const ApprovalHierarchyView = lazy(() =>
+  import('./hr/ApprovalHierarchyView').then((m) => ({ default: m.ApprovalHierarchyView })),
+);
+const AttendanceLeaveView = lazy(() =>
+  import('./hr/AttendanceLeaveView').then((m) => ({ default: m.AttendanceLeaveView })),
+);
+const LeaveManagementView = lazy(() =>
+  import('./hr/LeaveManagementView').then((m) => ({ default: m.LeaveManagementView })),
+);
+const PayrollManagementView = lazy(() =>
+  import('./hr/PayrollManagementView').then((m) => ({ default: m.PayrollManagementView })),
+);
+const SalaryStructureView = lazy(() =>
+  import('./hr/SalaryStructureView').then((m) => ({ default: m.SalaryStructureView })),
+);
+const AllowancesDeductionsView = lazy(() =>
+  import('./hr/AllowancesDeductionsView').then((m) => ({ default: m.AllowancesDeductionsView })),
+);
+const AttendancePolicyView = lazy(() =>
+  import('./hr/AttendancePolicyView').then((m) => ({ default: m.AttendancePolicyView })),
+);
+const ShiftManagementView = lazy(() =>
+  import('./hr/ShiftManagementView').then((m) => ({ default: m.ShiftManagementView })),
+);
+const PerformanceAppraisalView = lazy(() =>
+  import('./hr/PerformanceAppraisalView').then((m) => ({ default: m.PerformanceAppraisalView })),
+);
+const RecruitmentView = lazy(() =>
+  import('./hr/RecruitmentView').then((m) => ({ default: m.RecruitmentView })),
+);
+const TrainingDevelopmentView = lazy(() =>
+  import('./hr/TrainingDevelopmentView').then((m) => ({ default: m.TrainingDevelopmentView })),
+);
+const DocumentsView = lazy(() =>
+  import('./hr/DocumentsView').then((m) => ({ default: m.DocumentsView })),
+);
+const ResignationExitView = lazy(() =>
+  import('./hr/ResignationExitView').then((m) => ({ default: m.ResignationExitView })),
+);
+const HrReportsView = lazy(() =>
+  import('./hr/HrReportsView').then((m) => ({ default: m.HrReportsView })),
+);
 
 const PAYROLL_CALENDAR_VIEWS = new Set<string>();
+
+function wrap(node: ReactNode) {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[30vh] text-sm text-slate-400">Loading page…</div>}>
+      {node}
+    </Suspense>
+  );
+}
 
 export function HrPayrollManagementCRM({
   currentView = 'Employee Dashboard',
@@ -28,58 +77,61 @@ export function HrPayrollManagementCRM({
   onNavigate?: (view: string) => void;
 }) {
   if (currentView && PAYROLL_CALENDAR_VIEWS.has(currentView)) {
-    return <PayrollCalendarView title={currentView} />;
+    return wrap(<PayrollCalendarView title={currentView} />);
   }
   if (currentView === 'Employees Directory') {
-    return <EmployeesDirectoryView onNavigate={onNavigate} />;
+    return wrap(<EmployeesDirectoryView onNavigate={onNavigate} />);
   }
   if (currentView === 'Departments') {
-    return <DepartmentsView onNavigate={onNavigate} />;
+    return wrap(<DepartmentsView onNavigate={onNavigate} />);
   }
   if (currentView === 'Designations') {
-    return <DesignationsView />;
+    return wrap(<DesignationsView />);
+  }
+  if (currentView === 'Approval Hierarchy') {
+    return wrap(<ApprovalHierarchyView />);
   }
   if (currentView === 'Attendance & Leave') {
-    return <AttendanceLeaveView />;
+    return wrap(<AttendanceLeaveView />);
   }
   if (currentView === 'Leave Management') {
-    return <LeaveManagementView />;
+    return wrap(<LeaveManagementView />);
   }
   if (currentView === 'Payroll Management') {
-    return <PayrollManagementView onNavigate={onNavigate} />;
+    return wrap(<PayrollManagementView onNavigate={onNavigate} />);
   }
   if (currentView === 'Salary Structure') {
-    return <SalaryStructureView />;
+    return wrap(<SalaryStructureView />);
   }
   if (currentView === 'Allowances & Deductions') {
-    return <AllowancesDeductionsView />;
+    return wrap(<AllowancesDeductionsView />);
   }
   if (currentView === 'Attendance Policy') {
-    return <AttendancePolicyView />;
+    return wrap(<AttendancePolicyView />);
   }
   if (currentView === 'Shift Management') {
-    return <ShiftManagementView />;
+    return wrap(<ShiftManagementView />);
   }
   if (currentView === 'Performance Appraisal') {
-    return <PerformanceAppraisalView />;
+    return wrap(<PerformanceAppraisalView />);
   }
   if (currentView === 'Recruitment') {
-    return <RecruitmentView />;
+    return wrap(<RecruitmentView />);
   }
   if (currentView === 'Training & Development') {
-    return <TrainingDevelopmentView />;
+    return wrap(<TrainingDevelopmentView />);
   }
   if (currentView === 'Documents') {
-    return <DocumentsView />;
+    return wrap(<DocumentsView />);
   }
   if (currentView === 'Resignation / Exit') {
-    return <ResignationExitView />;
+    return wrap(<ResignationExitView />);
   }
   if (currentView === 'Reports') {
-    return <HrReportsView />;
+    return wrap(<HrReportsView />);
   }
   if (currentView && currentView !== 'Employee Dashboard') {
     return <SubModuleView module="HR & Payroll Management" title={currentView} />;
   }
-  return <EmployeeDashboardView onNavigate={onNavigate} />;
+  return wrap(<EmployeeDashboardView onNavigate={onNavigate} />);
 }

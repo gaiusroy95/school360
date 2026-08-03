@@ -1,15 +1,42 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, Eye, Calendar, CheckCircle2, XCircle, Smartphone, ClipboardList,
+  Upload, Link2, FileText, Image as ImageIcon, Video, Trash2,
 } from 'lucide-react';
 import {
   createHomework, fetchAcademicMeta, fetchHomeworkDashboard, fetchHomeworkDetail,
-  type Homework, type HomeworkDashboardRow,
+  fetchTeacherAllocationMeta, uploadHomeworkAttachment,
+  type Homework, type HomeworkAttachment, type HomeworkDashboardRow, type TeacherAllocationMeta,
 } from '../../../lib/academicServices';
 import {
   AcademicLoading, AcademicModal, AcademicPageHeader, AcademicPageShell,
   AcademicYearTermFilters, am,
 } from './AcademicManagementUi';
+
+const EMPTY_FORM = {
+  className: '',
+  sectionName: '',
+  subjectName: '',
+  teacherName: '',
+  title: '',
+  description: '',
+  totalStudents: 35,
+  dueDate: '',
+  youtubeUrl: '',
+};
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const base64 = result.includes(',') ? result.split(',')[1] : result;
+      resolve(base64);
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+}
 
 function HomeworkDetailPopup({
   row, onClose, onAssign,
@@ -42,7 +69,7 @@ function HomeworkDetailPopup({
           {row.teacherName} has not assigned homework for {row.classGroup} · {row.subjectName} on{' '}
           {new Date(row.date).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}.
         </p>
-        <p className="text-xs text-slate-400">Teachers assign homework via the mobile app. This slot is pending.</p>
+        <p className="text-xs text-slate-400">Teachers assign via mobile app (synced to their class/subject allocations) or from this dashboard.</p>
         <div className="flex justify-center gap-2 pt-2">
           <button type="button" onClick={onClose} className={am.btnSecondary}>Close</button>
           <button type="button" onClick={onAssign} className={am.btnPrimary}>Assign from Dashboard</button>
@@ -50,6 +77,8 @@ function HomeworkDetailPopup({
       </div>
     );
   }
+
+  const attachments = detail.attachments || [];
 
   return (
     <div className="space-y-4 text-sm">
@@ -76,6 +105,26 @@ function HomeworkDetailPopup({
         <div>
           <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Description</p>
           <p className="text-slate-700 bg-white border border-slate-200 rounded-lg p-3">{detail.description}</p>
+        </div>
+      )}
+
+      {attachments.length > 0 && (
+        <div>
+          <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Supporting Files</p>
+          <div className="space-y-1">
+            {attachments.map((a) => (
+              <a
+                key={a.id}
+                href={a.url}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-2 text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 hover:bg-indigo-100"
+              >
+                {a.type === 'pdf' ? <FileText size={14} /> : a.type === 'image' ? <ImageIcon size={14} /> : a.type === 'video' ? <Video size={14} /> : <Link2 size={14} />}
+                <span className="font-semibold">{a.title || a.fileName || a.type}</span>
+              </a>
+            ))}
+          </div>
         </div>
       )}
 
@@ -107,28 +156,91 @@ export function HomeworkView() {
   const [teacherFilter, setTeacherFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ASSIGNED' | 'NOT_ASSIGNED'>('ALL');
   const [meta, setMeta] = useState<{ academicYears: string[]; classes: string[]; sectionsByClass: Record<string, string[]> } | null>(null);
+  const [allocMeta, setAllocMeta] = useState<TeacherAllocationMeta | null>(null);
   const [popupRow, setPopupRow] = useState<HomeworkDashboardRow | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ className: '', sectionName: '', subjectName: '', teacherName: '', title: '', description: '', totalStudents: 35 });
+  const [form, setForm] = useState({ ...EMPTY_FORM });
+  const [attachments, setAttachments] = useState<HomeworkAttachment[]>([]);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [formError, setFormError] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const m = await fetchAcademicMeta();
+      const [m, alloc, d] = await Promise.all([
+        fetchAcademicMeta(),
+        fetchTeacherAllocationMeta(academicYear).catch(() => null),
+        fetchHomeworkDashboard({
+          date,
+          academicYear,
+          className: className || undefined,
+          sectionName: sectionName || undefined,
+          teacherName: teacherFilter || undefined,
+        }),
+      ]);
       setMeta(m);
-      const d = await fetchHomeworkDashboard({
-        date,
-        academicYear,
-        className: className || undefined,
-        sectionName: sectionName || undefined,
-        teacherName: teacherFilter || undefined,
-      });
+      setAllocMeta(alloc);
       setDashboard(d);
     } finally { setLoading(false); }
   }, [date, academicYear, className, sectionName, teacherFilter]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const allocationSlots = useMemo(() => {
+    const slots: Array<{ className: string; sectionName: string; subjectName: string; teacherName: string }> = [];
+    for (const t of allocMeta?.teachers || []) {
+      for (const cs of t.classSubjects) {
+        slots.push({
+          className: cs.className,
+          sectionName: cs.sectionName,
+          subjectName: cs.subjectName,
+          teacherName: t.teacherName,
+        });
+      }
+    }
+    return slots;
+  }, [allocMeta]);
+
+  const classOptions = useMemo(() => {
+    const fromAlloc = [...new Set(allocationSlots.map((s) => s.className).filter(Boolean))];
+    return fromAlloc.length ? fromAlloc.sort() : (allocMeta?.classes || meta?.classes || []);
+  }, [allocationSlots, allocMeta, meta]);
+
+  const sectionOptions = useMemo(() => {
+    if (!form.className) return [] as string[];
+    const fromAlloc = [...new Set(
+      allocationSlots.filter((s) => s.className === form.className).map((s) => s.sectionName).filter(Boolean),
+    )];
+    if (fromAlloc.length) return fromAlloc.sort();
+    return allocMeta?.sectionsByClass[form.className] || meta?.sectionsByClass[form.className] || [];
+  }, [allocationSlots, form.className, allocMeta, meta]);
+
+  const subjectOptions = useMemo(() => {
+    if (!form.className) return [] as string[];
+    return [...new Set(
+      allocationSlots
+        .filter((s) => s.className === form.className && (!form.sectionName || s.sectionName === form.sectionName || !s.sectionName))
+        .map((s) => s.subjectName)
+        .filter(Boolean),
+    )].sort();
+  }, [allocationSlots, form.className, form.sectionName]);
+
+  const teacherOptions = useMemo(() => {
+    if (!form.className || !form.subjectName) return [] as string[];
+    return [...new Set(
+      allocationSlots
+        .filter((s) =>
+          s.className === form.className
+          && s.subjectName === form.subjectName
+          && (!form.sectionName || s.sectionName === form.sectionName || !s.sectionName),
+        )
+        .map((s) => s.teacherName)
+        .filter(Boolean),
+    )].sort();
+  }, [allocationSlots, form.className, form.sectionName, form.subjectName]);
 
   const rows = useMemo(() => {
     if (!dashboard) return [];
@@ -137,6 +249,13 @@ export function HomeworkView() {
   }, [dashboard, statusFilter]);
 
   const openView = (row: HomeworkDashboardRow) => setPopupRow(row);
+
+  const openAssignBlank = () => {
+    setForm({ ...EMPTY_FORM });
+    setAttachments([]);
+    setFormError('');
+    setShowForm(true);
+  };
 
   const openAssignFromRow = (row: HomeworkDashboardRow) => {
     setPopupRow(null);
@@ -148,15 +267,97 @@ export function HomeworkView() {
       title: `${row.subjectName} Homework`,
       description: '',
       totalStudents: 35,
+      dueDate: '',
+      youtubeUrl: '',
     });
+    setAttachments([]);
+    setFormError('');
     setShowForm(true);
   };
 
+  const setClass = (value: string) => {
+    setForm((f) => ({
+      ...f,
+      className: value,
+      sectionName: '',
+      subjectName: '',
+      teacherName: '',
+    }));
+  };
+
+  const setSection = (value: string) => {
+    setForm((f) => ({
+      ...f,
+      sectionName: value,
+      subjectName: '',
+      teacherName: '',
+    }));
+  };
+
+  const setSubject = (value: string) => {
+    const teachers = allocationSlots
+      .filter((s) =>
+        s.className === form.className
+        && s.subjectName === value
+        && (!form.sectionName || s.sectionName === form.sectionName || !s.sectionName),
+      )
+      .map((s) => s.teacherName);
+    setForm((f) => ({
+      ...f,
+      subjectName: value,
+      teacherName: teachers.length === 1 ? teachers[0] : '',
+    }));
+  };
+
+  const handleFileUpload = async (file: File) => {
+    setUploadingFile(true);
+    setFormError('');
+    try {
+      const dataBase64 = await fileToBase64(file);
+      const res = await uploadHomeworkAttachment({
+        fileName: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        dataBase64,
+        title: file.name,
+      });
+      setAttachments((prev) => [...prev, res.attachment]);
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'File upload failed');
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+
   const assignHomework = async () => {
-    await createHomework({ ...form, academicYear, assignedDate: date, share: true });
-    setMessage('Homework assigned and published to mobile app');
-    setShowForm(false);
-    void load();
+    setFormError('');
+    if (!form.title.trim() || !form.className || !form.sectionName || !form.subjectName) {
+      setFormError('Title, Class, Section and Subject are required');
+      return;
+    }
+    if (!form.teacherName) {
+      setFormError('Select a teacher mapped from system allocations');
+      return;
+    }
+    setSaving(true);
+    try {
+      await createHomework({
+        ...form,
+        academicYear,
+        assignedDate: date,
+        share: true,
+        attachments,
+        youtubeUrl: form.youtubeUrl || undefined,
+        totalStudents: Number(form.totalStudents) || undefined,
+        dueDate: form.dueDate || undefined,
+      });
+      setMessage('Homework assigned and published to mobile app');
+      setShowForm(false);
+      void load();
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'Failed to assign homework');
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading && !dashboard) return <AcademicLoading label="Loading homework dashboard…" />;
@@ -169,7 +370,7 @@ export function HomeworkView() {
         breadcrumb="Academic Management › Homework"
         title="Homework Dashboard"
         subtitle="Track daily homework assignments by teacher, class & subject — synced with mobile app"
-        actions={<button type="button" onClick={() => setShowForm(true)} className={am.btnPrimary}><Plus size={14} /> Assign Homework</button>}
+        actions={<button type="button" onClick={openAssignBlank} className={am.btnPrimary}><Plus size={14} /> Assign Homework</button>}
       />
       <div className={am.content}>
         {message && <p className={am.message}>{message}</p>}
@@ -265,7 +466,9 @@ export function HomeworkView() {
           </table>
         </div>
 
-        <p className="text-xs text-slate-500 flex items-center gap-1"><Smartphone size={12} /> Homework assigned via mobile app appears here automatically. API: <code className="bg-slate-100 px-1 rounded">GET /api/academic/homework/mobile?studentId=</code></p>
+        <p className="text-xs text-slate-500 flex items-center gap-1">
+          <Smartphone size={12} /> Class/Subject/Teacher options sync from Teacher Allocations. When allocations change, open homework auto-maps to the new teacher.
+        </p>
       </div>
 
       <AcademicModal
@@ -286,19 +489,113 @@ export function HomeworkView() {
       <AcademicModal open={showForm} onClose={() => setShowForm(false)} title="Assign Homework" large>
         <div className="space-y-3">
           <input placeholder="Title *" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} className={am.input} />
+
           <div className="grid grid-cols-2 gap-3">
-            <input placeholder="Class *" value={form.className} onChange={(e) => setForm((f) => ({ ...f, className: e.target.value }))} className={am.input} />
-            <input placeholder="Section *" value={form.sectionName} onChange={(e) => setForm((f) => ({ ...f, sectionName: e.target.value }))} className={am.input} />
-            <input placeholder="Subject *" value={form.subjectName} onChange={(e) => setForm((f) => ({ ...f, subjectName: e.target.value }))} className={am.input} />
-            <input placeholder="Teacher" value={form.teacherName} onChange={(e) => setForm((f) => ({ ...f, teacherName: e.target.value }))} className={am.input} />
+            <label className="text-xs space-y-1">
+              <span className="font-semibold text-slate-600">Class *</span>
+              <select value={form.className} onChange={(e) => setClass(e.target.value)} className={am.input}>
+                <option value="">Select class…</option>
+                {classOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+            <label className="text-xs space-y-1">
+              <span className="font-semibold text-slate-600">Section *</span>
+              <select value={form.sectionName} onChange={(e) => setSection(e.target.value)} className={am.input} disabled={!form.className}>
+                <option value="">Select section…</option>
+                {sectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+            <label className="text-xs space-y-1">
+              <span className="font-semibold text-slate-600">Subject *</span>
+              <select value={form.subjectName} onChange={(e) => setSubject(e.target.value)} className={am.input} disabled={!form.className}>
+                <option value="">Select subject…</option>
+                {subjectOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+            <label className="text-xs space-y-1">
+              <span className="font-semibold text-slate-600">Teacher *</span>
+              <select value={form.teacherName} onChange={(e) => setForm((f) => ({ ...f, teacherName: e.target.value }))} className={am.input} disabled={!form.subjectName}>
+                <option value="">Select teacher…</option>
+                {teacherOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </label>
           </div>
+
+          {!allocationSlots.length && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+              No teacher allocations found for {academicYear}. Add allocations under Teacher Allocation so Class / Section / Subject / Teacher dropdowns populate automatically.
+            </p>
+          )}
+
           <textarea placeholder="Description (visible on mobile app)" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} className={am.input} rows={3} />
-          <input type="number" placeholder="Total Students" value={form.totalStudents} onChange={(e) => setForm((f) => ({ ...f, totalStudents: Number(e.target.value) }))} className={am.input} />
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-xs space-y-1">
+              <span className="font-semibold text-slate-600">Total Students</span>
+              <input type="number" min={0} value={form.totalStudents} onChange={(e) => setForm((f) => ({ ...f, totalStudents: Number(e.target.value) }))} className={am.input} />
+            </label>
+            <label className="text-xs space-y-1">
+              <span className="font-semibold text-slate-600">Due Date</span>
+              <input type="date" value={form.dueDate} onChange={(e) => setForm((f) => ({ ...f, dueDate: e.target.value }))} className={am.input} />
+            </label>
+          </div>
+
+          <label className="text-xs space-y-1 block">
+            <span className="font-semibold text-slate-600 flex items-center gap-1"><Link2 size={12} /> YouTube / Video Link</span>
+            <input
+              placeholder="https://youtube.com/watch?v=… or other video URL"
+              value={form.youtubeUrl}
+              onChange={(e) => setForm((f) => ({ ...f, youtubeUrl: e.target.value }))}
+              className={am.input}
+            />
+          </label>
+
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-slate-600">Supporting files (PDF / JPG / PNG / Video)</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={uploadingFile}
+                onClick={() => fileRef.current?.click()}
+                className="inline-flex items-center gap-1.5 px-3 py-2 border border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-xs font-bold"
+              >
+                <Upload size={14} /> {uploadingFile ? 'Uploading…' : 'Upload the home work supporting file'}
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.webp,.mp4,.webm,.mov,application/pdf,image/*,video/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleFileUpload(file);
+                  e.target.value = '';
+                }}
+              />
+            </div>
+            {attachments.length > 0 && (
+              <div className="space-y-1">
+                {attachments.map((a) => (
+                  <div key={a.id} className="flex items-center gap-2 text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                    {a.type === 'pdf' ? <FileText size={14} /> : a.type === 'image' ? <ImageIcon size={14} /> : <Video size={14} />}
+                    <span className="flex-1 font-medium text-slate-700 truncate">{a.title || a.fileName}</span>
+                    <button type="button" onClick={() => setAttachments((prev) => prev.filter((x) => x.id !== a.id))} className="text-red-500">
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {formError && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{formError}</p>}
           <p className="text-xs text-slate-500">Will be assigned for {new Date(date).toLocaleDateString('en-IN')} and published to mobile app.</p>
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={() => setShowForm(false)} className={am.btnSecondary}>Cancel</button>
-          <button type="button" onClick={() => void assignHomework()} className={am.btnPrimary}>Assign & Publish to Mobile</button>
+          <button type="button" disabled={saving || uploadingFile} onClick={() => void assignHomework()} className={am.btnPrimary}>
+            {saving ? 'Publishing…' : 'Assign & Publish to Mobile'}
+          </button>
         </div>
       </AcademicModal>
     </AcademicPageShell>

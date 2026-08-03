@@ -13,7 +13,7 @@ import { toViewKey } from '../../../lib/navigation';
 import {
   fetchAttendanceDashboard,
   fetchAttendanceMeta,
-  seedAttendanceDemo,
+  fetchAttendanceRoster,
   type AttendanceDashboard,
   type AttendanceDrilldownType,
   type AttendanceMeta,
@@ -34,7 +34,6 @@ export function StudentAttendanceDashboardView({ onNavigate }: Props) {
   const [academicYear, setAcademicYear] = useState('2025-26');
   const [section, setSection] = useState('All Sections');
   const [loading, setLoading] = useState(true);
-  const [seeding, setSeeding] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'By Class' | 'By Subject' | 'By Activity'>('By Class');
   const [selectedClassKey, setSelectedClassKey] = useState('');
@@ -43,7 +42,15 @@ export function StudentAttendanceDashboardView({ onNavigate }: Props) {
   const [activityName, setActivityName] = useState('Morning Assembly');
   const [drilldown, setDrilldown] = useState<{ type: AttendanceDrilldownType; title: string } | null>(null);
   const [markModalOpen, setMarkModalOpen] = useState(false);
+  const [markSession, setMarkSession] = useState({ className: '', sectionName: '', studentId: '' });
+  const [markMenuOpen, setMarkMenuOpen] = useState(false);
+  const [ddClass, setDdClass] = useState('');
+  const [ddSection, setDdSection] = useState('');
+  const [ddStudentId, setDdStudentId] = useState('');
+  const [ddStudents, setDdStudents] = useState<{ studentId: string; name: string }[]>([]);
+  const [ddLoadingStudents, setDdLoadingStudents] = useState(false);
   const markWidgetRef = useRef<HTMLDivElement>(null);
+  const markMenuRef = useRef<HTMLDivElement>(null);
 
   const selectedClass = useMemo(() => {
     const g = meta?.classGroups.find((c) => c.label === selectedClassKey || `${c.className}::${c.sectionName}` === selectedClassKey);
@@ -74,32 +81,93 @@ export function StudentAttendanceDashboardView({ onNavigate }: Props) {
 
   useEffect(() => { void load(); }, [load]);
 
+  useEffect(() => {
+    if (!meta) return;
+    if (!ddClass && meta.classes[0]) setDdClass(meta.classes[0]);
+  }, [meta, ddClass]);
+
+  const ddSectionOptions = useMemo(() => {
+    if (!meta || !ddClass) return [];
+    return [...new Set(
+      meta.classGroups.filter((g) => g.className === ddClass).map((g) => g.sectionName).filter(Boolean),
+    )];
+  }, [meta, ddClass]);
+
+  useEffect(() => {
+    if (!ddClass) return;
+    if (ddSection && ddSectionOptions.includes(ddSection)) return;
+    setDdSection(ddSectionOptions[0] || '');
+  }, [ddClass, ddSection, ddSectionOptions]);
+
+  useEffect(() => {
+    if (!markMenuOpen || !ddClass) {
+      setDdStudents([]);
+      return;
+    }
+    let cancelled = false;
+    setDdLoadingStudents(true);
+    void fetchAttendanceRoster({
+      academicYear,
+      className: ddClass,
+      sectionName: ddSection,
+      date: markDate,
+      mode: 'CLASS',
+    })
+      .then((roster) => {
+        if (cancelled) return;
+        setDdStudents(roster.students.map((s) => ({ studentId: s.studentId, name: s.name })));
+        setDdStudentId('');
+      })
+      .catch(() => {
+        if (!cancelled) setDdStudents([]);
+      })
+      .finally(() => {
+        if (!cancelled) setDdLoadingStudents(false);
+      });
+    return () => { cancelled = true; };
+  }, [markMenuOpen, ddClass, ddSection, academicYear, markDate]);
+
+  useEffect(() => {
+    if (!markMenuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (markMenuRef.current && !markMenuRef.current.contains(e.target as Node)) {
+        setMarkMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [markMenuOpen]);
+
   const navigateTo = (page: string) => {
     if (onNavigate) onNavigate(toViewKey('Attendance Management', page));
   };
 
-  const handleSeed = async () => {
-    setSeeding(true);
-    try {
-      await seedAttendanceDemo(academicYear);
-      await load();
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Seed failed');
-    } finally {
-      setSeeding(false);
-    }
-  };
-
-  const openMarkModal = () => {
-    if (!selectedClass) {
+  const openMarkModal = (opts?: { className?: string; sectionName?: string; studentId?: string }) => {
+    const cls = opts?.className || selectedClass?.className;
+    const sec = opts?.sectionName ?? selectedClass?.sectionName ?? '';
+    if (!cls) {
       setErrorMsg('Please select a class first');
       return;
     }
+    const match = meta?.classGroups.find(
+      (g) => g.className === cls && (g.sectionName === sec || (!sec && !g.sectionName)),
+    ) || meta?.classGroups.find((g) => g.className === cls);
+    if (match) setSelectedClassKey(match.label);
+    setMarkSession({ className: cls, sectionName: sec, studentId: opts?.studentId || '' });
     setMarkModalOpen(true);
+    setMarkMenuOpen(false);
   };
 
   const scrollToMark = () => {
     markWidgetRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  const openMarkFromDropdown = () => {
+    if (!ddClass) {
+      setErrorMsg('Select a class to mark attendance');
+      return;
+    }
+    openMarkModal({ className: ddClass, sectionName: ddSection, studentId: ddStudentId || undefined });
   };
 
   const kpis = dashboard ? [
@@ -250,25 +318,83 @@ export function StudentAttendanceDashboardView({ onNavigate }: Props) {
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
-          {dashboard?.kpis.totalStudents === 0 && (
+          <div className="relative" ref={markMenuRef}>
             <button
               type="button"
-              disabled={seeding}
-              onClick={() => void handleSeed()}
-              className="bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-3 py-2 rounded"
+              onClick={() => setMarkMenuOpen((o) => !o)}
+              className="bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold text-xs px-4 py-2 rounded flex items-center gap-2 shadow-sm transition-colors"
             >
-              {seeding ? 'Seeding…' : 'Load Demo Data'}
+              <ClipboardCheck size={14} />
+              <span>Mark Attendance</span>
+              <ChevronDown size={14} className={`opacity-70 transition-transform ${markMenuOpen ? 'rotate-180' : ''}`} />
             </button>
-          )}
-          <button
-            type="button"
-            onClick={scrollToMark}
-            className="bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold text-xs px-4 py-2 rounded flex items-center gap-2 shadow-sm transition-colors"
-          >
-            <ClipboardCheck size={14} />
-            <span>Mark Attendance</span>
-            <ChevronDown size={14} className="opacity-70" />
-          </button>
+            {markMenuOpen && (
+              <div className="absolute right-0 top-full mt-1.5 z-40 w-72 bg-white border border-slate-200 rounded-xl shadow-xl p-3 space-y-2.5">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Select class, section &amp; student</p>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-600 mb-1">Class *</label>
+                  <select
+                    value={ddClass}
+                    onChange={(e) => { setDdClass(e.target.value); setDdStudentId(''); }}
+                    className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-amber-400"
+                  >
+                    <option value="">Select class…</option>
+                    {(meta?.classes || []).map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-600 mb-1">Section</label>
+                  <select
+                    value={ddSection}
+                    onChange={(e) => { setDdSection(e.target.value); setDdStudentId(''); }}
+                    disabled={!ddClass}
+                    className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-amber-400 disabled:bg-slate-50"
+                  >
+                    <option value="">All Sections</option>
+                    {ddSectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-600 mb-1">Student Name</label>
+                  <select
+                    value={ddStudentId}
+                    onChange={(e) => setDdStudentId(e.target.value)}
+                    disabled={!ddClass || ddLoadingStudents}
+                    className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-amber-400 disabled:bg-slate-50"
+                  >
+                    <option value="">{ddLoadingStudents ? 'Loading students…' : 'All Students'}</option>
+                    {ddStudents.map((s) => (
+                      <option key={s.studentId} value={s.studentId}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-600 mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={markDate}
+                    onChange={(e) => setMarkDate(e.target.value)}
+                    className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={!ddClass}
+                  onClick={openMarkFromDropdown}
+                  className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-xs font-bold py-2 rounded-lg flex items-center justify-center gap-1.5"
+                >
+                  <CheckCircle2 size={13} /> Open Mark Attendance
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMarkMenuOpen(false); scrollToMark(); }}
+                  className="w-full text-[10px] text-slate-500 hover:text-slate-700 font-medium"
+                >
+                  Or use Mark Attendance panel below ↓
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -499,7 +625,7 @@ export function StudentAttendanceDashboardView({ onNavigate }: Props) {
                 <input type="date" value={markDate} onChange={(e) => setMarkDate(e.target.value)} className="w-full text-[10px] border border-slate-200 rounded p-1.5 pl-6 focus:outline-none focus:border-blue-500 bg-white" />
               </div>
             </div>
-            <button type="button" onClick={openMarkModal} className="w-full bg-green-600 hover:bg-green-700 text-white text-[10px] font-bold py-1.5 rounded flex items-center justify-center gap-1.5 transition-colors">
+            <button type="button" onClick={() => openMarkModal()} className="w-full bg-green-600 hover:bg-green-700 text-white text-[10px] font-bold py-1.5 rounded flex items-center justify-center gap-1.5 transition-colors">
               <CheckCircle2 size={12} /> Mark Attendance
             </button>
             <button type="button" onClick={() => navigateTo('Biometric Devices')} className="w-full bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-[10px] font-bold py-1.5 rounded flex items-center justify-center gap-1.5 transition-colors">
@@ -676,7 +802,7 @@ export function StudentAttendanceDashboardView({ onNavigate }: Props) {
           <h3 className="text-[11px] font-bold text-slate-800 mb-3">Quick Actions</h3>
           <div className="grid grid-cols-4 gap-2 flex-1">
             {[
-              { label: 'Mark Attendance', icon: <ClipboardCheck size={16} className="text-blue-600" />, action: scrollToMark },
+              { label: 'Mark Attendance', icon: <ClipboardCheck size={16} className="text-blue-600" />, action: () => setMarkMenuOpen(true) },
               { label: 'Student Attendance Report', icon: <FileText size={16} className="text-blue-600" />, action: () => navigateTo('Attendance Report') },
               { label: 'Teacher Attendance Report', icon: <FileText size={16} className="text-blue-600" />, action: () => navigateTo('Teacher Attendance') },
               { label: 'Staff Attendance Report', icon: <FileText size={16} className="text-blue-600" />, action: () => navigateTo('Staff Attendance') },
@@ -706,18 +832,19 @@ export function StudentAttendanceDashboardView({ onNavigate }: Props) {
         />
       )}
 
-      {selectedClass && (
+      {markSession.className && (
         <MarkAttendanceModal
           open={markModalOpen}
-          onClose={() => setMarkModalOpen(false)}
+          onClose={() => { setMarkModalOpen(false); setMarkSession({ className: '', sectionName: '', studentId: '' }); }}
           onSaved={() => void load()}
           academicYear={academicYear}
-          className={selectedClass.className}
-          sectionName={selectedClass.sectionName}
+          className={markSession.className}
+          sectionName={markSession.sectionName}
           sessionDate={markDate}
           mode={markMode}
           subjectName={activeTab === 'By Subject' ? subjectName : ''}
           activityName={activeTab === 'By Activity' ? activityName : ''}
+          focusStudentId={markSession.studentId}
         />
       )}
     </div>

@@ -1633,3 +1633,41 @@ export async function fetchHrReport(
   const qs = params.toString() ? `?${params}` : '';
   return api<HrReportPayload>(`/api/hr/reports/${encodeURIComponent(key)}${qs}`);
 }
+
+// ─── Approval Hierarchy ───────────────────────────────────────────────────────
+
+export type ModuleApprovalMapping = {
+  id: string;
+  moduleCode: string;
+  moduleLabel: string;
+  roleKey: string;
+  roleLabel: string;
+  employeeId: string;
+  assigneeName: string;
+  assigneeEmail: string;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function listApprovalHierarchy() {
+  const data = await api<{ records: ModuleApprovalMapping[] }>('/api/hr/approval-hierarchy');
+  return data.records;
+}
+
+export async function updateApprovalMapping(
+  id: string,
+  body: {
+    employeeId?: string;
+    assigneeName?: string;
+    assigneeEmail?: string;
+    isActive?: boolean;
+  },
+) {
+  const data = await api<{ record: ModuleApprovalMapping }>(`/api/hr/approval-hierarchy/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+  return data.record;
+}

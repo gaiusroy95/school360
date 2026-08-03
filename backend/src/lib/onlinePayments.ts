@@ -46,19 +46,32 @@ function emptyMatrix(): Matrix {
 }
 
 function feeHeadToCategory(headKey: string): OnlinePaymentCategory {
-  const k = headKey.toLowerCase();
-  if (k.includes('hostel') || k === 'hostelfee' || k === 'messfee') return 'hostelFee';
-  if (k.includes('transport')) return 'transportFee';
-  if (k.includes('admission')) return 'admissionFee';
-  if (k.includes('exam')) return 'examinationFee';
-  if (k.includes('library')) return 'libraryFee';
+  const k = headKey.toLowerCase().replace(/[_\s-]/g, '');
+  if (k.includes('hostel') || k === 'messfee' || k === 'hostelfee') return 'hostelFee';
+  if (k.includes('transport') || k === 'transportfee') return 'transportFee';
+  if (k.includes('admission') || k === 'admissionfee') return 'admissionFee';
+  if (k.includes('exam') || k === 'examinationfee') return 'examinationFee';
+  if (k.includes('library') || k.includes('librarysecurity')) return 'libraryFee';
   if (k.includes('fine') || k.includes('penalty')) return 'fineCollection';
   if (
     k.includes('tuition') ||
     k.includes('registration') ||
     k.includes('annual') ||
     k.includes('sports') ||
-    k.includes('development')
+    k.includes('development') ||
+    k.includes('computer') ||
+    k.includes('picnic') ||
+    k.includes('fieldtrip') ||
+    k.includes('addon') ||
+    k.includes('caution') ||
+    k === 'tuitionfee' ||
+    k === 'registrationfee' ||
+    k === 'annualcharges' ||
+    k === 'sportsfee' ||
+    k === 'computerlabfee' ||
+    k === 'picnicfieldtrip' ||
+    k === 'addonfee' ||
+    k === 'cautionmoney'
   ) {
     return 'studentFee';
   }
@@ -98,8 +111,13 @@ function dueHeadToCategory(feeHead: string): OnlinePaymentCategory {
 }
 
 function monthRange(year: number, month: number) {
-  const start = new Date(year, month - 1, 1);
-  const end = new Date(year, month, 0, 23, 59, 59, 999);
+  // Asia/Kolkata month window — same calendar as Payment Reconciliation day sync
+  const mm = String(month).padStart(2, '0');
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const start = new Date(`${year}-${mm}-01T00:00:00.000+05:30`);
+  const end = new Date(
+    `${year}-${mm}-${String(lastDay).padStart(2, '0')}T23:59:59.999+05:30`,
+  );
   return { start, end };
 }
 
@@ -155,21 +173,32 @@ export async function getOnlinePaymentsReport(
   for (const r of receipts) {
     const channel = paymentModeToChannel(r.paymentMode);
     if (!channel) continue;
-    if (opts?.channel && channel !== opts.channel) continue;
+    // Always build full matrix — channel filter is not applied to the collection grid
 
-    const breakdown = Array.isArray(r.feeBreakdown) ? r.feeBreakdown : [];
-    if (breakdown.length === 0) {
+    const breakdownRaw = r.feeBreakdown;
+    let items: { key: string; amount: number }[] = [];
+    if (Array.isArray(breakdownRaw)) {
+      items = breakdownRaw.map((item) => {
+        const row = item as { key?: string; amount?: number };
+        return { key: String(row.key || ''), amount: Number(row.amount) || 0 };
+      });
+    } else if (breakdownRaw && typeof breakdownRaw === 'object') {
+      items = Object.entries(breakdownRaw as Record<string, unknown>).map(([key, value]) => ({
+        key,
+        amount: Number(value) || 0,
+      }));
+    }
+
+    if (items.length === 0) {
       addToMatrix(matrix, 'studentFee', channel, r.amountPaid);
       transactionCount += 1;
       continue;
     }
 
-    for (const item of breakdown) {
-      const row = item as { key?: string; amount?: number };
-      const amount = Number(row.amount) || 0;
-      if (amount <= 0) continue;
-      const category = feeHeadToCategory(String(row.key || ''));
-      addToMatrix(matrix, category, channel, amount);
+    for (const item of items) {
+      if (item.amount <= 0) continue;
+      const category = feeHeadToCategory(item.key);
+      addToMatrix(matrix, category, channel, item.amount);
       transactionCount += 1;
     }
   }
@@ -202,7 +231,6 @@ export async function getOnlinePaymentsReport(
   for (const t of transportRows) {
     const channel = paymentModeStringToChannel(t.paymentMode);
     if (!channel) continue;
-    if (opts?.channel && channel !== opts.channel) continue;
     addToMatrix(matrix, 'transportFee', channel, t.amount);
     transactionCount += 1;
   }
@@ -210,14 +238,12 @@ export async function getOnlinePaymentsReport(
   for (const h of hostelRows) {
     const channel = paymentModeStringToChannel(h.paymentMode);
     if (!channel) continue;
-    if (opts?.channel && channel !== opts.channel) continue;
     addToMatrix(matrix, 'hostelFee', channel, h.amount);
     transactionCount += 1;
   }
 
   for (const o of paidOrders) {
     const channel: OnlinePaymentChannel = 'online';
-    if (opts?.channel && channel !== opts.channel) continue;
     const category = dueHeadToCategory(o.feeDue.feeHead);
     addToMatrix(matrix, category, channel, o.amount);
     transactionCount += 1;
@@ -225,7 +251,6 @@ export async function getOnlinePaymentsReport(
 
   for (const f of paidFines) {
     const channel: OnlinePaymentChannel = 'upi';
-    if (opts?.channel && channel !== opts.channel) continue;
     addToMatrix(matrix, 'fineCollection', channel, f.amount);
     transactionCount += 1;
   }
@@ -242,10 +267,12 @@ export async function getOnlinePaymentsReport(
     year,
     month,
     transactionCount,
+    totalCollected: totals.total,
     matrix: rows,
     columnTotals: totals,
     fetchedAt: new Date().toISOString(),
-    channelFilter: opts?.channel || null,
+    channelFilter: null,
+    lastFetchedChannel: opts?.channel || null,
   };
 }
 

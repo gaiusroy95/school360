@@ -152,7 +152,15 @@ export async function getMobileTests(
   const studentId = resolveStudentId(user, opts.studentId);
   const student = await prisma.student.findFirst({
     where: { id: studentId, institutionId: user.institutionId },
-    select: { className: true, sectionName: true, academicYear: true },
+    select: {
+      id: true,
+      className: true,
+      sectionName: true,
+      academicYear: true,
+      firstName: true,
+      lastName: true,
+      admissionNumber: true,
+    },
   });
   if (!student) throw new Error('Student not found');
 
@@ -162,7 +170,46 @@ export async function getMobileTests(
     sectionName: student.sectionName,
   });
 
-  return { studentId, papers };
+  return {
+    studentId,
+    studentName: [student.firstName, student.lastName].filter(Boolean).join(' '),
+    papers,
+  };
+}
+
+export async function startMobileTest(
+  user: MobileAuthUser,
+  paperId: string,
+  opts: { studentId?: string },
+) {
+  const { startMobilePaperAttempt } = await import('./examPaperManagement.js');
+  const studentId = resolveStudentId(user, opts.studentId);
+  const student = await prisma.student.findFirst({
+    where: { id: studentId, institutionId: user.institutionId },
+    select: { id: true, firstName: true, lastName: true, admissionNumber: true },
+  });
+  if (!student) throw new Error('Student not found');
+  return startMobilePaperAttempt(user.institutionId, paperId, {
+    studentId: student.id,
+    candidateName: [student.firstName, student.lastName].filter(Boolean).join(' ') || student.admissionNumber,
+    candidateRef: student.admissionNumber,
+  });
+}
+
+export async function submitMobileTest(
+  user: MobileAuthUser,
+  paperId: string,
+  body: { attemptId: string; answers: Record<string, string>; studentId?: string },
+) {
+  const { submitMobilePaperAttempt } = await import('./examPaperManagement.js');
+  // Ensure student belongs to institution
+  resolveStudentId(user, body.studentId);
+  return submitMobilePaperAttempt(
+    user.institutionId,
+    paperId,
+    body.attemptId,
+    body.answers || {},
+  );
 }
 
 export async function getMobileProfile(user: MobileAuthUser, opts: { studentId?: string }) {

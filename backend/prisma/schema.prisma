@@ -122,6 +122,7 @@ model Institution {
   examSubjectSyllabi ExamSubjectSyllabus[]
   examQuestionPapers ExamQuestionPaper[]
   examDigitalExamAttempts ExamDigitalExamAttempt[]
+  examPaperStudentAccess ExamPaperStudentAccess[]
   examSeatingPlans ExamSeatingPlan[]
   examInvigilationPlans ExamInvigilationPlan[]
   examInvigilationRotationStates ExamInvigilationRotationState[]
@@ -291,11 +292,13 @@ model Institution {
   feeInvoices FeeInvoice[]
   feeDiscounts FeeDiscount[]
   feeRefunds FeeRefund[]
+  moduleApprovalMappings ModuleApprovalMapping[]
   feeFineTypes FeeFineType[]
   feeFineLevies FeeFineLevy[]
   feeScholarships FeeScholarship[]
   feeScholarshipAwards FeeScholarshipAward[]
   transportFeeVendors TransportFeeVendor[]
+  transportVendorComplianceAlerts TransportVendorComplianceAlert[]
   transportFeeCollections TransportFeeCollection[]
   transportVendorPayments TransportVendorPayment[]
   hostelFeeCategories HostelFeeCategory[]
@@ -1217,6 +1220,7 @@ model Student {
   gatePasses StudentGatePass[]
   biometricEnrollments BiometricEnrollment[]
   examDigitalAttempts ExamDigitalExamAttempt[]
+  examPaperStudentAccess ExamPaperStudentAccess[]
   examSeatingAssignments ExamSeatingAssignment[]
   examStudentMarkCells ExamStudentMarkCell[]
   examStudentResults ExamStudentResult[]
@@ -3107,6 +3111,17 @@ enum ExamCalendarEventType {
   CLASS_TEST
 }
 
+enum ExamSessionMode {
+  DIGITAL
+  MANUAL
+}
+
+enum ExamPaperPickSource {
+  QUESTION_BANK
+  PAPER_UPLOAD
+  NONE
+}
+
 model ExamCalendarSession {
   id            String                @id @default(cuid())
   institutionId String
@@ -3128,12 +3143,32 @@ model ExamCalendarSession {
   endTime       String                @default("")
   status        String                @default("Scheduled")
   sortOrder     Int                   @default(0)
+  /// DIGITAL = online taking via exam link; MANUAL = pen-paper / teacher marks entry
+  examMode      ExamSessionMode       @default(MANUAL)
+  paperSource   ExamPaperPickSource   @default(NONE)
+  questionPaperId String?
+  questionPaper ExamQuestionPaper?    @relation(fields: [questionPaperId], references: [id], onDelete: SetNull)
+  marksAssignmentId String?
+  marksAssignment ExamSubjectTeacherAssignment? @relation(fields: [marksAssignmentId], references: [id], onDelete: SetNull)
+  marksColumnKey ExamMarksColumnKey?
+  maxMarks      Int                   @default(100)
+  /// When the digital exam link becomes active
+  publishAt     DateTime?
+  examLinkToken String?
+  linkPublishedAt DateTime?
+  academicCalendarEventId String?
+  resultsCapturedAt DateTime?
+  uploadedPaperMeta Json              @default("[]")
+  notes         String                @default("")
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
 
   @@unique([institutionId, recordId])
+  @@unique([examLinkToken])
   @@index([institutionId, academicYear, examDate])
   @@index([institutionId, academicYear, className, sectionName])
+  @@index([institutionId, publishAt])
+  @@index([questionPaperId])
 }
 
 enum ExamSyllabusCategory {
@@ -3217,17 +3252,50 @@ model ExamQuestionPaper {
   mobilePublishedAt DateTime?
   mobilePublishedBy String          @default("")
   mobileVisibleOn   PublicationVisibility?
+  scheduledPublishAt DateTime?
+  /// Screen / browser digital exam link (per-student userid+password)
+  linkToken         String?
+  linkPublishedAt   DateTime?
+  linkPublishedBy   String          @default("")
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
   questions        ExamQuestionPaperQuestion[]
   attempts           ExamDigitalExamAttempt[]
+  calendarSessions ExamCalendarSession[]
+  studentAccess    ExamPaperStudentAccess[]
 
   @@unique([institutionId, recordId])
+  @@unique([linkToken])
   @@index([institutionId, academicYear, className, subjectName])
   @@index([institutionId, academicYear, className, sectionName, subjectName])
   @@index([institutionId, academicYear, purpose])
   @@index([institutionId, mobilePublishedAt])
+  @@index([institutionId, scheduledPublishAt])
+  @@index([institutionId, linkPublishedAt])
+}
+
+/// Per-student credentials for Paper Management "Publish as Link"
+model ExamPaperStudentAccess {
+  id              String   @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  paperId         String
+  paper           ExamQuestionPaper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  studentId       String
+  student         Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  userId          String
+  passwordPlain   String   @default("")
+  passwordHash    String
+  lastLoginAt     DateTime?
+  attemptId       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([paperId, studentId])
+  @@unique([paperId, userId])
+  @@index([institutionId, paperId])
+  @@index([studentId])
 }
 
 model ExamQuestionPaperQuestion {
@@ -3525,6 +3593,7 @@ model ExamSubjectTeacherAssignment {
   updatedAt        DateTime @updatedAt
 
   markingSheets    ExamMarkingSheet[]
+  calendarSessions ExamCalendarSession[]
 
   @@unique([institutionId, recordId])
   @@unique([institutionId, academicYear, className, sectionName, subjectName, teacherName])
@@ -3755,6 +3824,7 @@ model ExamRevaluationConfig {
   academicYear     String   @default("2025-26")
   revaluationFee   Float    @default(500)
   recheckFee       Float    @default(300)
+  backPaperFee     Float    @default(400)
   gracePeriodDays  Int      @default(30)
   passingPercent   Float    @default(36)
   createdAt        DateTime @default(now())
@@ -3792,6 +3862,7 @@ model ExamRevaluationRequest {
   feeReceiptNumber   String   @default("")
   feePaymentMode     String   @default("")
   feePaidAt          DateTime?
+  feeDueId           String?
   gracePeriodEndsAt  DateTime
   resultPublishedAt  DateTime?
   requestedAt        DateTime @default(now())
@@ -3810,6 +3881,7 @@ model ExamRevaluationRequest {
   @@index([institutionId, academicYear, status])
   @@index([institutionId, studentId])
   @@index([institutionId, className, sectionName])
+  @@index([feeDueId])
 }
 
 model ExamBackPaperExam {
@@ -3836,6 +3908,12 @@ model ExamBackPaperExam {
   newMarks           Float?
   newMaxMarks        Float?
   newGrade           String   @default("")
+  feeAmount          Float    @default(0)
+  feePaid            Boolean  @default(false)
+  feeReceiptNumber   String   @default("")
+  feePaymentMode     String   @default("")
+  feePaidAt          DateTime?
+  feeDueId           String?
   marksEnteredAt     DateTime?
   marksEnteredBy     String   @default("")
   publishedAt        DateTime?
@@ -3849,6 +3927,7 @@ model ExamBackPaperExam {
   @@unique([institutionId, academicYear, studentId, subjectName, examinationName])
   @@index([institutionId, academicYear, status])
   @@index([institutionId, className, sectionName])
+  @@index([feeDueId])
 }
 
 enum StudentPromotionType {
@@ -7457,6 +7536,7 @@ enum FeeFineCategory {
 }
 
 enum FeeFineLevyStatus {
+  PENDING_APPROVAL
   PENDING
   PAID
   WAIVED
@@ -7467,6 +7547,9 @@ enum TransportVendorStatus {
   ACTIVE
   INACTIVE
   EMPANELLED
+  PENDING_APPROVAL
+  REJECTED
+  RED_CATEGORY
 }
 
 /// Configurable fee headers used across collection, invoices, and payments
@@ -7789,6 +7872,10 @@ model FeeRefund {
   status           FeeApprovalStatus @default(PENDING_APPROVAL)
   originalReceipt  String            @default("")
   paymentMode      String            @default("")
+  depositBreakdown Json             @default("[]")
+  pendingApproverRole  String        @default("")
+  pendingApproverName  String        @default("")
+  pendingApproverEmail String        @default("")
   requestedBy      String            @default("")
   approvedBy       String            @default("")
   approvedAt       DateTime?
@@ -7801,6 +7888,28 @@ model FeeRefund {
   @@unique([institutionId, recordId])
   @@index([institutionId, status, academicYear])
   @@index([institutionId, studentId])
+}
+
+/// HR-managed approval hierarchy: maps module approval roles to people (editable).
+model ModuleApprovalMapping {
+  id             String      @id @default(cuid())
+  institutionId  String
+  institution    Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  moduleCode     String
+  moduleLabel    String      @default("")
+  roleKey        String
+  roleLabel      String      @default("")
+  employeeId     String      @default("")
+  assigneeName   String      @default("")
+  assigneeEmail  String      @default("")
+  sortOrder      Int         @default(0)
+  isActive       Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@unique([institutionId, moduleCode, roleKey])
+  @@index([institutionId, moduleCode])
+  @@map("module_approval_mappings")
 }
 
 model FeeFineType {
@@ -7834,11 +7943,19 @@ model FeeFineLevy {
   studentName     String
   admissionNumber String            @default("")
   className       String            @default("")
+  sectionName     String            @default("")
   amount          Float
   reason          String            @default("")
-  status          FeeFineLevyStatus @default(PENDING)
+  status          FeeFineLevyStatus @default(PENDING_APPROVAL)
   dueDate         DateTime?         @db.Date
   collectedAt     DateTime?
+  pendingApproverRole  String       @default("")
+  pendingApproverName  String       @default("")
+  pendingApproverEmail String       @default("")
+  requestedBy     String            @default("")
+  approvedBy      String            @default("")
+  approvedAt      DateTime?
+  rejectionReason String            @default("")
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
@@ -7885,8 +8002,18 @@ model FeeScholarshipAward {
   studentName     String
   admissionNumber String            @default("")
   className       String            @default("")
+  sectionName     String            @default("")
   amount          Float             @default(0)
+  reason          String            @default("")
+  totalDueFees    Float             @default(0)
+  entranceTestResult String         @default("")
+  lastClassPercent Float            @default(0)
+  lastClassTotal   Float            @default(0)
+  lastClassObtain  Float            @default(0)
   status          FeeApprovalStatus @default(PENDING_APPROVAL)
+  pendingApproverRole  String       @default("")
+  pendingApproverName  String       @default("")
+  pendingApproverEmail String       @default("")
   approvedBy      String            @default("")
   approvedAt      DateTime?
   remarks         String            @default("")
@@ -7911,15 +8038,75 @@ model TransportFeeVendor {
   routesCovered   String                @default("")
   vehicleCount    Int                   @default(0)
   bankDetails     Json                  @default("{}")
-  status          TransportVendorStatus @default(EMPANELLED)
+  /// Owner demographics
+  ownerPan        String                @default("")
+  ownerAadhaar    String                @default("")
+  /// Driver 1
+  driver1Name     String                @default("")
+  driver1Mobile   String                @default("")
+  driver1DlNumber String                @default("")
+  driver1DlExpiry DateTime?             @db.Date
+  driver1PoliceVerification String      @default("")
+  /// Driver 2
+  driver2Name     String                @default("")
+  driver2Mobile   String                @default("")
+  driver2DlNumber String                @default("")
+  driver2DlExpiry DateTime?             @db.Date
+  driver2PoliceVerification String      @default("")
+  /// Vehicle
+  vehicleRegNo    String                @default("")
+  vehicleChassisNo String               @default("")
+  vehicleType     String                @default("")
+  /// Pollution certificate
+  pollutionCertDate DateTime?           @db.Date
+  pollutionExpiryDate DateTime?         @db.Date
+  /// Insurance
+  insurancePolicyNo String              @default("")
+  insuranceExpiryDate DateTime?         @db.Date
+  /// Tracking
+  trackingGpsDeviceId String            @default("")
+  trackingPhoneAccess String            @default("")
+  /// Uploaded docs: [{ id, name, type, mimeType, fileData, uploadedAt }]
+  documents       Json                  @default("[]")
+  complianceCategory String             @default("NORMAL")
+  pendingApproverRole  String           @default("")
+  pendingApproverName  String           @default("")
+  pendingApproverEmail String           @default("")
+  requestedBy     String                @default("")
+  approvedBy      String                @default("")
+  approvedAt      DateTime?
+  rejectionReason String                @default("")
+  status          TransportVendorStatus @default(PENDING_APPROVAL)
   remarks         String                @default("")
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
   payments        TransportVendorPayment[]
+  complianceAlerts TransportVendorComplianceAlert[]
 
   @@unique([institutionId, vendorCode])
   @@index([institutionId, status])
+  @@index([institutionId, complianceCategory])
+}
+
+model TransportVendorComplianceAlert {
+  id              String   @id @default(cuid())
+  institutionId   String
+  institution     Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  vendorId        String
+  vendor          TransportFeeVendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  alertType       String   @default("RENEWAL_REMINDER")
+  title           String   @default("")
+  message         String   @default("")
+  recipientRole   String   @default("PRINCIPAL")
+  recipientName   String   @default("")
+  recipientEmail  String   @default("")
+  status          String   @default("OPEN")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([institutionId, status, createdAt])
+  @@index([vendorId, alertType])
 }
 
 model TransportFeeCollection {
@@ -7933,8 +8120,10 @@ model TransportFeeCollection {
   studentName     String
   admissionNumber String   @default("")
   className       String   @default("")
+  sectionName     String   @default("")
   routeName       String   @default("")
   amount          Float
+  totalDueFees    Float    @default(0)
   paymentMode     String   @default("CASH")
   collectedBy     String   @default("")
   collectedAt     DateTime @default(now())
@@ -9323,6 +9512,11 @@ model FeeOtherChargeRequest {
   admissionNumber  String                    @default("")
   className        String                    @default("")
   sectionName      String                    @default("")
+  /// Snapshot of outstanding dues across all academic sessions (settlements)
+  totalDueFees     Float                     @default(0)
+  pendingApproverRole  String                @default("")
+  pendingApproverName  String                @default("")
+  pendingApproverEmail String                @default("")
   status           FeeApprovalStatus         @default(DRAFT)
   requestedBy      String                    @default("")
   approvedBy       String                    @default("")

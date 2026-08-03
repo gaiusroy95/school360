@@ -5,6 +5,7 @@ import {
   FileText,
   Lock,
   PenLine,
+  Printer,
   RefreshCcw,
   RotateCcw,
   Send,
@@ -16,6 +17,7 @@ import {
   formatInr,
   getReconciliationDay,
   getReconciliationPdfPayload,
+  listReconciliations,
   processReconciliationAction,
   submitReconciliationForApproval,
   updateReconciliationInputs,
@@ -42,7 +44,12 @@ const STAGE_LABELS: Record<PaymentReconciliationStage, string> = {
 };
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  // Local calendar date (avoid UTC shift from toISOString)
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function AmountCell({ value, bold }: { value: number; bold?: boolean }) {
@@ -117,6 +124,7 @@ function SectionTable({
 
 export function PaymentReconciliationView() {
   const [record, setRecord] = useState<PaymentReconciliationRecord | null>(null);
+  const [approvedList, setApprovedList] = useState<PaymentReconciliationRecord[]>([]);
   const [date, setDate] = useState(todayIso());
   const [academicYear, setAcademicYear] = useState('2025-26');
   const [years, setYears] = useState<string[]>(['2025-26']);
@@ -146,6 +154,27 @@ export function PaymentReconciliationView() {
   const [workflowRemarks, setWorkflowRemarks] = useState('');
   const [digitalSignature, setDigitalSignature] = useState('');
 
+  const applyRecordToInputs = (data: PaymentReconciliationRecord) => {
+    const sync = data.report?.syncSources;
+    setInputs({
+      bankStatementTotal: String(data.bankStatementTotal || ''),
+      cashCount: String(data.cashCount || ''),
+      gatewaySettlement: String(
+        data.gatewaySettlement || sync?.systemOnlineGateway || '',
+      ),
+      cashDepositedToBank: String(
+        data.cashDepositedToBank || sync?.systemCashDeposited || '',
+      ),
+      cashWithdrawnFromBank: String(data.cashWithdrawnFromBank || ''),
+      cashPayments: String(data.cashPayments || ''),
+      bankCharges: String(data.bankCharges || ''),
+      openingPettyCash: String(data.openingPettyCash || ''),
+      previousDayOutstanding: String(data.previousDayOutstanding || ''),
+      principalRequired: data.principalRequired,
+      remarks: data.remarks || '',
+    });
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -155,21 +184,18 @@ export function PaymentReconciliationView() {
       const year = academicYear || meta.defaultAcademicYear || '2025-26';
       if (!academicYear && meta.defaultAcademicYear) setAcademicYear(meta.defaultAcademicYear);
 
-      const data = await getReconciliationDay({ date, academicYear: year });
+      const [data, list] = await Promise.all([
+        getReconciliationDay({ date, academicYear: year }),
+        listReconciliations({ academicYear: year, limit: '20' }),
+      ]);
       setRecord(data);
-      setInputs({
-        bankStatementTotal: String(data.bankStatementTotal || ''),
-        cashCount: String(data.cashCount || ''),
-        gatewaySettlement: String(data.gatewaySettlement || ''),
-        cashDepositedToBank: String(data.cashDepositedToBank || ''),
-        cashWithdrawnFromBank: String(data.cashWithdrawnFromBank || ''),
-        cashPayments: String(data.cashPayments || ''),
-        bankCharges: String(data.bankCharges || ''),
-        openingPettyCash: String(data.openingPettyCash || ''),
-        previousDayOutstanding: String(data.previousDayOutstanding || ''),
-        principalRequired: data.principalRequired,
-        remarks: data.remarks || '',
-      });
+      applyRecordToInputs(data);
+      setApprovedList(
+        list.filter(
+          (r) =>
+            r.status === 'DAY_CLOSING_COMPLETED' || r.status === 'FROZEN',
+        ),
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load reconciliation');
     } finally {
@@ -183,6 +209,12 @@ export function PaymentReconciliationView() {
 
   const editable = useMemo(
     () => record?.status === 'DRAFT' || record?.status === 'RETURNED',
+    [record?.status],
+  );
+
+  const isApprovedPrintable = useMemo(
+    () =>
+      record?.status === 'DAY_CLOSING_COMPLETED' || record?.status === 'FROZEN',
     [record?.status],
   );
 
@@ -223,7 +255,8 @@ export function PaymentReconciliationView() {
         remarks: inputs.remarks,
       });
       setRecord(updated);
-      setMessage('Reconciliation inputs saved');
+      applyRecordToInputs(updated);
+      setMessage('Reconciliation inputs saved — collections & bank deposits re-synced');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
     } finally {
@@ -260,6 +293,9 @@ export function PaymentReconciliationView() {
         });
         setRecord(updated);
         setMessage(`Action recorded: ${workflowModal.mode}`);
+        if (updated.status === 'DAY_CLOSING_COMPLETED' || updated.status === 'FROZEN') {
+          void load();
+        }
       }
       setWorkflowModal(null);
       setWorkflowRemarks('');
@@ -271,18 +307,28 @@ export function PaymentReconciliationView() {
     }
   };
 
-  const handlePdf = async () => {
-    if (!record) return;
+  const handlePdf = async (id?: string, opts?: { requireApproved?: boolean }) => {
+    const targetId = id || record?.id;
+    if (!targetId) return;
     try {
-      const payload = await getReconciliationPdfPayload(record.id);
+      const payload = await getReconciliationPdfPayload(targetId);
+      if (opts?.requireApproved && !payload.approved) {
+        setError('Only approved / frozen day closings can be printed as the official accounts printout');
+        return;
+      }
       downloadReconciliationPdf(payload);
-      setMessage('PDF downloaded for accounts department');
+      setMessage(
+        payload.approved
+          ? 'Approved reconciliation printout downloaded'
+          : 'Draft reconciliation PDF downloaded',
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : 'PDF generation failed');
     }
   };
 
   const currentStageLabel = record ? STAGE_LABELS[record.currentStage] : '';
+  const sync = report?.syncSources;
 
   if (loading && !record) {
     return <AcademicLoading label="Loading payment reconciliation…" />;
@@ -293,7 +339,7 @@ export function PaymentReconciliationView() {
       <AcademicPageHeader
         breadcrumb="Fees & Finance › Payment Reconciliation"
         title="Payment Reconciliation"
-        subtitle="Daily cash & bank reconciliation with multi-level finance approval workflow"
+        subtitle="All collections & expenses sync here — after approval they post to Accounts & Ledger (refunds never bypass)"
         actions={
           <>
             <select
@@ -322,6 +368,15 @@ export function PaymentReconciliationView() {
             <button type="button" onClick={() => void handlePdf()} className={am.btnSecondary}>
               <Download size={14} /> Download PDF
             </button>
+            {isApprovedPrintable && (
+              <button
+                type="button"
+                onClick={() => void handlePdf(undefined, { requireApproved: true })}
+                className={am.btnPrimary}
+              >
+                <Printer size={14} /> Print Approved
+              </button>
+            )}
           </>
         }
       />
@@ -341,10 +396,32 @@ export function PaymentReconciliationView() {
                 Frozen {new Date(record.frozenAt).toLocaleString('en-IN')}
               </span>
             )}
+            {report && (
+              <div className="ml-auto bg-orange-500 text-white rounded-xl px-4 py-2 shadow-sm text-right">
+                <p className="text-[9px] font-bold uppercase tracking-wide opacity-90">Total Amount</p>
+                <p className="text-xl font-bold tabular-nums">{formatInr(report.totals.erpTotalCollection)}</p>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Workflow progress */}
+        {sync && (
+          <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
+            Synced for this day:{' '}
+            <strong>{sync.feeReceipts}</strong> fee receipts ·{' '}
+            <strong>{sync.invoicePayments}</strong> invoice payments ·{' '}
+            <strong>{sync.transportCollections + sync.hostelCollections}</strong> transport/hostel ·{' '}
+            <strong>{sync.onlinePaymentOrders ?? 0}</strong> online gateway orders ·{' '}
+            <strong>{sync.expensePayments ?? 0}</strong> expenses ·{' '}
+            <strong>{sync.paidFines ?? 0}</strong> paid fines ·{' '}
+            <strong>{sync.cashBankDeposits}</strong> cash bank deposits (
+            {formatInr(sync.systemCashDeposited)}) ·{' '}
+            <strong>{sync.chequeBankDeposits}</strong> cheque slips · online/UPI/POS{' '}
+            {formatInr(sync.systemOnlineGateway)}. After final approval, these figures post to Accounts
+            &amp; Ledger (refunds included only via this panel).
+          </div>
+        )}
+
         {record && (
           <div className="bg-white border border-slate-200 rounded-xl p-3 overflow-x-auto">
             <p className="text-[10px] font-bold uppercase text-slate-500 mb-2">Finance Head Approval Workflow</p>
@@ -375,14 +452,13 @@ export function PaymentReconciliationView() {
           </div>
         )}
 
-        {/* Manual verification inputs */}
         {editable && (
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-slate-50 border border-blue-200 rounded-xl p-3 grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
               ['bankStatementTotal', 'Bank Statement Total'],
               ['cashCount', 'Cash Count'],
-              ['gatewaySettlement', 'Gateway Settlement'],
-              ['cashDepositedToBank', 'Cash Deposited to Bank'],
+              ['gatewaySettlement', 'Gateway Settlement (auto from online)'],
+              ['cashDepositedToBank', 'Cash Deposited to Bank (auto from Bank Book)'],
               ['cashWithdrawnFromBank', 'Cash Withdrawn from Bank'],
               ['cashPayments', 'Cash Payments'],
               ['bankCharges', 'Bank Charges'],
@@ -549,7 +625,66 @@ export function PaymentReconciliationView() {
           </div>
         ) : null}
 
-        {/* Approval trail */}
+        {approvedList.length > 0 && (
+          <div className={am.tableWrap}>
+            <p className="text-xs font-bold text-slate-600 px-2 py-2 border-b border-slate-100 flex items-center gap-2">
+              <Printer size={14} /> Approved reconciliations — print / download for accounts
+            </p>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-slate-50">
+                  <th className={`${am.th} text-left`}>Date</th>
+                  <th className={`${am.th} text-left`}>Status</th>
+                  <th className={`${am.th} text-right`}>ERP Collection</th>
+                  <th className={`${am.th} text-right`}>Available Funds</th>
+                  <th className={`${am.th} text-left`}>Completed</th>
+                  <th className={`${am.th} text-right`}>Print</th>
+                </tr>
+              </thead>
+              <tbody>
+                {approvedList.map((row) => (
+                  <tr key={row.id} className="hover:bg-slate-50">
+                    <td className={am.td}>
+                      <button
+                        type="button"
+                        className="font-semibold text-indigo-700 underline"
+                        onClick={() => setDate(row.reconciliationDate)}
+                      >
+                        {row.reconciliationDate}
+                      </button>
+                    </td>
+                    <td className={am.td}>
+                      <StatusBadge status={row.status} />
+                    </td>
+                    <td className={`${am.td} text-right`}>
+                      {formatInr(row.report?.totals?.erpTotalCollection || 0)}
+                    </td>
+                    <td className={`${am.td} text-right`}>
+                      {formatInr(row.report?.totalAvailableFunds || 0)}
+                    </td>
+                    <td className={am.td}>
+                      {row.completedAt
+                        ? new Date(row.completedAt).toLocaleString('en-IN')
+                        : row.frozenAt
+                          ? new Date(row.frozenAt).toLocaleString('en-IN')
+                          : '—'}
+                    </td>
+                    <td className={`${am.td} text-right`}>
+                      <button
+                        type="button"
+                        className={am.btnSecondary}
+                        onClick={() => void handlePdf(row.id, { requireApproved: true })}
+                      >
+                        <Printer size={12} /> Print
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {record && record.approvals.length > 0 && (
           <div className={am.tableWrap}>
             <p className="text-xs font-bold text-slate-600 px-2 py-2 border-b border-slate-100">
@@ -582,7 +717,6 @@ export function PaymentReconciliationView() {
           </div>
         )}
 
-        {/* Action bar */}
         <div className="flex flex-wrap justify-end gap-2 pt-2">
           {editable && (
             <button
@@ -654,17 +788,24 @@ export function PaymentReconciliationView() {
             </>
           )}
 
-          {record?.status === 'DAY_CLOSING_COMPLETED' && (
-            <button type="button" className={am.btnPrimary} onClick={() => void handlePdf()}>
-              <FileText size={14} /> Download Signed PDF
+          {isApprovedPrintable && (
+            <button
+              type="button"
+              className={am.btnPrimary}
+              onClick={() => void handlePdf(undefined, { requireApproved: true })}
+            >
+              <FileText size={14} /> Print Approved Reconciliation
             </button>
           )}
         </div>
 
         <p className="text-[11px] text-slate-400">
-          Total Available Funds = Current Cash in Hand + Current Bank Balance. Workflow: Cashier →
-          Accounts Executive → Accounts Manager → Finance Head → Principal/Director (optional) → Day
-          Closing Completed.
+          Collection Summary syncs all Fee Collection sources against collection headers (Student /
+          Hostel / Transport / Admission / Exam / Library / Fine / Other): fee receipts by fee head,
+          invoice settlements (without linked receipt), transport &amp; hostel collections, paid fines,
+          and Bank &amp; Cash Book deposits. Total Available Funds = Current Cash in Hand + Current Bank
+          Balance. Workflow: Cashier → Accounts Executive → Accounts Manager → Finance Head →
+          Principal/Director (optional) → Day Closing Completed.
         </p>
       </div>
 

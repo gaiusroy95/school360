@@ -34,7 +34,7 @@ const MODULES: ModuleDef[] = [
   },
   {
     label: 'HR & Payroll Management',
-    subItems: ['Employee Dashboard', 'Employees Directory', 'Departments', 'Designations', 'Attendance & Leave', 'Leave Management', 'Payroll Management', 'Salary Structure', 'Allowances & Deductions', 'Attendance Policy', 'Shift Management', 'Performance Appraisal', 'Recruitment', 'Training & Development', 'Documents', 'Resignation / Exit', 'Reports'],
+    subItems: ['Employee Dashboard', 'Employees Directory', 'Departments', 'Designations', 'Approval Hierarchy', 'Attendance & Leave', 'Leave Management', 'Payroll Management', 'Salary Structure', 'Allowances & Deductions', 'Attendance Policy', 'Shift Management', 'Performance Appraisal', 'Recruitment', 'Training & Development', 'Documents', 'Resignation / Exit', 'Reports'],
   },
   {
     label: 'Transport Management',

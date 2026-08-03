@@ -1,22 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Award, CheckCircle2, Download, FileText, Loader2, Printer, RefreshCw,
+  Award, CheckCircle2, Download, FileText, Loader2, Plus, Printer, RefreshCw,
   Smartphone, XCircle,
 } from 'lucide-react';
 import {
   CoScholasticCertificate,
+  createCertificateFromAdmin,
   fetchCertificatePreview,
   fetchCertificates,
   fetchCertificatesMeta,
   generateAllCertificates,
   generateCertificates,
   issueCertificates,
-  seedCertificates,
 } from '../../../lib/examinationServices';
+import { fetchStudents, type Student } from '../../../lib/studentServices';
 import { downloadCertificatePdf } from '../../../lib/certificatePdf';
 import { AcademicLoading, AcademicPageHeader, AcademicPageShell, am } from '../AcademicManagement/AcademicManagementUi';
 
-type Tab = 'templates' | 'records' | 'generate' | 'mobile';
+type Tab = 'create' | 'templates' | 'records' | 'generate' | 'mobile';
 
 const STATUS_COLORS: Record<string, string> = {
   RECORDED: 'bg-amber-100 text-amber-800',
@@ -31,8 +32,15 @@ const CATEGORY_SHORT: Record<string, string> = {
   LEADERSHIP_COMMUNITY: 'Leadership & Community',
 };
 
+function scorePreview(score: number, maxScore: number) {
+  const pct = maxScore > 0 ? (score / maxScore) * 100 : 0;
+  const grade = pct >= 90 ? 'A+' : pct >= 80 ? 'A' : pct >= 70 ? 'B+' : pct >= 60 ? 'B' : pct >= 50 ? 'C' : pct >= 40 ? 'D' : 'E';
+  const band = pct >= 85 ? 'Excellent' : pct >= 70 ? 'Good' : pct >= 55 ? 'Average' : 'Needs Improvement';
+  return { grade, band };
+}
+
 export function CertificatesView() {
-  const [tab, setTab] = useState<Tab>('templates');
+  const [tab, setTab] = useState<Tab>('create');
   const [meta, setMeta] = useState<Awaited<ReturnType<typeof fetchCertificatesMeta>> | null>(null);
   const [certificates, setCertificates] = useState<CoScholasticCertificate[]>([]);
   const [summary, setSummary] = useState({
@@ -51,11 +59,50 @@ export function CertificatesView() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  const [formClass, setFormClass] = useState('');
+  const [formSection, setFormSection] = useState('');
+  const [students, setStudents] = useState<Student[]>([]);
+  const [studentsLoading, setStudentsLoading] = useState(false);
+  const [formStudentId, setFormStudentId] = useState('');
+  const [formCategory, setFormCategory] = useState('PHYSICAL_HEALTH');
+  const [formSubCategory, setFormSubCategory] = useState('');
+  const [formActivity, setFormActivity] = useState('');
+  const [formTerm, setFormTerm] = useState('Annual');
+  const [formScore, setFormScore] = useState('85');
+  const [formMaxScore, setFormMaxScore] = useState('100');
+  const [formRemarks, setFormRemarks] = useState('');
+  const [formRecordedBy, setFormRecordedBy] = useState('');
+  const [formGenerate, setFormGenerate] = useState(true);
+  const [formIssue, setFormIssue] = useState(false);
+  const [createdPreview, setCreatedPreview] = useState<CoScholasticCertificate | null>(null);
+
   const sectionOptions = useMemo(() => {
     if (!meta) return [];
     if (!className) return [...new Set(Object.values(meta.sectionsByClass).flat())].sort();
     return meta.sectionsByClass[className] || [];
   }, [meta, className]);
+
+  const formSectionOptions = useMemo(() => {
+    if (!meta || !formClass) return [];
+    return meta.sectionsByClass[formClass] || [];
+  }, [meta, formClass]);
+
+  const categoryMeta = useMemo(
+    () => (meta?.categories || []).find((c) => c.id === formCategory) || null,
+    [meta, formCategory],
+  );
+
+  const subCategoryMeta = useMemo(
+    () => categoryMeta?.subCategories.find((s) => s.id === formSubCategory) || null,
+    [categoryMeta, formSubCategory],
+  );
+
+  const previewGrade = useMemo(() => {
+    const score = Number(formScore);
+    const max = Number(formMaxScore) || 100;
+    if (Number.isNaN(score)) return null;
+    return scorePreview(score, max);
+  }, [formScore, formMaxScore]);
 
   const filteredCertificates = useMemo(() => {
     return certificates.filter((c) => {
@@ -81,6 +128,8 @@ export function CertificatesView() {
         m = await fetchCertificatesMeta();
         setMeta(m);
         setAcademicYear(m.defaultAcademicYear);
+        if (m.classes[0]) setFormClass(m.classes[0]);
+        if (m.categories?.[0]) setFormCategory(m.categories[0].id);
       }
       const yearFilter = year || academicYear || m.defaultAcademicYear;
       const data = await fetchCertificates({
@@ -102,6 +151,39 @@ export function CertificatesView() {
 
   useEffect(() => { void load(); }, [load]);
 
+  useEffect(() => {
+    if (!formClass) {
+      setStudents([]);
+      setFormStudentId('');
+      return;
+    }
+    let cancelled = false;
+    setStudentsLoading(true);
+    void fetchStudents({
+      academicYear,
+      className: formClass,
+      sectionName: formSection || undefined,
+      status: 'ACTIVE',
+      pageSize: 200,
+      viewAll: true,
+    }).then((res) => {
+      if (cancelled) return;
+      setStudents(res.students);
+      setFormStudentId((prev) => (res.students.some((s) => s.id === prev) ? prev : (res.students[0]?.id || '')));
+    }).catch(() => {
+      if (!cancelled) setStudents([]);
+    }).finally(() => {
+      if (!cancelled) setStudentsLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [formClass, formSection, academicYear]);
+
+  useEffect(() => {
+    if (!categoryMeta) return;
+    const firstSub = categoryMeta.subCategories[0]?.id || '';
+    setFormSubCategory((prev) => (categoryMeta.subCategories.some((s) => s.id === prev) ? prev : firstSub));
+  }, [categoryMeta]);
+
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -114,11 +196,63 @@ export function CertificatesView() {
   const selectAll = () => setSelected(new Set(selectableIds));
   const clearSelection = () => setSelected(new Set());
 
+  const resetCreateForm = () => {
+    setFormActivity('');
+    setFormScore('85');
+    setFormMaxScore('100');
+    setFormRemarks('');
+    setFormIssue(false);
+    setFormGenerate(true);
+    setCreatedPreview(null);
+  };
+
+  const handleCreateCertificate = async () => {
+    if (!formStudentId) {
+      setErrorMsg('Select a student');
+      return;
+    }
+    if (!formActivity.trim()) {
+      setErrorMsg('Enter the activity / achievement title');
+      return;
+    }
+    const score = Number(formScore);
+    if (Number.isNaN(score)) {
+      setErrorMsg('Enter a valid performance score');
+      return;
+    }
+    setActionLoading(true);
+    setErrorMsg(null);
+    try {
+      const result = await createCertificateFromAdmin({
+        studentId: formStudentId,
+        category: formCategory,
+        activityTitle: formActivity.trim(),
+        subCategory: subCategoryMeta?.label || formSubCategory,
+        academicYear,
+        term: formTerm,
+        performanceScore: score,
+        maxScore: Number(formMaxScore) || 100,
+        remarks: formRemarks,
+        recordedBy: formRecordedBy || undefined,
+        generate: formGenerate,
+        issue: formIssue,
+      });
+      setSuccessMsg(result.message);
+      setCreatedPreview(result.certificate);
+      await load(academicYear);
+      if (result.certificate.status !== 'RECORDED') {
+        const preview = await fetchCertificatePreview(result.certificate.id);
+        downloadCertificatePdf(preview);
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to create certificate');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleGenerateSelected = async () => {
-    const ids = [...selected].filter((id) => {
-      const c = certificates.find((x) => x.id === id);
-      return c?.canGenerate;
-    });
+    const ids = [...selected].filter((id) => certificates.find((x) => x.id === id)?.canGenerate);
     if (!ids.length) return;
     setActionLoading(true);
     try {
@@ -151,10 +285,7 @@ export function CertificatesView() {
   };
 
   const handleIssueSelected = async () => {
-    const ids = [...selected].filter((id) => {
-      const c = certificates.find((x) => x.id === id);
-      return c?.canIssue;
-    });
+    const ids = [...selected].filter((id) => certificates.find((x) => x.id === id)?.canIssue);
     if (!ids.length) return;
     setActionLoading(true);
     try {
@@ -186,6 +317,7 @@ export function CertificatesView() {
   };
 
   const tabs: { id: Tab; label: string }[] = [
+    { id: 'create', label: 'Create Certificate' },
     { id: 'templates', label: 'Default Designs' },
     { id: 'records', label: 'All Records' },
     { id: 'generate', label: 'Generate & Issue' },
@@ -199,7 +331,7 @@ export function CertificatesView() {
       <AcademicPageHeader
         breadcrumb="Examination Management › Certificates"
         title="Co-Scholastic Certificates"
-        subtitle="Generate certificates for all class/section students · recorded via teacher mobile app · four default category designs"
+        subtitle="Admin can enter performance and generate certificates · also syncs from teacher mobile / co-scholastic records"
         actions={(
           <div className="flex items-center gap-2">
             <select
@@ -211,6 +343,9 @@ export function CertificatesView() {
                 <option key={y} value={y}>{y}</option>
               ))}
             </select>
+            <button type="button" onClick={() => { setTab('create'); resetCreateForm(); }} className={am.btnPrimary}>
+              <Plus size={14} /> New Certificate
+            </button>
             <button type="button" onClick={() => void load()} className={am.btnSecondary}>
               <RefreshCw size={14} /> Refresh
             </button>
@@ -245,40 +380,42 @@ export function CertificatesView() {
         ))}
       </div>
 
-      <div className="mb-4 flex flex-wrap items-end gap-2">
-        <div>
-          <label className={am.label}>Class</label>
-          <select value={className} onChange={(e) => { setClassName(e.target.value); setSectionName(''); }} className={am.select}>
-            <option value="">All Classes</option>
-            {(meta?.classes || []).map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+      {tab !== 'create' && (
+        <div className="mb-4 flex flex-wrap items-end gap-2">
+          <div>
+            <label className={am.label}>Class</label>
+            <select value={className} onChange={(e) => { setClassName(e.target.value); setSectionName(''); }} className={am.select}>
+              <option value="">All Classes</option>
+              {(meta?.classes || []).map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={am.label}>Section</label>
+            <select value={sectionName} onChange={(e) => setSectionName(e.target.value)} className={am.select}>
+              <option value="">All Sections</option>
+              {sectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={am.label}>Category</label>
+            <select value={category} onChange={(e) => setCategory(e.target.value)} className={am.select}>
+              <option value="all">All Categories</option>
+              {(meta?.templateDesigns || []).map((t) => (
+                <option key={t.id} value={t.id}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={am.label}>Status</label>
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className={am.select}>
+              <option value="all">All Status</option>
+              <option value="RECORDED">Recorded</option>
+              <option value="GENERATED">Generated</option>
+              <option value="ISSUED">Issued</option>
+            </select>
+          </div>
         </div>
-        <div>
-          <label className={am.label}>Section</label>
-          <select value={sectionName} onChange={(e) => setSectionName(e.target.value)} className={am.select}>
-            <option value="">All Sections</option>
-            {sectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className={am.label}>Category</label>
-          <select value={category} onChange={(e) => setCategory(e.target.value)} className={am.select}>
-            <option value="all">All Categories</option>
-            {(meta?.templateDesigns || []).map((t) => (
-              <option key={t.id} value={t.id}>{t.label}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className={am.label}>Status</label>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className={am.select}>
-            <option value="all">All Status</option>
-            <option value="RECORDED">Recorded</option>
-            <option value="GENERATED">Generated</option>
-            <option value="ISSUED">Issued</option>
-          </select>
-        </div>
-      </div>
+      )}
 
       <div className="mb-4 flex flex-wrap gap-1 border-b border-slate-200 pb-1">
         {tabs.map((t) => (
@@ -295,6 +432,208 @@ export function CertificatesView() {
 
       {loading ? (
         <AcademicLoading label="Loading…" />
+      ) : tab === 'create' ? (
+        <div className="grid gap-4 lg:grid-cols-5">
+          <div className={`${am.card} ${am.cardPad} lg:col-span-3 space-y-4`}>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800">Enter performance &amp; generate certificate</h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Select student, enter activity and score. Grade/band are calculated automatically.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <label className={am.label}>Class *</label>
+                <select
+                  value={formClass}
+                  onChange={(e) => { setFormClass(e.target.value); setFormSection(''); }}
+                  className={am.select}
+                >
+                  <option value="">Select class</option>
+                  {(meta?.classes || []).map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={am.label}>Section</label>
+                <select value={formSection} onChange={(e) => setFormSection(e.target.value)} className={am.select}>
+                  <option value="">All sections</option>
+                  {formSectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={am.label}>Student *</label>
+                <select
+                  value={formStudentId}
+                  onChange={(e) => setFormStudentId(e.target.value)}
+                  className={am.select}
+                  disabled={studentsLoading || !formClass}
+                >
+                  {!formClass && <option value="">Select class first</option>}
+                  {formClass && studentsLoading && <option value="">Loading…</option>}
+                  {formClass && !studentsLoading && students.length === 0 && <option value="">No active students</option>}
+                  {students.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.fullName || s.name} ({s.admissionNumber})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className={am.label}>Category *</label>
+                <select value={formCategory} onChange={(e) => setFormCategory(e.target.value)} className={am.select}>
+                  {(meta?.categories?.length ? meta.categories : meta?.templateDesigns || []).map((c) => (
+                    <option key={c.id} value={c.id}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={am.label}>Sub-category</label>
+                <select value={formSubCategory} onChange={(e) => setFormSubCategory(e.target.value)} className={am.select}>
+                  {(categoryMeta?.subCategories || []).map((s) => (
+                    <option key={s.id} value={s.id}>{s.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className={am.label}>Activity / Achievement *</label>
+              <input
+                value={formActivity}
+                onChange={(e) => setFormActivity(e.target.value)}
+                className={am.input}
+                placeholder="e.g. Inter-school Football Championship"
+                list="cert-activity-suggestions"
+              />
+              <datalist id="cert-activity-suggestions">
+                {(subCategoryMeta?.activities || []).map((a) => (
+                  <option key={a} value={a} />
+                ))}
+              </datalist>
+              {subCategoryMeta?.activities?.length ? (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {subCategoryMeta.activities.slice(0, 8).map((a) => (
+                    <button
+                      key={a}
+                      type="button"
+                      onClick={() => setFormActivity(a)}
+                      className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-600 hover:border-blue-300 hover:bg-blue-50"
+                    >
+                      {a}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-4">
+              <div>
+                <label className={am.label}>Score *</label>
+                <input type="number" min={0} value={formScore} onChange={(e) => setFormScore(e.target.value)} className={am.input} />
+              </div>
+              <div>
+                <label className={am.label}>Max Score</label>
+                <input type="number" min={1} value={formMaxScore} onChange={(e) => setFormMaxScore(e.target.value)} className={am.input} />
+              </div>
+              <div>
+                <label className={am.label}>Term</label>
+                <select value={formTerm} onChange={(e) => setFormTerm(e.target.value)} className={am.select}>
+                  <option value="Annual">Annual</option>
+                  <option value="Term 1">Term 1</option>
+                  <option value="Term 2">Term 2</option>
+                  <option value="Term 3">Term 3</option>
+                </select>
+              </div>
+              <div>
+                <label className={am.label}>Recorded By</label>
+                <input
+                  value={formRecordedBy}
+                  onChange={(e) => setFormRecordedBy(e.target.value)}
+                  className={am.input}
+                  placeholder="Teacher / Admin"
+                />
+              </div>
+            </div>
+
+            {previewGrade && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                Auto grade: <strong>{previewGrade.grade}</strong>
+                &nbsp;·&nbsp; Band: <strong>{previewGrade.band}</strong>
+              </div>
+            )}
+
+            <div>
+              <label className={am.label}>Remarks</label>
+              <textarea
+                value={formRemarks}
+                onChange={(e) => setFormRemarks(e.target.value)}
+                className={am.input}
+                rows={2}
+                placeholder="Optional remarks printed on the certificate"
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-4 text-xs text-slate-700">
+              <label className="inline-flex items-center gap-2">
+                <input type="checkbox" checked={formGenerate} onChange={(e) => setFormGenerate(e.target.checked)} />
+                Generate certificate now (PDF download)
+              </label>
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={formIssue}
+                  onChange={(e) => {
+                    setFormIssue(e.target.checked);
+                    if (e.target.checked) setFormGenerate(true);
+                  }}
+                />
+                Mark as Issued
+              </label>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button type="button" disabled={actionLoading} onClick={() => void handleCreateCertificate()} className={am.btnPrimary}>
+                {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <Award size={14} />}
+                {formGenerate ? 'Generate Certificate' : 'Record Performance'}
+              </button>
+              <button type="button" onClick={resetCreateForm} className={am.btnSecondary}>Clear Form</button>
+            </div>
+          </div>
+
+          <div className={`${am.card} ${am.cardPad} lg:col-span-2 space-y-3`}>
+            <h3 className="text-sm font-semibold text-slate-800">Preview summary</h3>
+            {createdPreview ? (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 space-y-1 text-xs text-emerald-900">
+                <p className="font-semibold">{createdPreview.studentName}</p>
+                <p>{createdPreview.activityTitle}</p>
+                <p>
+                  {createdPreview.performanceScore} · {createdPreview.performanceGrade} · {createdPreview.performanceBandLabel}
+                </p>
+                <p>Status: {createdPreview.status}</p>
+                {createdPreview.status !== 'RECORDED' && (
+                  <button
+                    type="button"
+                    className="mt-2 inline-flex items-center gap-1 text-blue-700 hover:underline"
+                    onClick={() => void handlePreview(createdPreview)}
+                  >
+                    <Download size={12} /> Download PDF again
+                  </button>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">
+                Fill the form and generate. Uses the category design template and school branding.
+              </p>
+            )}
+            <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
+              Teachers can also record from the mobile app; those records appear under Generate &amp; Issue.
+            </div>
+          </div>
+        </div>
       ) : tab === 'templates' ? (
         <div className="grid gap-4 sm:grid-cols-2">
           {(meta?.templateDesigns || []).map((design) => {
@@ -311,25 +650,13 @@ export function CertificatesView() {
                     <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-medium text-slate-600">{count} records</span>
                   </div>
                   <p className="mb-4 text-xs text-slate-600">{design.description}</p>
-                  <div
-                    className="rounded-lg border-2 bg-white p-4 text-center shadow-sm"
-                    style={{ borderColor: design.colors.accent }}
+                  <button
+                    type="button"
+                    className="text-[11px] font-semibold text-blue-700 hover:underline"
+                    onClick={() => { setFormCategory(design.id); setTab('create'); }}
                   >
-                    <p className="text-[10px] uppercase tracking-wider text-slate-400">Default Certificate Design</p>
-                    <p className="mt-1 text-sm font-bold" style={{ color: design.colors.primary }}>
-                      {design.id === 'PHYSICAL_HEALTH' && 'Certificate of Achievement'}
-                      {design.id === 'WORK_EDUCATION' && 'Certificate of Excellence'}
-                      {design.id === 'VISUAL_PERFORMING_ARTS' && 'Certificate of Merit'}
-                      {design.id === 'LEADERSHIP_COMMUNITY' && 'Certificate of Appreciation'}
-                    </p>
-                    <p className="mt-0.5 text-[10px] text-slate-500">{design.label}</p>
-                    <div className="mx-auto mt-3 h-px w-24" style={{ backgroundColor: design.colors.accent }} />
-                    <p className="mt-3 text-xs italic text-slate-400">Student Name</p>
-                    <p className="text-[10px] text-slate-400">Activity · Performance · Session</p>
-                  </div>
-                  <p className="mt-3 text-[10px] text-slate-500">
-                    All co-scholastic certificates in this category use this design. Teachers record achievements via the mobile app; admin generates and issues from here.
-                  </p>
+                    Create certificate in this category →
+                  </button>
                 </div>
               </div>
             );
@@ -343,64 +670,16 @@ export function CertificatesView() {
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <p className="mb-2 text-xs font-semibold text-slate-700">Record Certificate</p>
-              <p className="mb-2 text-[11px] text-slate-600">
-                Teachers record co-scholastic achievements from the mobile app. Each record syncs here automatically for certificate generation.
-              </p>
+              <p className="mb-2 text-xs font-semibold text-slate-700">Teacher record</p>
               <code className="block rounded bg-slate-800 px-2 py-1.5 text-[10px] text-green-300">
                 POST /api/examination/certificates/mobile/record
               </code>
-              <ul className="mt-2 space-y-1 text-[10px] text-slate-500">
-                <li>teacherName, studentId, category, activityTitle</li>
-                <li>performanceScore, performanceGrade, remarks (optional)</li>
-              </ul>
             </div>
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <p className="mb-2 text-xs font-semibold text-slate-700">Teacher Dashboard</p>
-              <p className="mb-2 text-[11px] text-slate-600">
-                Teachers can view their recorded certificates and available completed activities.
-              </p>
+              <p className="mb-2 text-xs font-semibold text-slate-700">Admin create (performance)</p>
               <code className="block rounded bg-slate-800 px-2 py-1.5 text-[10px] text-green-300">
-                GET /api/examination/certificates/mobile/teacher?teacherName=…
+                POST /api/examination/certificates/record
               </code>
-            </div>
-          </div>
-          <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-3">
-            <p className="text-xs text-blue-800">
-              <strong>{summary.recorded}</strong> certificates recorded via mobile or co-scholastic sync are pending generation.
-              Records also auto-sync from Co-Scholastic Assessment performances.
-            </p>
-          </div>
-          <div className="mt-4">
-            <p className="mb-2 text-xs font-semibold text-slate-700">Recent Mobile Records</p>
-            <div className="overflow-x-auto">
-              <table className={am.table}>
-                <thead>
-                  <tr>
-                    <th className={am.th}>Student</th>
-                    <th className={am.th}>Class</th>
-                    <th className={am.th}>Category</th>
-                    <th className={am.th}>Activity</th>
-                    <th className={am.th}>Recorded By</th>
-                    <th className={am.th}>Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredCertificates.slice(0, 15).map((c) => (
-                    <tr key={c.id} className={am.tr}>
-                      <td className={am.td}>{c.studentName}</td>
-                      <td className={am.td}>{c.className} — {c.sectionName}</td>
-                      <td className={am.td}>{CATEGORY_SHORT[c.category] || c.categoryLabel}</td>
-                      <td className={am.td}>{c.activityTitle}</td>
-                      <td className={am.td}>{c.recordedBy}</td>
-                      <td className={am.td}>{new Date(c.recordedAt).toLocaleDateString('en-IN')}</td>
-                    </tr>
-                  ))}
-                  {!filteredCertificates.length && (
-                    <tr><td colSpan={6} className={`${am.td} text-center text-slate-400`}>No records yet</td></tr>
-                  )}
-                </tbody>
-              </table>
             </div>
           </div>
         </div>
@@ -416,30 +695,15 @@ export function CertificatesView() {
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={selectAll} className={am.btnSecondary} disabled={!selectableIds.length}>Select All</button>
               <button type="button" onClick={clearSelection} className={am.btnSecondary}>Clear</button>
-              <button
-                type="button"
-                onClick={() => void handleGenerateSelected()}
-                disabled={actionLoading || !selected.size}
-                className={am.btnPrimary}
-              >
+              <button type="button" onClick={() => void handleGenerateSelected()} disabled={actionLoading || !selected.size} className={am.btnPrimary}>
                 {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
                 Generate Selected
               </button>
-              <button
-                type="button"
-                onClick={() => void handleGenerateAll()}
-                disabled={actionLoading}
-                className={am.btnPrimary}
-              >
+              <button type="button" onClick={() => void handleGenerateAll()} disabled={actionLoading} className={am.btnPrimary}>
                 {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
                 Generate All Recorded
               </button>
-              <button
-                type="button"
-                onClick={() => void handleIssueSelected()}
-                disabled={actionLoading || !selected.size}
-                className={am.btnSecondary}
-              >
+              <button type="button" onClick={() => void handleIssueSelected()} disabled={actionLoading || !selected.size} className={am.btnSecondary}>
                 <CheckCircle2 size={14} /> Issue Selected
               </button>
             </div>

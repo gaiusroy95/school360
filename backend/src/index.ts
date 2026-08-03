@@ -117,8 +117,9 @@ app.post(
   }),
 );
 
-app.use('/api/mobile', express.json({ limit: '15mb' }), mobileRouter);
-app.use(express.json({ limit: '5mb' }));
+app.use('/api/mobile', express.json({ limit: '30mb' }), mobileRouter);
+// Academic calendar OCR and other base64 uploads need a higher ceiling than the default 100kb
+app.use(express.json({ limit: '30mb' }));
 
 app.use(maintenanceMiddleware);
 app.use(apiRateLimitMiddleware);
@@ -183,11 +184,26 @@ app.use('/api/settings/license-support', settingsLicenseSupportRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
-  const message = err instanceof Error ? err.message : 'Internal server error';
+
+  const anyErr = err as { type?: string; status?: number; statusCode?: number; limit?: number; message?: string };
+  const message = err instanceof Error ? err.message : (typeof anyErr?.message === 'string' ? anyErr.message : 'Internal server error');
+
+  // Body-parser / express.json payload limit (PDF OCR as base64)
+  if (
+    anyErr?.type === 'entity.too.large'
+    || anyErr?.status === 413
+    || anyErr?.statusCode === 413
+    || message.toLowerCase().includes('request entity too large')
+  ) {
+    return res.status(413).json({
+      error: 'Uploaded file is too large. Please upload a PDF/image under 20 MB (govt circular / board calendar).',
+    });
+  }
+
   const isDb =
     message.includes("Can't reach database server") ||
     message.includes('PrismaClientInitializationError');
-  res.status(isDb ? 503 : 500).json({
+  return res.status(isDb ? 503 : 500).json({
     error: isDb ? 'Database temporarily unavailable. Please retry in a few seconds.' : message,
   });
 });

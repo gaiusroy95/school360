@@ -13,15 +13,19 @@ import {
   fetchResultBatch,
   generateAllReportCards,
   generateReportCards,
-  seedReportCards,
   shareReportCards,
   updateReportCardConfig,
   uploadBoardMarksheet,
   uploadReportCardAsset,
   type ReportCardConfig,
+  type ReportCardTemplate,
 } from '../../../lib/examinationServices';
 import { downloadReportCardPdf, TEMPLATE_PREVIEW_COLORS } from '../../../lib/reportCardPdf';
 import { AcademicLoading, AcademicModal, AcademicPageHeader, AcademicPageShell, am } from '../AcademicManagement/AcademicManagementUi';
+import {
+  REPORT_CARD_TEMPLATE_BANK,
+  ReportCardTemplateLivePreview,
+} from './ReportCardTemplateBank';
 
 type Tab = 'status' | 'templates' | 'generate' | 'board';
 
@@ -52,7 +56,7 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 export function ReportCardsView() {
-  const [tab, setTab] = useState<Tab>('status');
+  const [tab, setTab] = useState<Tab>('templates');
   const [meta, setMeta] = useState<Awaited<ReturnType<typeof fetchReportCardsMeta>> | null>(null);
   const [classes, setClasses] = useState<ClassReportCardStatus[]>([]);
   const [summary, setSummary] = useState({ totalClasses: 0, marksPending: 0, generated: 0, published: 0, boardExam: 0, pending: 0 });
@@ -65,6 +69,7 @@ export function ReportCardsView() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [detailClass, setDetailClass] = useState<ClassReportCardStatus | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<ReportCardTemplate>('PRIMARY');
   const [configForm, setConfigForm] = useState({ schoolName: '', schoolAddress: '', principalName: '', footerNote: '', boardExamNotice: '' });
   const [boardUploadModal, setBoardUploadModal] = useState<{ studentId: string; studentName: string; className: string; sectionName: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -367,96 +372,153 @@ export function ReportCardsView() {
           )}
 
           {tab === 'templates' && (
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className={`${am.card} ${am.cardPad}`}>
-                <h3 className="mb-3 text-sm font-semibold text-slate-800">Four Default Report Card Designs</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  {(Object.entries(TEMPLATE_LABELS) as [string, string][]).map(([id, label]) => {
-                    const colors = TEMPLATE_PREVIEW_COLORS[id as keyof typeof TEMPLATE_PREVIEW_COLORS];
-                    return (
-                      <div
-                        key={id}
-                        className="rounded-lg border p-3"
-                        style={{ borderColor: `rgb(${colors.primary.join(',')})`, backgroundColor: `rgb(${colors.bg.join(',')})` }}
-                      >
-                        <p className="text-xs font-bold" style={{ color: `rgb(${colors.primary.join(',')})` }}>{label}</p>
-                        <p className="mt-1 text-[10px] text-slate-600">
-                          {id === 'PRE_PRIMARY' && 'Nursery, LKG, UKG — colourful grade cards'}
-                          {id === 'PRIMARY' && 'Class 1–4 — subject marks table'}
-                          {id === 'MIDDLE' && 'Class 6–7 — GPA, rank, performance'}
-                          {id === 'UPPER' && 'Class 9 & 11 — CGPA, aggregate summary'}
-                          {id === 'BOARD' && 'Class 5, 8, 10, 12 — Govt. board marksheet'}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className={`${am.card} ${am.cardPad}`}>
-                <h3 className="mb-3 text-sm font-semibold text-slate-800">School Details & Assets</h3>
-                <div className="space-y-3">
-                  {(['schoolName', 'schoolAddress', 'principalName'] as const).map((field) => (
-                    <div key={field}>
-                      <label className="mb-1 block text-[10px] font-medium text-slate-600 capitalize">{field.replace(/([A-Z])/g, ' $1')}</label>
-                      <input
-                        type="text"
-                        value={configForm[field]}
-                        onChange={(e) => setConfigForm((f) => ({ ...f, [field]: e.target.value }))}
-                        className={am.input}
-                      />
+            <div className="space-y-4">
+              {/* Template bank + live preview (application-form style) */}
+              <div className="grid gap-4 lg:grid-cols-12">
+                <div className={`${am.card} ${am.cardPad} lg:col-span-5`}>
+                  <div className="mb-3 flex items-start justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-800">Result Card Template Bank</h3>
+                      <p className="text-[10px] text-slate-500">Select a design to preview — auto-applied by class level when generating.</p>
                     </div>
-                  ))}
-                  <div>
-                    <label className="mb-1 block text-[10px] font-medium text-slate-600">Footer Note</label>
-                    <input type="text" value={configForm.footerNote} onChange={(e) => setConfigForm((f) => ({ ...f, footerNote: e.target.value }))} className={am.input} />
                   </div>
-                  <div>
-                    <label className="mb-1 block text-[10px] font-medium text-slate-600">Board Exam Notice</label>
-                    <textarea value={configForm.boardExamNotice} onChange={(e) => setConfigForm((f) => ({ ...f, boardExamNotice: e.target.value }))} className={`${am.input} min-h-[60px]`} />
+                  <div className="space-y-2">
+                    {REPORT_CARD_TEMPLATE_BANK.map((t) => {
+                      const selected = selectedTemplate === t.id;
+                      const colors = TEMPLATE_PREVIEW_COLORS[t.id];
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => setSelectedTemplate(t.id)}
+                          className={`w-full rounded-xl border p-3 text-left transition-all ${
+                            selected
+                              ? 'border-amber-400 bg-amber-50 ring-2 ring-amber-200 shadow-sm'
+                              : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div
+                              className="mt-0.5 h-10 w-8 shrink-0 rounded border shadow-sm"
+                              style={{
+                                background: `linear-gradient(160deg, rgb(${colors.bg.join(',')}) 0%, white 55%, rgb(${colors.primary.join(',')}) 100%)`,
+                                borderColor: `rgb(${colors.primary.join(',')})`,
+                              }}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs font-bold text-slate-800">{t.label}</p>
+                                {selected && (
+                                  <span className="rounded-full bg-amber-400 px-2 py-0.5 text-[9px] font-bold text-slate-900">Selected</span>
+                                )}
+                              </div>
+                              <p className="text-[10px] font-semibold text-slate-500">{t.classes}</p>
+                              <p className="mt-0.5 text-[10px] text-slate-500 line-clamp-2">{t.description}</p>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
-                  <button type="button" onClick={() => void handleSaveConfig()} disabled={actionLoading} className={am.btnPrimary}>
-                    {actionLoading ? <Loader2 size={14} className="animate-spin" /> : null} Save Configuration
-                  </button>
+                  {selectedTemplate === 'BOARD' && (
+                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] text-amber-900">
+                      Class 5, 8, 10, 12 — Govt. board marksheet. Use the <strong>Board Exam</strong> tab to upload official sheets.
+                    </div>
+                  )}
+                </div>
+
+                <div className={`${am.card} ${am.cardPad} lg:col-span-7`}>
+                  <div className="mb-3 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-800">Template Preview</h3>
+                      <p className="text-[10px] text-slate-500">
+                        Live preview of <strong>{TEMPLATE_LABELS[selectedTemplate]}</strong> — sample student data
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-600">
+                      {selectedTemplate}
+                    </span>
+                  </div>
+                  <div className="flex min-h-[420px] items-start justify-center overflow-auto rounded-xl border border-dashed border-slate-200 bg-gradient-to-b from-slate-50 to-white p-4">
+                    <ReportCardTemplateLivePreview
+                      templateId={selectedTemplate}
+                      schoolName={configForm.schoolName}
+                      schoolAddress={configForm.schoolAddress}
+                      principalName={configForm.principalName}
+                      footerNote={configForm.footerNote}
+                      boardExamNotice={configForm.boardExamNotice}
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className={`${am.card} ${am.cardPad} lg:col-span-2`}>
-                <h3 className="mb-3 text-sm font-semibold text-slate-800">Upload Signatures & Seal</h3>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  {([
-                    { type: 'headerLogo' as const, label: 'School Logo', icon: Image, uploaded: config?.hasHeaderLogo },
-                    { type: 'principalSignature' as const, label: 'Principal Signature', icon: FileText, uploaded: config?.hasPrincipalSignature },
-                    { type: 'classTeacherSignature' as const, label: 'Class Teacher Signature', icon: FileText, uploaded: config?.hasClassTeacherSignature },
-                    { type: 'schoolSeal' as const, label: 'School Seal', icon: Image, uploaded: config?.hasSchoolSeal },
-                  ]).map((asset) => (
-                    <button
-                      key={asset.type}
-                      type="button"
-                      onClick={() => { setUploadAssetType(asset.type); fileInputRef.current?.click(); }}
-                      className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-slate-300 p-4 hover:border-blue-400 hover:bg-blue-50"
-                    >
-                      <asset.icon size={20} className="text-slate-400" />
-                      <span className="text-[10px] font-medium text-slate-700">{asset.label}</span>
-                      {asset.uploaded ? (
-                        <span className="flex items-center gap-1 text-[9px] text-emerald-600"><CheckCircle2 size={10} /> Uploaded</span>
-                      ) : (
-                        <span className="text-[9px] text-slate-400">Click to upload</span>
-                      )}
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className={`${am.card} ${am.cardPad}`}>
+                  <h3 className="mb-3 text-sm font-semibold text-slate-800">School Details</h3>
+                  <div className="space-y-3">
+                    {(['schoolName', 'schoolAddress', 'principalName'] as const).map((field) => (
+                      <div key={field}>
+                        <label className="mb-1 block text-[10px] font-medium text-slate-600 capitalize">{field.replace(/([A-Z])/g, ' $1')}</label>
+                        <input
+                          type="text"
+                          value={configForm[field]}
+                          onChange={(e) => setConfigForm((f) => ({ ...f, [field]: e.target.value }))}
+                          className={am.input}
+                        />
+                      </div>
+                    ))}
+                    <div>
+                      <label className="mb-1 block text-[10px] font-medium text-slate-600">Footer Note</label>
+                      <input type="text" value={configForm.footerNote} onChange={(e) => setConfigForm((f) => ({ ...f, footerNote: e.target.value }))} className={am.input} />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[10px] font-medium text-slate-600">Board Exam Notice</label>
+                      <textarea value={configForm.boardExamNotice} onChange={(e) => setConfigForm((f) => ({ ...f, boardExamNotice: e.target.value }))} className={`${am.input} min-h-[60px]`} />
+                    </div>
+                    <button type="button" onClick={() => void handleSaveConfig()} disabled={actionLoading} className={am.btnPrimary}>
+                      {actionLoading ? <Loader2 size={14} className="animate-spin" /> : null} Save Configuration
                     </button>
-                  ))}
+                  </div>
                 </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) void handleAssetUpload(file);
-                    e.target.value = '';
-                  }}
-                />
+
+                <div className={`${am.card} ${am.cardPad}`}>
+                  <h3 className="mb-3 text-sm font-semibold text-slate-800">Upload Signatures &amp; Seal</h3>
+                  <p className="mb-3 text-[10px] text-slate-500">These assets appear on generated PDFs for all templates.</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {([
+                      { type: 'headerLogo' as const, label: 'School Logo', icon: Image, uploaded: config?.hasHeaderLogo },
+                      { type: 'principalSignature' as const, label: 'Principal Signature', icon: FileText, uploaded: config?.hasPrincipalSignature },
+                      { type: 'classTeacherSignature' as const, label: 'Class Teacher Signature', icon: FileText, uploaded: config?.hasClassTeacherSignature },
+                      { type: 'schoolSeal' as const, label: 'School Seal', icon: Image, uploaded: config?.hasSchoolSeal },
+                    ]).map((asset) => (
+                      <button
+                        key={asset.type}
+                        type="button"
+                        onClick={() => { setUploadAssetType(asset.type); fileInputRef.current?.click(); }}
+                        className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-slate-300 p-4 hover:border-blue-400 hover:bg-blue-50"
+                      >
+                        <asset.icon size={20} className="text-slate-400" />
+                        <span className="text-[10px] font-medium text-slate-700">{asset.label}</span>
+                        {asset.uploaded ? (
+                          <span className="flex items-center gap-1 text-[9px] text-emerald-600"><CheckCircle2 size={10} /> Uploaded</span>
+                        ) : (
+                          <span className="text-[9px] text-slate-400">Click to upload</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void handleAssetUpload(file);
+                      e.target.value = '';
+                    }}
+                  />
+                </div>
               </div>
             </div>
           )}

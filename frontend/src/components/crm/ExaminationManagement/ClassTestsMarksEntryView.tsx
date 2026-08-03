@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ClipboardCheck, Save } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ClipboardCheck, Download, Save, Upload } from 'lucide-react';
 import {
   fetchClassTestDetail, fetchClassTests, submitClassTestScores, type ClassTest,
 } from '../../../lib/academicServices';
 import { fetchStudents } from '../../../lib/studentServices';
+import {
+  downloadClassTestMarksTemplate,
+  parseClassTestMarksUploadFile,
+} from '../../../lib/lessonPlanExcel';
 import { AcademicLoading, AcademicModal, AcademicPageHeader, AcademicPageShell, am } from '../AcademicManagement/AcademicManagementUi';
 
 const BUCKET_COLORS = {
@@ -21,6 +25,8 @@ export function ClassTestsMarksEntryView({ embedded = false }: { embedded?: bool
   const [activeTest, setActiveTest] = useState<ClassTest | null>(null);
   const [scoreRows, setScoreRows] = useState<{ studentId: string; fullName: string; marks: string }[]>([]);
   const [showModal, setShowModal] = useState(false);
+  const [uploadingMarks, setUploadingMarks] = useState(false);
+  const marksFileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -49,6 +55,42 @@ export function ClassTestsMarksEntryView({ embedded = false }: { embedded?: bool
     setMessage(`Marks saved for ${res.upserted} students. Results published to student & parent mobile analytics.`);
     setShowModal(false);
     void load();
+  };
+
+  const handleMarksTemplateDownload = () => {
+    downloadClassTestMarksTemplate(
+      scoreRows.map((r) => ({
+        studentId: r.studentId,
+        studentName: r.fullName,
+        marksObtained: r.marks || '',
+      })),
+    );
+  };
+
+  const handleMarksBulkUpload = async (file: File) => {
+    setUploadingMarks(true);
+    try {
+      const rows = await parseClassTestMarksUploadFile(file);
+      if (!rows.length) {
+        setMessage('No valid marks rows found. Use columns: studentId, studentName, marksObtained.');
+        return;
+      }
+      const byId = new Map(rows.map((r) => [r.studentId, r]));
+      const byName = new Map(rows.filter((r) => r.studentName).map((r) => [r.studentName!.toLowerCase(), r]));
+      let matched = 0;
+      const nextRows = scoreRows.map((row) => {
+        const hit = byId.get(row.studentId) || byName.get(row.fullName.toLowerCase());
+        if (!hit) return row;
+        matched += 1;
+        return { ...row, marks: String(hit.marksObtained) };
+      });
+      setScoreRows(nextRows);
+      setMessage(`Marks loaded from Excel for ${matched} student(s). Review, then Save & Sync Analytics.`);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Failed to upload marks');
+    } finally {
+      setUploadingMarks(false);
+    }
   };
 
   if (loading) return embedded ? <AcademicLoading label="Loading class tests…" /> : <AcademicLoading label="Loading class tests from lesson plans…" />;
@@ -104,19 +146,63 @@ export function ClassTestsMarksEntryView({ embedded = false }: { embedded?: bool
 
       <AcademicModal open={showModal} onClose={() => setShowModal(false)} title={`Marks Entry — ${activeTest?.title || ''}`} large>
         <p className="text-xs text-slate-500">Max marks: {activeTest?.maxMarks}. Results bucket: 80–100% / 60–79.99% / 36–59.99% / below 36%</p>
+        <div className="flex flex-wrap gap-2 my-3">
+          <button type="button" onClick={handleMarksTemplateDownload} className={am.btnSecondary}>
+            <Download size={14} /> Excel Template
+          </button>
+          <button
+            type="button"
+            disabled={uploadingMarks}
+            onClick={() => marksFileRef.current?.click()}
+            className={am.btnSecondary}
+          >
+            <Upload size={14} /> {uploadingMarks ? 'Uploading…' : 'Upload Marks'}
+          </button>
+          <input
+            ref={marksFileRef}
+            type="file"
+            accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleMarksBulkUpload(file);
+              e.target.value = '';
+            }}
+          />
+        </div>
         <div className="max-h-72 overflow-y-auto space-y-1">
-          {scoreRows.map((r) => (
+          {scoreRows.map((r, idx) => (
             <div key={r.studentId} className="flex items-center gap-2 text-sm">
               <span className="flex-1">{r.fullName}</span>
-              <input type="number" min={0} max={activeTest?.maxMarks || 100} value={r.marks}
+              <input
+                type="number"
+                min={0}
+                max={activeTest?.maxMarks || 100}
+                value={r.marks}
+                data-score-id={r.studentId}
                 onChange={(e) => setScoreRows((rows) => rows.map((x) => x.studentId === r.studentId ? { ...x, marks: e.target.value } : x))}
-                className={`${am.input} w-24`} placeholder="Marks" />
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const next = scoreRows[idx + 1];
+                    if (next) {
+                      document.querySelector<HTMLInputElement>(`input[data-score-id="${next.studentId}"]`)?.focus();
+                    } else {
+                      document.getElementById('exam-class-test-save')?.focus();
+                    }
+                  }
+                }}
+                className={`${am.input} w-24`}
+                placeholder="Marks"
+              />
             </div>
           ))}
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={() => setShowModal(false)} className={am.btnSecondary}>Cancel</button>
-          <button type="button" onClick={() => void saveMarks()} className={am.btnPrimary}><Save size={14} /> Save & Sync Analytics</button>
+          <button id="exam-class-test-save" type="button" onClick={() => void saveMarks()} className={am.btnPrimary}>
+            <Save size={14} /> Save & Sync Analytics
+          </button>
         </div>
       </AcademicModal>
     </>

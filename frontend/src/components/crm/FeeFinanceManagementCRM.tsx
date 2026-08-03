@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   IndianRupee, AlertCircle, Clock, Percent, PercentSquare,
   FileText, PlusCircle, XCircle, CreditCard, Receipt,
@@ -11,25 +11,72 @@ import {
   BarChart, Bar, ComposedChart,
 } from 'recharts';
 import { SubModuleView } from './shared/SubModuleView';
-import { FeeMastersView } from './FeeFinanceManagement/FeeMastersView';
-import { FeeStructureView } from './FeeFinanceManagement/FeeStructureView';
-import { FeeCollectionView as FinanceFeeCollectionView } from './FeeFinanceManagement/FeeCollectionView';
-import { OnlinePaymentsView } from './FeeFinanceManagement/OnlinePaymentsView';
-import { BankCashBookView } from './FeeFinanceManagement/BankCashBookView';
-import { ExpenseManagementView } from './FeeFinanceManagement/ExpenseManagementView';
-import { PaymentReconciliationView } from './FeeFinanceManagement/PaymentReconciliationView';
-import { InvoicesView } from './FeeFinanceManagement/InvoicesView';
-import { DiscountsConcessionsView } from './FeeFinanceManagement/DiscountsConcessionsView';
-import { RefundsView } from './FeeFinanceManagement/RefundsView';
-import { FinePenaltiesView } from './FeeFinanceManagement/FinePenaltiesView';
-import { ScholarshipView } from './FeeFinanceManagement/ScholarshipView';
-import { TransportFeeView } from './FeeFinanceManagement/TransportFeeView';
-import { HostelFeeView } from './FeeFinanceManagement/HostelFeeView';
-import { OtherChargesView } from './FeeFinanceManagement/OtherChargesView';
-import { PayrollView } from './FeeFinanceManagement/PayrollView';
-import { FinancialReportsView } from './FeeFinanceManagement/FinancialReportsView';
-import { FinancialOperationsView } from './FeeFinanceManagement/FinancialOperationsView';
-import { AccountsLedgerView } from './FeeFinanceManagement/AccountsLedgerView';
+
+const FeeMastersView = lazy(() =>
+  import('./FeeFinanceManagement/FeeMastersView').then((m) => ({ default: m.FeeMastersView })),
+);
+const FeeStructureView = lazy(() =>
+  import('./FeeFinanceManagement/FeeStructureView').then((m) => ({ default: m.FeeStructureView })),
+);
+const FinanceFeeCollectionView = lazy(() =>
+  import('./FeeFinanceManagement/FeeCollectionView').then((m) => ({ default: m.FeeCollectionView })),
+);
+const OnlinePaymentsView = lazy(() =>
+  import('./FeeFinanceManagement/OnlinePaymentsView').then((m) => ({ default: m.OnlinePaymentsView })),
+);
+const BankCashBookView = lazy(() =>
+  import('./FeeFinanceManagement/BankCashBookView').then((m) => ({ default: m.BankCashBookView })),
+);
+const ExpenseManagementView = lazy(() =>
+  import('./FeeFinanceManagement/ExpenseManagementView').then((m) => ({ default: m.ExpenseManagementView })),
+);
+const PaymentReconciliationView = lazy(() =>
+  import('./FeeFinanceManagement/PaymentReconciliationView').then((m) => ({ default: m.PaymentReconciliationView })),
+);
+const InvoicesView = lazy(() =>
+  import('./FeeFinanceManagement/InvoicesView').then((m) => ({ default: m.InvoicesView })),
+);
+const DiscountsConcessionsView = lazy(() =>
+  import('./FeeFinanceManagement/DiscountsConcessionsView').then((m) => ({ default: m.DiscountsConcessionsView })),
+);
+const RefundsView = lazy(() =>
+  import('./FeeFinanceManagement/RefundsView').then((m) => ({ default: m.RefundsView })),
+);
+const FinePenaltiesView = lazy(() =>
+  import('./FeeFinanceManagement/FinePenaltiesView').then((m) => ({ default: m.FinePenaltiesView })),
+);
+const ScholarshipView = lazy(() =>
+  import('./FeeFinanceManagement/ScholarshipView').then((m) => ({ default: m.ScholarshipView })),
+);
+const TransportFeeView = lazy(() =>
+  import('./FeeFinanceManagement/TransportFeeView').then((m) => ({ default: m.TransportFeeView })),
+);
+const HostelFeeView = lazy(() =>
+  import('./FeeFinanceManagement/HostelFeeView').then((m) => ({ default: m.HostelFeeView })),
+);
+const OtherChargesView = lazy(() =>
+  import('./FeeFinanceManagement/OtherChargesView').then((m) => ({ default: m.OtherChargesView })),
+);
+const PayrollView = lazy(() =>
+  import('./FeeFinanceManagement/PayrollView').then((m) => ({ default: m.PayrollView })),
+);
+const FinancialReportsView = lazy(() =>
+  import('./FeeFinanceManagement/FinancialReportsView').then((m) => ({ default: m.FinancialReportsView })),
+);
+const FinancialOperationsView = lazy(() =>
+  import('./FeeFinanceManagement/FinancialOperationsView').then((m) => ({ default: m.FinancialOperationsView })),
+);
+const AccountsLedgerView = lazy(() =>
+  import('./FeeFinanceManagement/AccountsLedgerView').then((m) => ({ default: m.AccountsLedgerView })),
+);
+
+function wrap(node: ReactNode) {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[30vh] text-sm text-slate-400">Loading page…</div>}>
+      {node}
+    </Suspense>
+  );
+}
 import {
   fetchFeeDashboard,
   fetchFeeDashboardMeta,
@@ -762,24 +809,24 @@ export function FeeFinanceManagementCRM({
   onNavigate?: (view: string) => void;
 }) {
   if (currentView === 'Fee Dashboard') return <FeeDashboardView onNavigate={onNavigate} />;
-  if (currentView === 'Fee Masters') return <FeeMastersView />;
-  if (currentView === 'Fee Structure') return <FeeStructureView />;
-  if (currentView === 'Fee Collection') return <FinanceFeeCollectionView />;
-  if (currentView === 'Online Payments') return <OnlinePaymentsView />;
-  if (currentView === 'Payment Reconciliation') return <PaymentReconciliationView />;
-  if (currentView === 'Bank & Cash Book') return <BankCashBookView />;
-  if (currentView === 'Expense Management') return <ExpenseManagementView />;
-  if (currentView === 'Invoices') return <InvoicesView />;
-  if (currentView === 'Discounts & Concessions') return <DiscountsConcessionsView />;
-  if (currentView === 'Refunds') return <RefundsView />;
-  if (currentView === 'Fine / Penalties') return <FinePenaltiesView />;
-  if (currentView === 'Scholarship') return <ScholarshipView />;
-  if (currentView === 'Transport Fee') return <TransportFeeView />;
-  if (currentView === 'Hostel Fee') return <HostelFeeView />;
-  if (currentView === 'Other Charges') return <OtherChargesView />;
-  if (currentView === 'Payroll') return <PayrollView />;
-  if (currentView === 'Accounts & Ledger') return <AccountsLedgerView />;
-  if (currentView === 'Financial Reports') return <FinancialReportsView />;
-  if (currentView === 'Financial Operations') return <FinancialOperationsView />;
+  if (currentView === 'Fee Masters') return wrap(<FeeMastersView />);
+  if (currentView === 'Fee Structure') return wrap(<FeeStructureView />);
+  if (currentView === 'Fee Collection') return wrap(<FinanceFeeCollectionView />);
+  if (currentView === 'Online Payments') return wrap(<OnlinePaymentsView />);
+  if (currentView === 'Payment Reconciliation') return wrap(<PaymentReconciliationView />);
+  if (currentView === 'Bank & Cash Book') return wrap(<BankCashBookView />);
+  if (currentView === 'Expense Management') return wrap(<ExpenseManagementView />);
+  if (currentView === 'Invoices') return wrap(<InvoicesView />);
+  if (currentView === 'Discounts & Concessions') return wrap(<DiscountsConcessionsView />);
+  if (currentView === 'Refunds') return wrap(<RefundsView />);
+  if (currentView === 'Fine / Penalties') return wrap(<FinePenaltiesView />);
+  if (currentView === 'Scholarship') return wrap(<ScholarshipView />);
+  if (currentView === 'Transport Fee') return wrap(<TransportFeeView />);
+  if (currentView === 'Hostel Fee') return wrap(<HostelFeeView />);
+  if (currentView === 'Other Charges') return wrap(<OtherChargesView />);
+  if (currentView === 'Payroll') return wrap(<PayrollView />);
+  if (currentView === 'Accounts & Ledger') return wrap(<AccountsLedgerView />);
+  if (currentView === 'Financial Reports') return wrap(<FinancialReportsView />);
+  if (currentView === 'Financial Operations') return wrap(<FinancialOperationsView />);
   return <SubModuleView module="Fees & Finance" title={currentView} />;
 }

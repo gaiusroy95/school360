@@ -1,17 +1,53 @@
+import { lazy, Suspense, type ReactNode } from 'react';
 import { SubModuleView } from './shared/SubModuleView';
-import { LibraryDashboardView } from './library/LibraryDashboardView';
-import { BookCatalogueView } from './library/BookCatalogueView';
-import { BookIssueReturnView } from './library/BookIssueReturnView';
-import { MembersView } from './library/MembersView';
-import { AddManageBooksView } from './library/AddManageBooksView';
-import { CategoriesSubjectsView } from './library/CategoriesSubjectsView';
-import { RackManagementView } from './library/RackManagementView';
-import { StockVerificationView } from './library/StockVerificationView';
-import { FineManagementView } from './library/FineManagementView';
-import { LibraryAttendanceView } from './library/LibraryAttendanceView';
-import { ReadingRoomView } from './library/ReadingRoomView';
-import { EResourcesView } from './library/EResourcesView';
-import { LibraryReportsAnalyticsView } from './library/LibraryReportsAnalyticsView';
+
+const LibraryDashboardView = lazy(() =>
+  import('./library/LibraryDashboardView').then((m) => ({ default: m.LibraryDashboardView })),
+);
+const BookCatalogueView = lazy(() =>
+  import('./library/BookCatalogueView').then((m) => ({ default: m.BookCatalogueView })),
+);
+const BookIssueReturnView = lazy(() =>
+  import('./library/BookIssueReturnView').then((m) => ({ default: m.BookIssueReturnView })),
+);
+const MembersView = lazy(() =>
+  import('./library/MembersView').then((m) => ({ default: m.MembersView })),
+);
+const AddManageBooksView = lazy(() =>
+  import('./library/AddManageBooksView').then((m) => ({ default: m.AddManageBooksView })),
+);
+const CategoriesSubjectsView = lazy(() =>
+  import('./library/CategoriesSubjectsView').then((m) => ({ default: m.CategoriesSubjectsView })),
+);
+const RackManagementView = lazy(() =>
+  import('./library/RackManagementView').then((m) => ({ default: m.RackManagementView })),
+);
+const StockVerificationView = lazy(() =>
+  import('./library/StockVerificationView').then((m) => ({ default: m.StockVerificationView })),
+);
+const FineManagementView = lazy(() =>
+  import('./library/FineManagementView').then((m) => ({ default: m.FineManagementView })),
+);
+const LibraryAttendanceView = lazy(() =>
+  import('./library/LibraryAttendanceView').then((m) => ({ default: m.LibraryAttendanceView })),
+);
+const ReadingRoomView = lazy(() =>
+  import('./library/ReadingRoomView').then((m) => ({ default: m.ReadingRoomView })),
+);
+const EResourcesView = lazy(() =>
+  import('./library/EResourcesView').then((m) => ({ default: m.EResourcesView })),
+);
+const LibraryReportsAnalyticsView = lazy(() =>
+  import('./library/LibraryReportsAnalyticsView').then((m) => ({ default: m.LibraryReportsAnalyticsView })),
+);
+
+function wrap(node: ReactNode) {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[30vh] text-sm text-slate-400">Loading page…</div>}>
+      {node}
+    </Suspense>
+  );
+}
 
 export function LibraryManagementCRM({
   currentView = 'Library Dashboard',
@@ -21,46 +57,46 @@ export function LibraryManagementCRM({
   onNavigate?: (view: string) => void;
 }) {
   if (currentView === 'Library Dashboard' || !currentView) {
-    return <LibraryDashboardView onNavigate={onNavigate} />;
+    return wrap(<LibraryDashboardView onNavigate={onNavigate} />);
   }
   if (currentView === 'Book Catalogue') {
-    return <BookCatalogueView />;
+    return wrap(<BookCatalogueView />);
   }
   if (currentView === 'Book Issue / Return') {
-    return <BookIssueReturnView />;
+    return wrap(<BookIssueReturnView />);
   }
   if (currentView === 'Members') {
-    return <MembersView />;
+    return wrap(<MembersView />);
   }
   if (currentView === 'Add / Manage Books') {
-    return <AddManageBooksView />;
+    return wrap(<AddManageBooksView />);
   }
   if (currentView === 'Categories & Subjects') {
-    return <CategoriesSubjectsView />;
+    return wrap(<CategoriesSubjectsView />);
   }
   if (currentView === 'Rack Management') {
-    return <RackManagementView />;
+    return wrap(<RackManagementView />);
   }
   if (currentView === 'Stock Verification') {
-    return <StockVerificationView />;
+    return wrap(<StockVerificationView />);
   }
   if (currentView === 'Fine Management') {
-    return <FineManagementView />;
+    return wrap(<FineManagementView />);
   }
   if (currentView === 'Library Attendance') {
-    return <LibraryAttendanceView />;
+    return wrap(<LibraryAttendanceView />);
   }
   if (currentView === 'Reading Room') {
-    return <ReadingRoomView />;
+    return wrap(<ReadingRoomView />);
   }
   if (currentView === 'E-Resources') {
-    return <EResourcesView />;
+    return wrap(<EResourcesView />);
   }
   if (currentView === 'Reports & Analytics') {
-    return <LibraryReportsAnalyticsView />;
+    return wrap(<LibraryReportsAnalyticsView />);
   }
   if (currentView) {
     return <SubModuleView module="Library Management" title={currentView} />;
   }
-  return <LibraryDashboardView onNavigate={onNavigate} />;
+  return wrap(<LibraryDashboardView onNavigate={onNavigate} />);
 }

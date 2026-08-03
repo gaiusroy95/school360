@@ -45,6 +45,49 @@ export function parseDateInput(val?: string | Date | null): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/** Normalize Excel serial fractions / AM-PM / HH:mm into HH:mm. */
+export function normalizeTimeOfDay(val: unknown, fallback = '08:00'): string {
+  if (val == null || val === '') return fallback;
+
+  if (val instanceof Date && !Number.isNaN(val.getTime())) {
+    return `${String(val.getHours()).padStart(2, '0')}:${String(val.getMinutes()).padStart(2, '0')}`;
+  }
+
+  if (typeof val === 'number' && Number.isFinite(val)) {
+    let fraction = val;
+    if (val >= 1) fraction = val % 1;
+    if (fraction < 0) return fallback;
+    const totalMinutes = Math.round(fraction * 24 * 60) % (24 * 60);
+    const hh = Math.floor(totalMinutes / 60);
+    const mm = totalMinutes % 60;
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  }
+
+  const s = String(val).trim();
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(s)) {
+    const [h, m] = s.split(':');
+    return `${h.padStart(2, '0')}:${m.padStart(2, '0')}`;
+  }
+
+  const ampm = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
+  if (ampm) {
+    let h = Number(ampm[1]);
+    const m = ampm[2];
+    const ap = ampm[3].toUpperCase();
+    if (ap === 'PM' && h < 12) h += 12;
+    if (ap === 'AM' && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${m}`;
+  }
+
+  // Excel fraction stored as string, e.g. "0.437499999999994"
+  if (/^\d*\.\d+$/.test(s)) {
+    const n = Number(s);
+    if (Number.isFinite(n) && n >= 0 && n < 2) return normalizeTimeOfDay(n, fallback);
+  }
+
+  return fallback;
+}
+
 export function isSlotActiveOnDate(
   slot: { effectiveFrom: Date | null; effectiveTo: Date | null },
   date: Date,
@@ -64,6 +107,8 @@ export function dayOfWeekFromDate(date: Date): number {
 }
 
 export function serializeTimetableSlot(row: AcademicTimetableSlot) {
+  const startTime = normalizeTimeOfDay(row.startTime, '08:00');
+  const endTime = normalizeTimeOfDay(row.endTime, '08:40');
   return {
     id: row.id,
     recordId: row.recordId,
@@ -78,9 +123,9 @@ export function serializeTimetableSlot(row: AcademicTimetableSlot) {
     periodLabel: row.periodLabel,
     periodType: row.periodType,
     periodTypeLabel: PERIOD_TYPE_LABELS[row.periodType],
-    startTime: row.startTime,
-    endTime: row.endTime,
-    timeRange: `${row.startTime} - ${row.endTime}`,
+    startTime,
+    endTime,
+    timeRange: `${startTime} - ${endTime}`,
     subjectName: row.subjectName,
     teacherName: row.teacherName,
     room: row.room,
@@ -108,10 +153,12 @@ export type MobileScheduleSlot = {
 };
 
 export function toMobileScheduleSlot(row: AcademicTimetableSlot): MobileScheduleSlot {
+  const startTime = normalizeTimeOfDay(row.startTime, '08:00');
+  const endTime = normalizeTimeOfDay(row.endTime, '08:40');
   return {
     period: row.periodLabel,
     periodNumber: row.period,
-    time: `${row.startTime} - ${row.endTime}`,
+    time: `${startTime} - ${endTime}`,
     subject: row.subjectName,
     class: formatClassSection(row.className, row.sectionName),
     teacher: row.teacherName,
@@ -253,8 +300,8 @@ export async function createTimetableSlotRecord(institutionId: string, data: Tim
       period: data.period,
       periodLabel: data.periodLabel || `P${data.period}`,
       periodType: data.periodType || 'THEORY',
-      startTime: data.startTime || '08:00',
-      endTime: data.endTime || '08:40',
+      startTime: normalizeTimeOfDay(data.startTime, '08:00'),
+      endTime: normalizeTimeOfDay(data.endTime, '08:40'),
       subjectName: data.subjectName,
       teacherName: data.teacherName || '',
       room: data.room || '',
@@ -286,8 +333,8 @@ export async function updateTimetableSlotRecord(
       ...(data.period !== undefined ? { period: data.period } : {}),
       ...(data.periodLabel !== undefined ? { periodLabel: data.periodLabel } : {}),
       ...(data.periodType !== undefined ? { periodType: data.periodType } : {}),
-      ...(data.startTime !== undefined ? { startTime: data.startTime } : {}),
-      ...(data.endTime !== undefined ? { endTime: data.endTime } : {}),
+      ...(data.startTime !== undefined ? { startTime: normalizeTimeOfDay(data.startTime, existing.startTime || '08:00') } : {}),
+      ...(data.endTime !== undefined ? { endTime: normalizeTimeOfDay(data.endTime, existing.endTime || '08:40') } : {}),
       ...(data.subjectName !== undefined ? { subjectName: data.subjectName } : {}),
       ...(data.teacherName !== undefined ? { teacherName: data.teacherName } : {}),
       ...(data.room !== undefined ? { room: data.room } : {}),
@@ -365,8 +412,8 @@ export async function bulkUpsertTimetableSlots(
             term: slot.term || data.term || existing.term,
             periodLabel: slot.periodLabel || `P${slot.period}`,
             periodType: slot.periodType || 'THEORY',
-            startTime: slot.startTime || existing.startTime,
-            endTime: slot.endTime || existing.endTime,
+            startTime: normalizeTimeOfDay(slot.startTime, existing.startTime || '08:00'),
+            endTime: normalizeTimeOfDay(slot.endTime, existing.endTime || '08:40'),
             subjectName: slot.subjectName,
             teacherName: slot.teacherName || '',
             room: slot.room || '',
@@ -416,6 +463,15 @@ export async function publishTimetable(
     data: { publishedAt: now },
   });
   return { published: result.count, publishedAt: now.toISOString() };
+}
+
+export async function bulkDeleteTimetableSlots(institutionId: string, ids: string[]) {
+  const uniqueIds = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+  if (!uniqueIds.length) return { deleted: 0 };
+  const result = await prisma.academicTimetableSlot.deleteMany({
+    where: { institutionId, id: { in: uniqueIds } },
+  });
+  return { deleted: result.count };
 }
 
 export function buildWeekGrid(slots: ReturnType<typeof serializeTimetableSlot>[]) {

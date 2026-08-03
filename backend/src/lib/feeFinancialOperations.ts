@@ -137,7 +137,7 @@ export function loadFeeFinancialSetup(setup: {
     refundPolicy: {
       requireApproval: refundApproval,
       approvalLevels: parseJsonArray(refundLevels, ['Accounts', 'Principal']),
-      autoCreditLedger: readField(fee, ['Refund & Cancellation', 'refundCancellation'], 'autoCreditLedger', 'Yes') === 'Yes',
+      autoCreditLedger: readField(fee, ['Refund & Cancellation', 'refundCancellation'], 'autoCreditLedger', 'No') === 'Yes',
     },
     reminders: {
       channels: parseJsonArray(reminderChannels, ['Email', 'SMS']),

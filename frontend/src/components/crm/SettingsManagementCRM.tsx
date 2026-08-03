@@ -14,25 +14,62 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import type { ComponentType } from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { toViewKey } from '../../lib/navigation';
 import { resolveSettingsLink } from '../../lib/appNavigation';
 import { fetchAdminDashboardOverview } from '../../lib/settingsAdminDashboardServices';
 import { SubModuleView } from './shared/SubModuleView';
-import { AddressLocationView } from './settings/AddressLocationView';
-import { MaintenanceModeView } from './settings/MaintenanceModeView';
-import { SystemLimitsView } from './settings/SystemLimitsView';
-import { SystemUpdatesView } from './settings/SystemUpdatesView';
-import { CacheSettingsView } from './settings/CacheSettingsView';
-import { PerformanceSettingsView } from './settings/PerformanceSettingsView';
-import { DatabaseOptimizationView } from './settings/DatabaseOptimizationView';
-import { SecurityAuditComplianceView } from './settings/SecurityAuditComplianceView';
-import { UserGovernanceView } from './settings/UserGovernanceView';
-import { IntegrationsNotificationsView } from './settings/IntegrationsNotificationsView';
-import { DocumentIdentityView } from './settings/DocumentIdentityView';
-import { DepartmentOperationsView } from './settings/DepartmentOperationsView';
-import { DataModulesUiView } from './settings/DataModulesUiView';
-import { PaymentSettingsView } from './settings/PaymentSettingsView';
+
+const AddressLocationView = lazy(() =>
+  import('./settings/AddressLocationView').then((m) => ({ default: m.AddressLocationView })),
+);
+const MaintenanceModeView = lazy(() =>
+  import('./settings/MaintenanceModeView').then((m) => ({ default: m.MaintenanceModeView })),
+);
+const SystemLimitsView = lazy(() =>
+  import('./settings/SystemLimitsView').then((m) => ({ default: m.SystemLimitsView })),
+);
+const SystemUpdatesView = lazy(() =>
+  import('./settings/SystemUpdatesView').then((m) => ({ default: m.SystemUpdatesView })),
+);
+const CacheSettingsView = lazy(() =>
+  import('./settings/CacheSettingsView').then((m) => ({ default: m.CacheSettingsView })),
+);
+const PerformanceSettingsView = lazy(() =>
+  import('./settings/PerformanceSettingsView').then((m) => ({ default: m.PerformanceSettingsView })),
+);
+const DatabaseOptimizationView = lazy(() =>
+  import('./settings/DatabaseOptimizationView').then((m) => ({ default: m.DatabaseOptimizationView })),
+);
+const SecurityAuditComplianceView = lazy(() =>
+  import('./settings/SecurityAuditComplianceView').then((m) => ({ default: m.SecurityAuditComplianceView })),
+);
+const UserGovernanceView = lazy(() =>
+  import('./settings/UserGovernanceView').then((m) => ({ default: m.UserGovernanceView })),
+);
+const IntegrationsNotificationsView = lazy(() =>
+  import('./settings/IntegrationsNotificationsView').then((m) => ({ default: m.IntegrationsNotificationsView })),
+);
+const DocumentIdentityView = lazy(() =>
+  import('./settings/DocumentIdentityView').then((m) => ({ default: m.DocumentIdentityView })),
+);
+const DepartmentOperationsView = lazy(() =>
+  import('./settings/DepartmentOperationsView').then((m) => ({ default: m.DepartmentOperationsView })),
+);
+const DataModulesUiView = lazy(() =>
+  import('./settings/DataModulesUiView').then((m) => ({ default: m.DataModulesUiView })),
+);
+const PaymentSettingsView = lazy(() =>
+  import('./settings/PaymentSettingsView').then((m) => ({ default: m.PaymentSettingsView })),
+);
+
+function wrap(node: ReactNode) {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[30vh] text-sm text-slate-400">Loading page…</div>}>
+      {node}
+    </Suspense>
+  );
+}
 
 const CORE_SYSTEM_VIEWS: Record<string, ComponentType> = {
   'Address & Location': AddressLocationView,
@@ -326,35 +363,35 @@ export function SettingsManagementCRM({
   const CoreView = CORE_SYSTEM_VIEWS[resolvedView];
   if (CoreView) {
     const View = CoreView;
-    return <View />;
+    return wrap(<View />);
   }
 
   if (resolvedView === SECURITY_AUDIT_VIEW) {
-    return <SecurityAuditComplianceView />;
+    return wrap(<SecurityAuditComplianceView />);
   }
 
   if (resolvedView === USER_GOVERNANCE_VIEW) {
-    return <UserGovernanceView />;
+    return wrap(<UserGovernanceView />);
   }
 
   if (resolvedView === INTEGRATIONS_NOTIFICATIONS_VIEW) {
-    return <IntegrationsNotificationsView />;
+    return wrap(<IntegrationsNotificationsView />);
   }
 
   if (resolvedView === DOCUMENT_IDENTITY_VIEW) {
-    return <DocumentIdentityView />;
+    return wrap(<DocumentIdentityView />);
   }
 
   if (resolvedView === DEPARTMENT_OPERATIONS_VIEW) {
-    return <DepartmentOperationsView />;
+    return wrap(<DepartmentOperationsView />);
   }
 
   if (resolvedView === DATA_MODULES_UI_VIEW) {
-    return <DataModulesUiView />;
+    return wrap(<DataModulesUiView />);
   }
 
   if (resolvedView === PAYMENT_SETTINGS_VIEW) {
-    return <PaymentSettingsView onNavigate={onNavigate} />;
+    return wrap(<PaymentSettingsView onNavigate={onNavigate} />);
   }
 
   if (resolvedView && resolvedView !== 'General Settings') {

@@ -24,6 +24,10 @@ export function flushAppCache() {
   return { clearedEntries: size, flushedAt: lastFlushedAt };
 }
 
+export function deleteAppCache(key: string) {
+  store.delete(key);
+}
+
 export function getAppCacheStats() {
   return { entries: store.size, lastFlushedAt };
 }

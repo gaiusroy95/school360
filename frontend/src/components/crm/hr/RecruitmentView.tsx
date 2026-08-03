@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ArrowRight, Briefcase, CheckCircle2, ClipboardList,
-  Loader2, Plus, RefreshCw, Send, UserCheck,
+  Loader2, Plus, Send, UserCheck,
 } from 'lucide-react';
 import {
   acceptRecruitmentOffer,
@@ -71,10 +71,10 @@ export function RecruitmentView() {
     vacantPositions: '0', newPositions: '1', budgetedSalary: '', priority: 'MEDIUM', justification: '',
   });
 
-  const load = useCallback(async (seed = false) => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const d = await fetchRecruitment({ seed, academicYear });
+      const d = await fetchRecruitment({ academicYear });
       setData(d);
       setAcademicYear(d.academicYear);
     } finally { setLoading(false); }
@@ -111,14 +111,9 @@ export function RecruitmentView() {
         title="Recruitment Management System"
         subtitle="End-to-end hiring: manpower planning → requisition → interviews → offer → onboarding → probation → confirmation"
         actions={(
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => void load(true)} disabled={busy} className={am.btnSecondary}>
-              <RefreshCw size={14} /> Load Demo
-            </button>
-            <button type="button" onClick={() => setReqModal(true)} className={am.btnPrimary}>
-              <Plus size={14} /> Raise Requisition
-            </button>
-          </div>
+          <button type="button" onClick={() => setReqModal(true)} className={am.btnPrimary}>
+            <Plus size={14} /> Raise Requisition
+          </button>
         )}
       />
 
@@ -163,7 +158,7 @@ export function RecruitmentView() {
                     </div>
                   ))}
                   {data.pipeline.every((p) => p.count === 0) && (
-                    <p className="text-slate-400 text-sm">Load demo data to see pipeline</p>
+                    <p className="text-slate-400 text-sm">No data yet</p>
                   )}
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useState, useEffect, type ReactNode } from 'react';
 import {
   Building2, Calendar, Users, Building, ShieldCheck, CheckCircle2,
   GraduationCap, Layout, Layers, Briefcase, Database, Settings, Mail, Lock,
@@ -6,6 +6,8 @@ import {
   CreditCard as CardIcon, FileBox, Fingerprint, CalendarDays,
   ToggleRight, Globe, Zap
 } from 'lucide-react';
+import { INSTITUTION_SETUP_TILES } from '../../lib/institutionSetupSchema';
+import { TILE_KEY_BY_TITLE } from '../../lib/institutionApi';
 
 const kpis = [
   { title: 'Institution Status', value: 'Active', subtitle: 'Since 01 Jan 2025', subtitleColor: 'text-slate-500', icon: <CheckCircle2 size={20} />, color: 'text-green-600', bg: 'bg-green-100', valueColor: 'text-green-600' },
@@ -16,10 +18,20 @@ const kpis = [
   { title: 'Setup Completion', value: '92%', subtitle: 'Excellent', subtitleColor: 'text-green-600', icon: <ShieldCheck size={20} />, color: 'text-red-600', bg: 'bg-red-100', valueColor: 'text-slate-900' },
 ];
 
-import { ExpressSetupView } from './InstitutionSetup/ExpressSetupView';
-import { ModuleConfigView } from './InstitutionSetup/ModuleConfigView';
-import { INSTITUTION_SETUP_TILES } from '../../lib/institutionSetupSchema';
-import { TILE_KEY_BY_TITLE } from '../../lib/institutionApi';
+const ExpressSetupView = lazy(() =>
+  import('./InstitutionSetup/ExpressSetupView').then((m) => ({ default: m.ExpressSetupView })),
+);
+const ModuleConfigView = lazy(() =>
+  import('./InstitutionSetup/ModuleConfigView').then((m) => ({ default: m.ModuleConfigView })),
+);
+
+function wrap(node: ReactNode) {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[30vh] text-sm text-slate-400">Loading page…</div>}>
+      {node}
+    </Suspense>
+  );
+}
 
 const setupModules = INSTITUTION_SETUP_TILES.map((tile, index) => ({
   id: index + 1,
@@ -67,12 +79,12 @@ export function InstitutionSetupCRM({ currentView: externalView }: { currentView
   const view = override ?? externalView ?? 'Overview';
 
   if (view === 'Express Setup') {
-    return <ExpressSetupView onBack={() => setOverride('Overview')} />;
+    return wrap(<ExpressSetupView onBack={() => setOverride('Overview')} />);
   }
 
   const activeModule = setupModules.find((m) => m.title === view);
   if (activeModule) {
-    return <ModuleConfigView module={activeModule} onBack={() => setOverride('Overview')} />;
+    return wrap(<ModuleConfigView module={activeModule} onBack={() => setOverride('Overview')} />);
   }
 
   return (

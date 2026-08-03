@@ -152,3 +152,87 @@ export async function getMobileHomeworkForStudent(
     total: records.length,
   };
 }
+
+/** When teacher↔class↔subject allocation changes, remap future/open homework to the new teacher automatically. */
+export async function remapHomeworkTeachersForAllocation(
+  institutionId: string,
+  allocation: {
+    academicYear: string;
+    className: string;
+    sectionName: string;
+    subjectName: string;
+    teacherName: string;
+  },
+) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const result = await prisma.academicHomework.updateMany({
+    where: {
+      institutionId,
+      academicYear: allocation.academicYear,
+      className: allocation.className,
+      sectionName: allocation.sectionName || '',
+      subjectName: allocation.subjectName,
+      status: { in: ['ASSIGNED', 'PENDING'] },
+      OR: [
+        { dueDate: null },
+        { dueDate: { gte: today } },
+        { assignedDate: { gte: today } },
+      ],
+      NOT: { teacherName: allocation.teacherName },
+    },
+    data: { teacherName: allocation.teacherName },
+  });
+
+  return { remapped: result.count };
+}
+
+export async function assertTeacherHomeworkAllocation(
+  institutionId: string,
+  opts: {
+    academicYear: string;
+    teacherName: string;
+    className: string;
+    sectionName: string;
+    subjectName: string;
+  },
+) {
+  const teacher = opts.teacherName.trim();
+  if (!teacher) return { ok: true as const };
+
+  const allocation = await prisma.academicTeacherAllocation.findFirst({
+    where: {
+      institutionId,
+      academicYear: opts.academicYear,
+      teacherName: { equals: teacher, mode: 'insensitive' },
+      className: opts.className,
+      subjectName: opts.subjectName,
+      OR: [
+        { sectionName: opts.sectionName },
+        { sectionName: '' },
+      ],
+    },
+  });
+
+  if (allocation) return { ok: true as const, allocation };
+
+  const subjectAlloc = await prisma.academicSubjectAllocation.findFirst({
+    where: {
+      institutionId,
+      academicYear: opts.academicYear,
+      teacherName: { equals: teacher, mode: 'insensitive' },
+      className: opts.className,
+      sectionName: opts.sectionName,
+      subject: { subjectName: opts.subjectName },
+    },
+    include: { subject: true },
+  });
+
+  if (subjectAlloc) return { ok: true as const, allocation: subjectAlloc };
+
+  return {
+    ok: false as const,
+    message: `${teacher} is not allocated to ${opts.className}-${opts.sectionName} · ${opts.subjectName} for ${opts.academicYear}. Update Teacher Allocation first.`,
+  };
+}

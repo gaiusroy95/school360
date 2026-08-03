@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { prisma } from './prisma.js';
+import { getAppCache, setAppCache } from './appCache.js';
 
 type SetupSections = Record<string, Record<string, unknown>>;
 
@@ -129,10 +130,15 @@ function maskCredential(ref: string) {
 }
 
 async function ensurePolicyConfig(institutionId: string) {
+  const cacheKey = `securityPolicy:${institutionId}`;
+  const cached = getAppCache<Awaited<ReturnType<typeof prisma.securityPolicyConfig.findUnique>>>(cacheKey);
+  if (cached) return cached;
+
   let row = await prisma.securityPolicyConfig.findUnique({ where: { institutionId } });
   if (!row) {
     row = await prisma.securityPolicyConfig.create({ data: { institutionId } });
   }
+  setAppCache(cacheKey, row, 60);
   return row;
 }
 

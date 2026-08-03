@@ -1,10 +1,24 @@
+import { lazy, Suspense, type ReactNode } from 'react';
 import { SubModuleView } from './shared/SubModuleView';
-import { AdminDashboardLiveView } from './admin/AdminDashboardLiveView';
-import { SystemOperationsLiveView } from './admin/SystemOperationsLiveView';
-import { SecurityBackupAuditLiveView } from './admin/SecurityBackupAuditLiveView';
-import { IntegrationsApiUpdatesLiveView } from './admin/IntegrationsApiUpdatesLiveView';
-import { UserGovernanceView } from './settings/UserGovernanceView';
-import { LicenseSupportLiveView } from './admin/LicenseSupportLiveView';
+
+const AdminDashboardLiveView = lazy(() =>
+  import('./admin/AdminDashboardLiveView').then((m) => ({ default: m.AdminDashboardLiveView })),
+);
+const SystemOperationsLiveView = lazy(() =>
+  import('./admin/SystemOperationsLiveView').then((m) => ({ default: m.SystemOperationsLiveView })),
+);
+const SecurityBackupAuditLiveView = lazy(() =>
+  import('./admin/SecurityBackupAuditLiveView').then((m) => ({ default: m.SecurityBackupAuditLiveView })),
+);
+const IntegrationsApiUpdatesLiveView = lazy(() =>
+  import('./admin/IntegrationsApiUpdatesLiveView').then((m) => ({ default: m.IntegrationsApiUpdatesLiveView })),
+);
+const UserGovernanceView = lazy(() =>
+  import('./settings/UserGovernanceView').then((m) => ({ default: m.UserGovernanceView })),
+);
+const LicenseSupportLiveView = lazy(() =>
+  import('./admin/LicenseSupportLiveView').then((m) => ({ default: m.LicenseSupportLiveView })),
+);
 
 const DATABASE_VIEWS = new Set(['Database Manager', 'Database Management']);
 const SERVER_VIEWS = new Set(['Server Monitor', 'Server & Performance']);
@@ -15,66 +29,74 @@ const SYSTEM_CONFIG_VIEWS = new Set(['System Configuration', 'System Settings'])
 const LICENSE_VIEWS = new Set(['License Management', 'License Manager']);
 const SUPPORT_VIEWS = new Set(['Support & Maintenance']);
 
+function wrap(node: ReactNode) {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[30vh] text-sm text-slate-400">Loading page…</div>}>
+      {node}
+    </Suspense>
+  );
+}
+
 export function SystemAdministrationCRM({ currentView = 'Admin Dashboard' }: { currentView?: string }) {
   if (currentView === 'Admin Dashboard') {
-    return <AdminDashboardLiveView />;
+    return wrap(<AdminDashboardLiveView />);
   }
 
   if (currentView === 'User & Access Control' || currentView === 'User Management') {
-    return <UserGovernanceView initialTab="users" />;
+    return wrap(<UserGovernanceView initialTab="users" />);
   }
 
   if (currentView === 'Role & Permission') {
-    return <UserGovernanceView initialTab="roles" />;
+    return wrap(<UserGovernanceView initialTab="roles" />);
   }
 
   if (SYSTEM_CONFIG_VIEWS.has(currentView)) {
-    return <SystemOperationsLiveView initialTab="environment" />;
+    return wrap(<SystemOperationsLiveView initialTab="environment" />);
   }
 
   if (DATABASE_VIEWS.has(currentView)) {
-    return <SystemOperationsLiveView initialTab="database" />;
+    return wrap(<SystemOperationsLiveView initialTab="database" />);
   }
 
   if (SERVER_VIEWS.has(currentView)) {
-    return <SystemOperationsLiveView initialTab="server" />;
+    return wrap(<SystemOperationsLiveView initialTab="server" />);
   }
 
   if (SECURITY_VIEWS.has(currentView)) {
-    return <SecurityBackupAuditLiveView initialTab="firewall" />;
+    return wrap(<SecurityBackupAuditLiveView initialTab="firewall" />);
   }
 
   if (BACKUP_VIEWS.has(currentView)) {
-    return <SecurityBackupAuditLiveView initialTab="backup" />;
+    return wrap(<SecurityBackupAuditLiveView initialTab="backup" />);
   }
 
   if (LOGS_VIEWS.has(currentView)) {
-    return <SecurityBackupAuditLiveView initialTab="forensics" />;
+    return wrap(<SecurityBackupAuditLiveView initialTab="forensics" />);
   }
 
   if (currentView === 'Email & SMS Gateway') {
-    return <IntegrationsApiUpdatesLiveView initialTab="gateways" />;
+    return wrap(<IntegrationsApiUpdatesLiveView initialTab="gateways" />);
   }
 
   if (currentView === 'API Management') {
-    return <IntegrationsApiUpdatesLiveView initialTab="api" />;
+    return wrap(<IntegrationsApiUpdatesLiveView initialTab="api" />);
   }
 
   if (currentView === 'System Updates') {
-    return <IntegrationsApiUpdatesLiveView initialTab="updates" />;
+    return wrap(<IntegrationsApiUpdatesLiveView initialTab="updates" />);
   }
 
   if (LICENSE_VIEWS.has(currentView)) {
-    return <LicenseSupportLiveView initialTab="license" />;
+    return wrap(<LicenseSupportLiveView initialTab="license" />);
   }
 
   if (SUPPORT_VIEWS.has(currentView)) {
-    return <LicenseSupportLiveView initialTab="support" />;
+    return wrap(<LicenseSupportLiveView initialTab="support" />);
   }
 
   if (currentView && currentView !== 'Admin Dashboard') {
     return <SubModuleView module="System Administration" title={currentView} />;
   }
 
-  return <AdminDashboardLiveView />;
+  return wrap(<AdminDashboardLiveView />);
 }

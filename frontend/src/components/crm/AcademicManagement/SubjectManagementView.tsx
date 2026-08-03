@@ -1,15 +1,22 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, Trash2, Eye, Pencil, Users, BookOpen, Calendar, TrendingUp, AlertTriangle, CheckCircle2, RefreshCw,
+  Download, Upload,
 } from 'lucide-react';
 import {
-  createAcademicSubject, deleteAcademicSubject, fetchAcademicMeta, fetchSubjectManagementDashboard,
-  syncAcademicSubjects, updateSyllabusChapter, type SubjectOffering, type SubjectManagementDashboard,
+  bulkUploadSubjectTeacherMappings, createAcademicSubject, deleteAcademicSubject, fetchAcademicMeta,
+  fetchSubjectManagementDashboard, syncAcademicSubjects, updateSyllabusChapter,
+  type AcademicTeachingStaffOption, type SubjectOffering, type SubjectManagementDashboard,
 } from '../../../lib/academicServices';
+import {
+  downloadSubjectTeacherTemplate, parseSubjectTeacherUploadFile,
+} from '../../../lib/subjectTeacherExcel';
 import {
   AcademicLoading, AcademicModal, AcademicPageHeader, AcademicPageShell,
   AcademicYearTermFilters, am,
 } from './AcademicManagementUi';
+
+const SUBJECT_TYPES = ['Core', 'Elective', 'Compulsory'] as const;
 
 const PROGRESS_STATUS: Record<string, { label: string; className: string }> = {
   ahead: { label: 'Ahead', className: 'bg-green-100 text-green-800' },
@@ -34,6 +41,9 @@ const EMPTY_TEACHER: TeacherRow = {
   className: '', sectionName: '',
   courseStartDate: '', courseCompletionDeadline: '', revisionDeadline: '',
 };
+
+const btnExcel =
+  'inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-semibold shadow-sm transition-colors disabled:opacity-60';
 
 function ProgressCompare({ current, ideal }: { current: number; ideal: number }) {
   return (
@@ -144,10 +154,15 @@ export function SubjectManagementView() {
   const [academicYear, setAcademicYear] = useState('2025-26');
   const [years, setYears] = useState<string[]>(['2025-26']);
   const [terms, setTerms] = useState<string[]>(['Term 1', 'Term 2']);
+  const [classes, setClasses] = useState<string[]>([]);
+  const [sectionsByClass, setSectionsByClass] = useState<Record<string, string[]>>({});
+  const [teachingStaff, setTeachingStaff] = useState<AcademicTeachingStaffOption[]>([]);
   const [message, setMessage] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [detailOffering, setDetailOffering] = useState<SubjectOffering | null>(null);
   const [teacherFilter, setTeacherFilter] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({
     subjectName: '', subjectCode: '', subjectType: 'Core', subjectGroup: 'General', isElective: false,
     teachers: [{ ...EMPTY_TEACHER }] as TeacherRow[],
@@ -159,6 +174,9 @@ export function SubjectManagementView() {
       const meta = await fetchAcademicMeta();
       setYears(meta.academicYears);
       setTerms(meta.terms);
+      setClasses(meta.classes || []);
+      setSectionsByClass(meta.sectionsByClass || {});
+      setTeachingStaff(meta.teachingStaff || []);
       const d = await fetchSubjectManagementDashboard(academicYear);
       setDashboard(d);
     } finally { setLoading(false); }
@@ -182,18 +200,68 @@ export function SubjectManagementView() {
     setForm((f) => ({ ...f, teachers: f.teachers.filter((_, i) => i !== idx) }));
   };
 
+  const selectTeacher = (idx: number, teacherName: string) => {
+    const staff = teachingStaff.find((t) => t.teacherName === teacherName);
+    updateTeacherRow(idx, {
+      teacherName,
+      teacherEmail: staff?.email || '',
+      teacherPhone: staff?.mobile || '',
+    });
+  };
+
   const handleSync = async () => {
     const res = await syncAcademicSubjects();
     const parts = [`${res.created} created`, `${res.updated ?? 0} updated`];
     if (res.skipped) parts.push(`${res.skipped} skipped`);
-    setMessage(`Synced from Institution Setup: ${parts.join(', ')}`);
-    if (res.errors?.length) setMessage((m) => `${m}. ${res.errors!.slice(0, 3).join('; ')}`);
+    if (res.totalRecords != null) parts.push(`${res.totalRecords} in setup`);
+    let msg = `Synced from Institution Setup: ${parts.join(', ')}`;
+    if (res.errors?.length) msg += `. ${res.errors.slice(0, 3).join('; ')}`;
+    if (res.warnings?.length && !res.errors?.length) msg += `. ${res.warnings.slice(0, 2).join('; ')}`;
+    setMessage(msg);
     void load();
   };
 
+  const handleBulkUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      const rows = await parseSubjectTeacherUploadFile(file);
+      if (!rows.length) {
+        setMessage('No valid rows found. Need subjectName, teacherName, className, and sectionName.');
+        return;
+      }
+      const res = await bulkUploadSubjectTeacherMappings({ academicYear, rows });
+      const parts = [
+        `${res.subjectsCreated} subject(s) created`,
+        `${res.allocationsCreated} assignment(s) created`,
+        `${res.allocationsUpdated} updated`,
+      ];
+      let msg = `Bulk upload: ${parts.join(', ')} from ${res.totalRows} row(s)`;
+      if (res.errors?.length) msg += `. Errors: ${res.errors.slice(0, 3).join('; ')}`;
+      setMessage(msg);
+      void load();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Bulk upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const saveSubject = async () => {
-    const teachers = form.teachers.filter((t) => t.teacherName && t.className);
-    await createAcademicSubject({ ...form, academicYear, teachers });
+    const teachers = form.teachers.filter((t) => t.teacherName && t.className && t.sectionName);
+    if (!form.subjectName.trim()) {
+      setMessage('Subject name is required');
+      return;
+    }
+    if (!teachers.length) {
+      setMessage('Add at least one teacher assignment with class and section');
+      return;
+    }
+    await createAcademicSubject({
+      ...form,
+      isElective: form.subjectType === 'Elective' || form.isElective,
+      academicYear,
+      teachers,
+    });
     setMessage(`Subject "${form.subjectName}" created with ${teachers.length} teacher assignment(s)`);
     setShowForm(false);
     setForm({ subjectName: '', subjectCode: '', subjectType: 'Core', subjectGroup: 'General', isElective: false, teachers: [{ ...EMPTY_TEACHER }] });
@@ -219,14 +287,36 @@ export function SubjectManagementView() {
         title="Subject Management"
         subtitle="Subjects with teacher assignments, course deadlines, syllabus revision schedule & progress tracking"
         actions={(
-          <>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => downloadSubjectTeacherTemplate()} className={btnExcel}>
+              <Download size={14} /> Excel Template
+            </button>
+            <button
+              type="button"
+              disabled={uploading}
+              onClick={() => fileRef.current?.click()}
+              className={btnExcel}
+            >
+              <Upload size={14} /> {uploading ? 'Uploading…' : 'Bulk Upload'}
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleBulkUpload(file);
+                e.target.value = '';
+              }}
+            />
             <button type="button" onClick={() => void handleSync()} className={am.btnSecondary}>
               <RefreshCw size={14} /> Sync from Setup
             </button>
             <button type="button" onClick={() => setShowForm(true)} className={am.btnPrimary}>
               <Plus size={14} /> Add Subject
             </button>
-          </>
+          </div>
         )}
       />
 
@@ -278,6 +368,44 @@ export function SubjectManagementView() {
           <input placeholder="Filter by teacher or subject…" value={teacherFilter} onChange={(e) => setTeacherFilter(e.target.value)} className={`${am.input} max-w-xs`} />
         </div>
 
+        {/* Subject master list from Institution Setup */}
+        <div className="mb-4">
+          <h3 className="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+            <BookOpen size={14} className="text-teal-600" />
+            Subjects Master
+            <span className="text-xs font-normal text-slate-400">
+              ({dashboard?.subjects.length ?? 0} synced from Institution Setup)
+            </span>
+          </h3>
+          {(dashboard?.subjects.length ?? 0) === 0 ? (
+            <div className={`${am.card} p-4 text-sm text-slate-500`}>
+              No subjects synced yet. Add subjects under Institution Setup → Subjects Setup, click Save Configuration, then Sync from Setup here.
+              You can also use Excel Template + Bulk Upload for teacher–subject mapping, or Add Subject manually.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {(dashboard?.subjects || []).map((s) => (
+                <div key={s.id} className={`${am.card} p-4`}>
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <h4 className="font-bold text-slate-800">{s.subjectName}</h4>
+                      <p className="text-xs text-slate-500">{s.subjectCode || 'No code'} · {s.subjectType}{s.subjectGroup ? ` · ${s.subjectGroup}` : ''}</p>
+                    </div>
+                    <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{s.offerings.length} classes</span>
+                  </div>
+                  <p className="text-xs text-slate-600 mb-2">
+                    Teachers: {s.teachers.length > 0 ? s.teachers.join(', ') : 'None assigned yet'}
+                  </p>
+                  {s.isElective && <span className="text-[10px] font-bold text-indigo-600 uppercase">Elective</span>}
+                  <ProgressCompare current={s.avgCurrentProgress} ideal={s.avgIdealProgress} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <h3 className="text-sm font-bold text-slate-700 mb-2">Class Offerings & Teacher Assignments</h3>
+
         {/* Subject offerings table */}
         <div className={am.tableWrap}>
           <table className="w-full">
@@ -293,7 +421,11 @@ export function SubjectManagementView() {
             </tr></thead>
             <tbody>
               {filteredOfferings.length === 0 ? (
-                <tr><td colSpan={8} className={`${am.td} text-center text-slate-400 py-8`}>No subject offerings. Add a subject with teacher assignments.</td></tr>
+                <tr><td colSpan={8} className={`${am.td} text-center text-slate-400 py-8`}>
+                  {(dashboard?.subjects.length ?? 0) > 0
+                    ? 'Subjects are synced. Use Add Subject or Bulk Upload to assign teachers and classes.'
+                    : 'No subject offerings. Sync from Setup, Bulk Upload, or add a subject with teacher assignments.'}
+                </td></tr>
               ) : filteredOfferings.map((o) => (
                 <tr key={o.id}>
                   <td className={am.td}>
@@ -334,35 +466,38 @@ export function SubjectManagementView() {
             </tbody>
           </table>
         </div>
-
-        {/* Subject summary cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
-          {(dashboard?.subjects || []).map((s) => (
-            <div key={s.id} className={`${am.card} p-4`}>
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                  <h4 className="font-bold text-slate-800">{s.subjectName}</h4>
-                  <p className="text-xs text-slate-500">{s.subjectCode} · {s.subjectType}</p>
-                </div>
-                <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{s.offerings.length} classes</span>
-              </div>
-              <p className="text-xs text-slate-600 mb-2">
-                Teachers: {s.teachers.length > 0 ? s.teachers.join(', ') : 'None assigned'}
-              </p>
-              <ProgressCompare current={s.avgCurrentProgress} ideal={s.avgIdealProgress} />
-            </div>
-          ))}
-        </div>
       </div>
 
       {/* Add Subject Modal */}
       <AcademicModal open={showForm} onClose={() => setShowForm(false)} title="Add Subject with Teachers" large>
         <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
           <div className="grid grid-cols-2 gap-3">
-            <input placeholder="Subject Name *" value={form.subjectName} onChange={(e) => setForm((f) => ({ ...f, subjectName: e.target.value }))} className={am.input} />
-            <input placeholder="Subject Code" value={form.subjectCode} onChange={(e) => setForm((f) => ({ ...f, subjectCode: e.target.value }))} className={am.input} />
-            <input placeholder="Type (Core/Elective)" value={form.subjectType} onChange={(e) => setForm((f) => ({ ...f, subjectType: e.target.value }))} className={am.input} />
-            <input placeholder="Group" value={form.subjectGroup} onChange={(e) => setForm((f) => ({ ...f, subjectGroup: e.target.value }))} className={am.input} />
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase">Subject Name *</label>
+              <input placeholder="Subject Name *" value={form.subjectName} onChange={(e) => setForm((f) => ({ ...f, subjectName: e.target.value }))} className={am.input} />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase">Subject Code</label>
+              <input placeholder="Subject Code" value={form.subjectCode} onChange={(e) => setForm((f) => ({ ...f, subjectCode: e.target.value }))} className={am.input} />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase">Type *</label>
+              <select
+                value={form.subjectType}
+                onChange={(e) => setForm((f) => ({
+                  ...f,
+                  subjectType: e.target.value,
+                  isElective: e.target.value === 'Elective',
+                }))}
+                className={am.input}
+              >
+                {SUBJECT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase">Group</label>
+              <input placeholder="Group (e.g. General)" value={form.subjectGroup} onChange={(e) => setForm((f) => ({ ...f, subjectGroup: e.target.value }))} className={am.input} />
+            </div>
           </div>
 
           <div className="border-t pt-3">
@@ -370,26 +505,92 @@ export function SubjectManagementView() {
               <p className="text-sm font-bold text-slate-700">Teacher Assignments (a teacher may teach multiple subjects)</p>
               <button type="button" onClick={addTeacherRow} className={am.btnSecondary}><Plus size={12} /> Add Teacher</button>
             </div>
-            {form.teachers.map((t, idx) => (
-              <div key={idx} className="border border-slate-200 rounded-lg p-3 mb-3 space-y-2 bg-slate-50/50">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold text-slate-500">Assignment {idx + 1}</span>
-                  {form.teachers.length > 1 && (
-                    <button type="button" onClick={() => removeTeacherRow(idx)} className="text-red-500 text-xs">Remove</button>
-                  )}
+            {teachingStaff.length === 0 && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+                No teaching staff found in HR. Add teaching employees in HR → Employee Directory (with subject specialization) so they appear here.
+              </p>
+            )}
+            {form.teachers.map((t, idx) => {
+              const sectionOptions = t.className ? (sectionsByClass[t.className] || []) : [];
+              return (
+                <div key={idx} className="border border-slate-200 rounded-lg p-3 mb-3 space-y-2 bg-slate-50/50">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-500">Assignment {idx + 1}</span>
+                    {form.teachers.length > 1 && (
+                      <button type="button" onClick={() => removeTeacherRow(idx)} className="text-red-500 text-xs">Remove</button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Teacher Name *</label>
+                      <select
+                        value={t.teacherName}
+                        onChange={(e) => selectTeacher(idx, e.target.value)}
+                        className={am.input}
+                      >
+                        <option value="">Select teacher…</option>
+                        {teachingStaff.map((s) => (
+                          <option key={s.id} value={s.teacherName}>{s.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Teacher Email</label>
+                      <input
+                        placeholder="Auto from HR"
+                        value={t.teacherEmail}
+                        readOnly
+                        className={`${am.input} bg-slate-100 text-slate-600`}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Teacher Phone</label>
+                      <input
+                        placeholder="Auto from HR"
+                        value={t.teacherPhone}
+                        readOnly
+                        className={`${am.input} bg-slate-100 text-slate-600`}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Class *</label>
+                      <select
+                        value={t.className}
+                        onChange={(e) => updateTeacherRow(idx, { className: e.target.value, sectionName: '' })}
+                        className={am.input}
+                      >
+                        <option value="">Select class…</option>
+                        {classes.map((c) => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Section *</label>
+                      <select
+                        value={t.sectionName}
+                        onChange={(e) => updateTeacherRow(idx, { sectionName: e.target.value })}
+                        className={am.input}
+                        disabled={!t.className}
+                      >
+                        <option value="">Select section…</option>
+                        {sectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Course Start</label>
+                      <input type="date" value={t.courseStartDate} onChange={(e) => updateTeacherRow(idx, { courseStartDate: e.target.value })} className={am.input} />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Completion Deadline</label>
+                      <input type="date" value={t.courseCompletionDeadline} onChange={(e) => updateTeacherRow(idx, { courseCompletionDeadline: e.target.value })} className={am.input} />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Revision Deadline</label>
+                      <input type="date" value={t.revisionDeadline} onChange={(e) => updateTeacherRow(idx, { revisionDeadline: e.target.value })} className={am.input} />
+                    </div>
+                  </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <input placeholder="Teacher Name *" value={t.teacherName} onChange={(e) => updateTeacherRow(idx, { teacherName: e.target.value })} className={am.input} />
-                  <input placeholder="Teacher Email" value={t.teacherEmail} onChange={(e) => updateTeacherRow(idx, { teacherEmail: e.target.value })} className={am.input} />
-                  <input placeholder="Teacher Phone" value={t.teacherPhone} onChange={(e) => updateTeacherRow(idx, { teacherPhone: e.target.value })} className={am.input} />
-                  <input placeholder="Class *" value={t.className} onChange={(e) => updateTeacherRow(idx, { className: e.target.value })} className={am.input} />
-                  <input placeholder="Section *" value={t.sectionName} onChange={(e) => updateTeacherRow(idx, { sectionName: e.target.value })} className={am.input} />
-                  <input type="date" placeholder="Course Start" value={t.courseStartDate} onChange={(e) => updateTeacherRow(idx, { courseStartDate: e.target.value })} className={am.input} />
-                  <input type="date" placeholder="Course Completion Deadline" value={t.courseCompletionDeadline} onChange={(e) => updateTeacherRow(idx, { courseCompletionDeadline: e.target.value })} className={am.input} />
-                  <input type="date" placeholder="Revision Deadline" value={t.revisionDeadline} onChange={(e) => updateTeacherRow(idx, { revisionDeadline: e.target.value })} className={am.input} />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
         <div className="flex justify-end gap-2 pt-4 border-t mt-3">

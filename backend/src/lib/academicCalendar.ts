@@ -2,12 +2,15 @@ import type {
   AcademicCalendarEvent,
   AcademicBoardCalendarUpload,
   AcademicEventType,
-  AcademicCalendarUploadStatus,
 } from '@prisma/client';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { prisma } from './prisma.js';
 import { extractTextFromPdfBase64 } from './pdfText.js';
-import { getGeminiApiKey, parseJsonFromModel } from './geminiQuestions.js';
+import {
+  formatGeminiError,
+  parseJsonFromModel,
+  runGeminiJsonRequest,
+  runGeminiVisionJsonRequest,
+} from './geminiQuestions.js';
 import { nextAcademicRecordId, EVENT_TYPE_UI } from './academicManagement.js';
 
 export const BOARD_OPTIONS = ['CBSE', 'ICSE', 'State Board', 'IB', 'Cambridge', 'NIOS', 'Other'] as const;
@@ -20,57 +23,121 @@ export type OcrCalendarEvent = {
   description?: string;
 };
 
-const CALENDAR_OCR_PROMPT = (boardName: string, academicYear: string) => `
-You are an expert at reading academic school calendars from education boards.
+const CALENDAR_OCR_PROMPT = (boardName: string, academicYear: string) => {
+  const { start, end } = academicYearParts(academicYear);
+  return `
+You are an expert at reading Indian school board academic calendars AND government education circulars / notifications.
 
-Extract ALL dated events from this ${boardName} academic calendar for academic year ${academicYear}.
-Include: holidays, vacations, exam dates, PTM dates, term starts/ends, festivals, activities, board exams, result days.
+Document context: ${boardName} · Academic year ${academicYear} (approx ${start}-04-01 to ${end}-03-31).
 
-For each event return:
-- title: short event name
-- eventDate: ISO date YYYY-MM-DD (use ${academicYear.split('-')[0] || '2025'} as year when only month/day given)
-- endDate: ISO date if multi-day event, else null
-- eventType: one of HOLIDAY, EXAM, PTM, ACTIVITY, OTHER
-- description: brief note if any
+Your job:
+1. OCR / read the full document (calendar table, circular text, schedules, annexures).
+2. Propose concrete academic calendar EVENTS with dates so the school can import them.
+
+Extract ALL dated items, including:
+- Holidays, vacations, festivals
+- Exam / assessment windows (unit tests, mid-term, board exams, practicals)
+- PTM / parent meeting dates
+- Term / session start & end
+- Admission / registration schedules mentioned
+- Teacher training / workshop days
+- Result declaration dates
+- Any dated directions in a govt circular that affect the school calendar
+
+Rules for dates:
+- eventDate / endDate must be ISO YYYY-MM-DD
+- If only day+month given, pick the correct year within ${academicYear} (Apr–Dec → ${start}, Jan–Mar → ${end})
+- Multi-day ranges → set endDate
+- Skip undated generic instructions
+
+eventType must be one of: HOLIDAY, EXAM, PTM, ACTIVITY, OTHER
 
 Return JSON only:
 {
   "boardName": "${boardName}",
   "academicYear": "${academicYear}",
-  "rawText": "full transcription of calendar text",
+  "documentSummary": "1-2 sentence summary of the circular/calendar",
+  "rawText": "key transcribed text (abbreviated if long)",
   "events": [
-    { "title": "...", "eventDate": "2025-04-01", "endDate": null, "eventType": "HOLIDAY", "description": "" }
+    { "title": "...", "eventDate": "${start}-04-01", "endDate": null, "eventType": "HOLIDAY", "description": "" }
   ]
 }
 `;
+};
+
+function academicYearParts(academicYear: string) {
+  const start = Number(academicYear.split('-')[0]) || new Date().getFullYear();
+  const endShort = academicYear.split('-')[1];
+  const end = endShort ? Number(`${String(start).slice(0, 2)}${endShort}`) : start + 1;
+  return { start, end: Number.isFinite(end) ? end : start + 1 };
+}
+
+function coerceIsoDate(raw: string, academicYear: string): string | null {
+  const s = raw.trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const d = new Date(s.slice(0, 10));
+    return Number.isNaN(d.getTime()) ? null : s.slice(0, 10);
+  }
+
+  const { start, end } = academicYearParts(academicYear);
+  const parsed = new Date(s);
+  if (!Number.isNaN(parsed.getTime())) {
+    let y = parsed.getFullYear();
+    const m = parsed.getMonth(); // 0-based
+    if (y < start - 1 || y > end + 1) {
+      y = m >= 3 ? start : end; // Apr–Dec → start year, Jan–Mar → end year
+    }
+    const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+    const dd = String(parsed.getDate()).padStart(2, '0');
+    return `${y}-${mm}-${dd}`;
+  }
+
+  const dmY = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  if (dmY) {
+    let y = Number(dmY[3].length === 2 ? `20${dmY[3]}` : dmY[3]);
+    const day = Number(dmY[1]);
+    const month = Number(dmY[2]);
+    if (y < start - 1 || y > end + 1) y = month >= 4 ? start : end;
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    return `${y}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+
+  return null;
+}
 
 function normalizeEventType(val: unknown): AcademicEventType {
   const s = String(val || 'OTHER').toUpperCase();
   if (['HOLIDAY', 'EXAM', 'PTM', 'ACTIVITY', 'OTHER'].includes(s)) return s as AcademicEventType;
-  if (s.includes('HOLIDAY') || s.includes('VACATION')) return 'HOLIDAY';
-  if (s.includes('EXAM') || s.includes('TEST')) return 'EXAM';
+  if (s.includes('HOLIDAY') || s.includes('VACATION') || s.includes('FESTIVAL')) return 'HOLIDAY';
+  if (s.includes('EXAM') || s.includes('TEST') || s.includes('ASSESSMENT') || s.includes('RESULT')) return 'EXAM';
   if (s.includes('PTM') || s.includes('PARENT')) return 'PTM';
-  if (s.includes('ACTIVITY') || s.includes('SPORTS') || s.includes('EVENT')) return 'ACTIVITY';
+  if (s.includes('ACTIVITY') || s.includes('SPORTS') || s.includes('EVENT') || s.includes('TRAINING')) return 'ACTIVITY';
   return 'OTHER';
 }
 
-function normalizeOcrEvents(items: unknown[]): OcrCalendarEvent[] {
+function normalizeOcrEvents(items: unknown[], academicYear: string): OcrCalendarEvent[] {
   const out: OcrCalendarEvent[] = [];
+  const seen = new Set<string>();
   for (const item of items) {
     if (!item || typeof item !== 'object') continue;
     const o = item as Record<string, unknown>;
-    const title = String(o.title || '').trim();
-    const eventDate = String(o.eventDate || '').trim();
-    if (!title || !eventDate || Number.isNaN(new Date(eventDate).getTime())) continue;
+    const title = String(o.title || o.eventName || o.name || '').trim();
+    const eventDate = coerceIsoDate(String(o.eventDate || o.date || o.startDate || ''), academicYear);
+    if (!title || !eventDate) continue;
+    const endRaw = o.endDate || o.toDate || o.end;
+    const endDate = endRaw ? coerceIsoDate(String(endRaw), academicYear) : null;
+    const key = `${eventDate}|${title.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     out.push({
       title,
-      eventDate: eventDate.slice(0, 10),
-      endDate: o.endDate ? String(o.endDate).slice(0, 10) : null,
-      eventType: normalizeEventType(o.eventType),
-      description: String(o.description || '').trim(),
+      eventDate,
+      endDate,
+      eventType: normalizeEventType(o.eventType || o.type || o.category),
+      description: String(o.description || o.note || o.remarks || '').trim(),
     });
   }
-  return out;
+  return out.sort((a, b) => a.eventDate.localeCompare(b.eventDate));
 }
 
 async function ocrCalendarWithGemini(
@@ -78,50 +145,67 @@ async function ocrCalendarWithGemini(
   base64Data: string,
   boardName: string,
   academicYear: string,
-): Promise<{ rawText: string; events: OcrCalendarEvent[] }> {
-  const genAI = new GoogleGenerativeAI(getGeminiApiKey());
-  const model = genAI.getGenerativeModel({
-    model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
-    generationConfig: { temperature: 0.1, responseMimeType: 'application/json' },
-  });
+): Promise<{ rawText: string; events: OcrCalendarEvent[]; documentSummary?: string }> {
+  try {
+    const text = await runGeminiVisionJsonRequest(0.1, async (model) => {
+      const result = await model.generateContent([
+        { inlineData: { mimeType, data: base64Data } },
+        { text: CALENDAR_OCR_PROMPT(boardName, academicYear) },
+      ]);
+      return result.response.text();
+    });
 
-  const result = await model.generateContent([
-    { inlineData: { mimeType, data: base64Data } },
-    { text: CALENDAR_OCR_PROMPT(boardName, academicYear) },
-  ]);
+    const parsed = parseJsonFromModel(text) as {
+      rawText?: string;
+      events?: unknown[];
+      documentSummary?: string;
+    };
+    const events = normalizeOcrEvents(parsed.events || [], academicYear);
+    if (events.length === 0) {
+      throw new Error('No dated calendar events could be proposed from this document. Try a clearer PDF/circular.');
+    }
 
-  const text = result.response.text();
-  if (!text) throw new Error('OCR returned empty response');
-
-  const parsed = parseJsonFromModel(text) as { rawText?: string; events?: unknown[] };
-  const events = normalizeOcrEvents(parsed.events || []);
-  if (events.length === 0) throw new Error('No calendar events could be extracted. Try a clearer PDF.');
-
-  return { rawText: String(parsed.rawText || '').trim(), events };
+    return {
+      rawText: String(parsed.rawText || parsed.documentSummary || '').trim(),
+      events,
+      documentSummary: parsed.documentSummary ? String(parsed.documentSummary) : undefined,
+    };
+  } catch (err) {
+    throw formatGeminiError(err);
+  }
 }
 
 async function ocrCalendarFromText(
-  text: string,
+  sourceText: string,
   boardName: string,
   academicYear: string,
-): Promise<{ rawText: string; events: OcrCalendarEvent[] }> {
-  const genAI = new GoogleGenerativeAI(getGeminiApiKey());
-  const model = genAI.getGenerativeModel({
-    model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
-    generationConfig: { temperature: 0.1, responseMimeType: 'application/json' },
-  });
+): Promise<{ rawText: string; events: OcrCalendarEvent[]; documentSummary?: string }> {
+  try {
+    const responseText = await runGeminiJsonRequest(0.1, async (model) => {
+      const result = await model.generateContent(
+        `${CALENDAR_OCR_PROMPT(boardName, academicYear)}\n\nEXTRACTED DOCUMENT TEXT:\n${sourceText.slice(0, 120_000)}`,
+      );
+      return result.response.text();
+    });
 
-  const result = await model.generateContent(
-    `${CALENDAR_OCR_PROMPT(boardName, academicYear)}\n\nEXTRACTED PDF TEXT:\n${text.slice(0, 100_000)}`,
-  );
-  const responseText = result.response.text();
-  if (!responseText) throw new Error('OCR returned empty response');
+    const parsed = parseJsonFromModel(responseText) as {
+      rawText?: string;
+      events?: unknown[];
+      documentSummary?: string;
+    };
+    const events = normalizeOcrEvents(parsed.events || [], academicYear);
+    if (events.length === 0) {
+      throw new Error('No dated events found in the circular/calendar text.');
+    }
 
-  const parsed = parseJsonFromModel(responseText) as { rawText?: string; events?: unknown[] };
-  const events = normalizeOcrEvents(parsed.events || []);
-  if (events.length === 0) throw new Error('No calendar events found in PDF text.');
-
-  return { rawText: String(parsed.rawText || text).trim(), events };
+    return {
+      rawText: String(parsed.rawText || sourceText).trim(),
+      events,
+      documentSummary: parsed.documentSummary ? String(parsed.documentSummary) : undefined,
+    };
+  } catch (err) {
+    throw formatGeminiError(err);
+  }
 }
 
 export async function scanBoardCalendarPdf(
@@ -132,25 +216,43 @@ export async function scanBoardCalendarPdf(
   mimeType = 'application/pdf',
 ) {
   const raw = fileData.includes(',') ? fileData.split(',')[1] : fileData;
+  if (!raw || raw.length < 32) {
+    throw new Error('Uploaded file data is empty or corrupted. Please re-select the PDF/circular.');
+  }
+
+  // ~20MB binary ≈ ~27MB base64 — keep a hard guard aligned with express 30mb JSON limit
+  const approxBytes = Math.floor((raw.length * 3) / 4);
+  if (approxBytes > 20 * 1024 * 1024) {
+    throw new Error('File is larger than 20 MB. Compress the PDF or upload fewer pages.');
+  }
+
   const buf = Buffer.from(raw, 'base64');
+  let ocrResult: { rawText: string; events: OcrCalendarEvent[]; documentSummary?: string };
 
-  let ocrResult: { rawText: string; events: OcrCalendarEvent[] };
-
-  if (mimeType.includes('pdf')) {
+  if (mimeType.includes('pdf') || fileName.toLowerCase().endsWith('.pdf')) {
     try {
       const { text } = await extractTextFromPdfBase64(raw);
-      if (text.length > 50) {
-        ocrResult = await ocrCalendarFromText(text, boardName, academicYear);
+      if (text.length > 80) {
+        try {
+          ocrResult = await ocrCalendarFromText(text, boardName, academicYear);
+        } catch {
+          // Fallback to vision OCR for scanned/govt circular PDFs with weak text layer
+          ocrResult = await ocrCalendarWithGemini('application/pdf', raw, boardName, academicYear);
+        }
       } else {
         ocrResult = await ocrCalendarWithGemini('application/pdf', raw, boardName, academicYear);
       }
-    } catch {
-      ocrResult = await ocrCalendarWithGemini('application/pdf', raw, boardName, academicYear);
+    } catch (firstErr) {
+      try {
+        ocrResult = await ocrCalendarWithGemini('application/pdf', raw, boardName, academicYear);
+      } catch (secondErr) {
+        throw formatGeminiError(secondErr || firstErr);
+      }
     }
   } else if (mimeType.startsWith('image/')) {
     ocrResult = await ocrCalendarWithGemini(mimeType, raw, boardName, academicYear);
   } else {
-    throw new Error('Unsupported file type. Upload PDF or image (JPG/PNG).');
+    throw new Error('Unsupported file type. Upload a PDF or image (JPG/PNG) of the board calendar / govt circular.');
   }
 
   return {
@@ -159,7 +261,9 @@ export async function scanBoardCalendarPdf(
     fileName,
     fileSizeBytes: buf.length,
     mimeType,
-    ocrRawText: ocrResult.rawText,
+    ocrRawText: ocrResult.documentSummary
+      ? `${ocrResult.documentSummary}\n\n${ocrResult.rawText}`.trim()
+      : ocrResult.rawText,
     previewEvents: ocrResult.events,
     eventCount: ocrResult.events.length,
   };
@@ -270,7 +374,7 @@ export async function confirmCalendarUpload(
 
   const events = opts?.events?.length
     ? opts.events
-    : normalizeOcrEvents((upload.previewEvents as unknown[]) || []);
+    : normalizeOcrEvents((upload.previewEvents as unknown[]) || [], upload.academicYear);
 
   if (opts?.replaceExisting) {
     await prisma.academicCalendarEvent.deleteMany({

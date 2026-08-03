@@ -1,11 +1,24 @@
 import { api } from './api';
 
+export type AcademicTeachingStaffOption = {
+  id: string;
+  employeeCode: string;
+  teacherName: string;
+  email: string;
+  mobile: string;
+  department: string;
+  designation: string;
+  subjectSpecialization: string;
+  label: string;
+};
+
 export type AcademicMeta = {
   defaultAcademicYear: string;
   academicYears: string[];
   classes: string[];
   sectionsByClass: Record<string, string[]>;
   terms: string[];
+  teachingStaff?: AcademicTeachingStaffOption[];
 };
 
 export type AcademicDashboard = {
@@ -218,6 +231,15 @@ export const PERIOD_TYPE_LABELS: Record<(typeof PERIOD_TYPES)[number], string> =
   EVENT: 'Event',
 };
 
+export type HomeworkAttachment = {
+  id: string;
+  type: 'pdf' | 'image' | 'video' | 'link';
+  title: string;
+  url: string;
+  fileName?: string;
+  mimeType?: string;
+};
+
 export type Homework = {
   id: string;
   recordId: string;
@@ -240,6 +262,7 @@ export type Homework = {
   sharedAt: string | null;
   publishedAt: string | null;
   isPublished: boolean;
+  attachments?: HomeworkAttachment[];
 };
 
 export type HomeworkDashboardRow = {
@@ -318,7 +341,14 @@ export async function syncAcademicClasses(academicYear?: string) {
 }
 
 export async function syncAcademicSubjects() {
-  return api<{ created: number; updated: number; skipped?: number; errors?: string[] }>('/api/academic/sync-subjects', {
+  return api<{
+    created: number;
+    updated: number;
+    skipped?: number;
+    errors?: string[];
+    warnings?: string[];
+    totalRecords?: number;
+  }>('/api/academic/sync-subjects', {
     method: 'POST',
     body: JSON.stringify({}),
   });
@@ -375,6 +405,35 @@ export async function createAcademicSubject(payload: {
   );
 }
 
+export async function bulkUploadSubjectTeacherMappings(payload: {
+  academicYear: string;
+  rows: {
+    subjectName: string;
+    subjectCode?: string;
+    subjectType?: string;
+    subjectGroup?: string;
+    teacherName: string;
+    teacherEmail?: string;
+    teacherPhone?: string;
+    className: string;
+    sectionName: string;
+    courseStartDate?: string;
+    courseCompletionDeadline?: string;
+    revisionDeadline?: string;
+  }[];
+}) {
+  return api<{
+    subjectsCreated: number;
+    allocationsCreated: number;
+    allocationsUpdated: number;
+    errors: string[];
+    totalRows: number;
+  }>('/api/academic/subjects/bulk', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function deleteAcademicSubject(id: string) {
   return api<{ ok: boolean }>(`/api/academic/subjects/${id}`, { method: 'DELETE' });
 }
@@ -414,6 +473,13 @@ export async function updateTimetableSlot(id: string, payload: Record<string, un
 
 export async function deleteTimetableSlot(id: string) {
   return api<{ ok: boolean }>(`/api/academic/timetable/${id}`, { method: 'DELETE' });
+}
+
+export async function bulkDeleteTimetableSlots(ids: string[]) {
+  return api<{ deleted: number }>('/api/academic/timetable/bulk-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  });
 }
 
 export async function bulkUploadTimetable(payload: {
@@ -469,6 +535,17 @@ export async function createLessonPlan(payload: Record<string, unknown>) {
   return api<{ record: LessonPlan }>('/api/academic/lesson-plans', { method: 'POST', body: JSON.stringify(payload) });
 }
 
+export async function bulkUploadLessonPlans(payload: {
+  academicYear?: string;
+  share?: boolean;
+  plans: Record<string, unknown>[];
+}) {
+  return api<{ created: number; classTestsCreated: number; failed: number; errors: string[]; total: number }>(
+    '/api/academic/lesson-plans/bulk',
+    { method: 'POST', body: JSON.stringify(payload) },
+  );
+}
+
 export async function updateLessonPlan(id: string, payload: Record<string, unknown>) {
   return api<{ record: LessonPlan }>(`/api/academic/lesson-plans/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
 }
@@ -520,6 +597,18 @@ export async function fetchMobileHomework(studentId: string, params?: { date?: s
 
 export async function createHomework(payload: Record<string, unknown>) {
   return api<{ record: Homework }>('/api/academic/homework', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export async function uploadHomeworkAttachment(payload: {
+  fileName: string;
+  mimeType: string;
+  dataBase64: string;
+  title?: string;
+}) {
+  return api<{ attachment: HomeworkAttachment }>('/api/academic/homework/uploads', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function updateHomework(id: string, payload: Record<string, unknown>) {

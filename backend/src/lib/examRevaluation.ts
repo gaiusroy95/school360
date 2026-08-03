@@ -4,9 +4,11 @@ import {
   ExamResultBatchStatus,
   ExamRevaluationRequestType,
   ExamRevaluationStatus,
+  FeeDueStatus,
 } from '@prisma/client';
 import { prisma } from './prisma.js';
 import { getInstitutionFilterMeta } from './students.js';
+import { isRazorpayConfigured, createRazorpayOrder } from './razorpay.js';
 
 const GRACE_PERIOD_DAYS = 30;
 
@@ -89,6 +91,7 @@ function serializeRequest(r: {
   feeReceiptNumber: string;
   feePaymentMode: string;
   feePaidAt: Date | null;
+  feeDueId?: string | null;
   gracePeriodEndsAt: Date;
   resultPublishedAt: Date | null;
   requestedAt: Date;
@@ -129,6 +132,7 @@ function serializeRequest(r: {
     feeReceiptNumber: r.feeReceiptNumber,
     feePaymentMode: r.feePaymentMode,
     feePaidAt: r.feePaidAt?.toISOString() ?? null,
+    feeDueId: r.feeDueId ?? null,
     gracePeriodEndsAt: r.gracePeriodEndsAt.toISOString(),
     resultPublishedAt: r.resultPublishedAt?.toISOString() ?? null,
     withinGracePeriod: withinGrace,
@@ -168,6 +172,12 @@ function serializeBackPaper(b: {
   newMarks: number | null;
   newMaxMarks: number | null;
   newGrade: string;
+  feeAmount?: number;
+  feePaid?: boolean;
+  feeReceiptNumber?: string;
+  feePaymentMode?: string;
+  feePaidAt?: Date | null;
+  feeDueId?: string | null;
   marksEnteredAt: Date | null;
   marksEnteredBy: string;
   publishedAt: Date | null;
@@ -175,6 +185,9 @@ function serializeBackPaper(b: {
   createdBy: string;
   createdAt: Date;
 }) {
+  const feeAmount = b.feeAmount ?? 0;
+  const feePaid = Boolean(b.feePaid);
+  const feeCleared = feeAmount <= 0 || feePaid;
   return {
     id: b.id,
     recordId: b.recordId,
@@ -196,15 +209,52 @@ function serializeBackPaper(b: {
     newMarks: b.newMarks,
     newMaxMarks: b.newMaxMarks,
     newGrade: b.newGrade,
+    feeAmount,
+    feePaid,
+    feeReceiptNumber: b.feeReceiptNumber || '',
+    feePaymentMode: b.feePaymentMode || '',
+    feePaidAt: b.feePaidAt?.toISOString() ?? null,
+    feeDueId: b.feeDueId ?? null,
     marksEnteredAt: b.marksEnteredAt?.toISOString() ?? null,
     marksEnteredBy: b.marksEnteredBy,
     publishedAt: b.publishedAt?.toISOString() ?? null,
     remarks: b.remarks,
     createdBy: b.createdBy,
     createdAt: b.createdAt.toISOString(),
-    canEnterMarks: b.status === ExamBackPaperStatus.CREATED || b.status === ExamBackPaperStatus.MARKS_ENTRY,
+    canPayFee: !feePaid && feeAmount > 0 && b.status !== ExamBackPaperStatus.PUBLISHED,
+    canEnterMarks:
+      feeCleared
+      && (b.status === ExamBackPaperStatus.CREATED || b.status === ExamBackPaperStatus.MARKS_ENTRY),
     canPublish: b.status === ExamBackPaperStatus.COMPLETED,
   };
+}
+
+async function createLinkedFeeDue(opts: {
+  institutionId: string;
+  studentId: string;
+  admissionNumber: string;
+  academicYear: string;
+  title: string;
+  amount: number;
+  remarks: string;
+}) {
+  if (opts.amount <= 0) return null;
+  const dueDate = new Date();
+  dueDate.setUTCDate(dueDate.getUTCDate() + 7);
+  return prisma.feeDue.create({
+    data: {
+      institutionId: opts.institutionId,
+      studentId: opts.studentId,
+      admissionNumber: opts.admissionNumber,
+      academicYear: opts.academicYear,
+      title: opts.title,
+      feeHead: 'examinationFee',
+      amount: opts.amount,
+      dueDate,
+      status: FeeDueStatus.PENDING,
+      remarks: opts.remarks,
+    },
+  });
 }
 
 export async function getRevaluationMeta(institutionId: string) {
@@ -240,10 +290,13 @@ export async function getRevaluationMeta(institutionId: string) {
     config: {
       revaluationFee: config.revaluationFee,
       recheckFee: config.recheckFee,
+      backPaperFee: (config as { backPaperFee?: number }).backPaperFee ?? 400,
       gracePeriodDays: config.gracePeriodDays,
       passingPercent: config.passingPercent,
     },
     summary: { received, underReview, approved, rejected, published, backPapers },
+    mobileSync: true,
+    paymentsEnabled: isRazorpayConfigured(),
   };
 }
 
@@ -442,12 +495,29 @@ export async function createRevaluationRequest(
     },
   });
 
+  const feeDue = await createLinkedFeeDue({
+    institutionId,
+    studentId: result.studentId,
+    admissionNumber: result.admissionNumber,
+    academicYear: result.batch.academicYear,
+    title: `${data.requestType === ExamRevaluationRequestType.RECHECK ? 'Recheck' : 'Revaluation'} fee — ${data.subjectName}`,
+    amount: feeAmount,
+    remarks: `REVAL:${request.id}`,
+  });
+
+  const withDue = feeDue
+    ? await prisma.examRevaluationRequest.update({
+      where: { id: request.id },
+      data: { feeDueId: feeDue.id },
+    })
+    : request;
+
   await logAudit(institutionId, {
     entityType: 'REVALUATION_REQUEST',
     entityId: request.id,
     action: 'CREATED',
     actor,
-    details: `${data.requestType} request for ${data.subjectName} — fee ₹${feeAmount}`,
+    details: `${data.requestType} request for ${data.subjectName} — fee ₹${feeAmount}${feeDue ? ` · FeeDue ${feeDue.id}` : ''}`,
     batchId: result.batchId,
   });
 
@@ -456,7 +526,13 @@ export async function createRevaluationRequest(
     data: { revaluationReceived: { increment: 1 } },
   });
 
-  return { request: serializeRequest(request), message: 'Revaluation request created — fee payment required' };
+  return {
+    request: serializeRequest(withDue),
+    feeDueId: feeDue?.id ?? null,
+    message: feeDue
+      ? 'Request created — pay fee on mobile app (Fees / Revaluation) or record payment here'
+      : 'Revaluation request created — fee payment required',
+  };
 }
 
 export async function recordRevaluationFeePayment(
@@ -483,6 +559,13 @@ export async function recordRevaluationFeePayment(
       status: ExamRevaluationStatus.FEE_PAID,
     },
   });
+
+  if (request.feeDueId) {
+    await prisma.feeDue.updateMany({
+      where: { id: request.feeDueId, institutionId, status: { not: FeeDueStatus.PAID } },
+      data: { status: FeeDueStatus.PAID },
+    });
+  }
 
   await logAudit(institutionId, {
     entityType: 'REVALUATION_REQUEST',
@@ -732,7 +815,10 @@ export async function getFailedStudentsForBackPaper(
     }
   }
 
-  return { failed };
+  return { failed: failed.map((f) => ({
+    ...f,
+    backPaperFee: (config as { backPaperFee?: number }).backPaperFee ?? 400,
+  })) };
 }
 
 export async function createBackPaperExam(
@@ -757,6 +843,7 @@ export async function createBackPaperExam(
   if (!subject) throw new Error('Subject not found');
 
   const recordId = await nextBackPaperRecordId(institutionId);
+  const feeAmount = (config as { backPaperFee?: number }).backPaperFee ?? 400;
   const exam = await prisma.examBackPaperExam.create({
     data: {
       institutionId,
@@ -776,21 +863,46 @@ export async function createBackPaperExam(
       originalGrade: subject.grade,
       passingMarks: Math.ceil((config.passingPercent / 100) * subject.max),
       examDate: data.examDate ? new Date(data.examDate) : null,
+      feeAmount,
+      feePaid: feeAmount <= 0,
       remarks: data.remarks?.trim() || '',
       createdBy: actor,
     },
   });
+
+  const feeDue = await createLinkedFeeDue({
+    institutionId,
+    studentId: result.studentId,
+    admissionNumber: result.admissionNumber,
+    academicYear: result.batch.academicYear,
+    title: `Back paper fee — ${data.subjectName}`,
+    amount: feeAmount,
+    remarks: `BKP:${exam.id}`,
+  });
+
+  const withDue = feeDue
+    ? await prisma.examBackPaperExam.update({
+      where: { id: exam.id },
+      data: { feeDueId: feeDue.id },
+    })
+    : exam;
 
   await logAudit(institutionId, {
     entityType: 'BACK_PAPER_EXAM',
     entityId: exam.id,
     action: 'CREATED',
     actor,
-    details: `Back paper exam for ${data.subjectName} — ${result.studentName}`,
+    details: `Back paper exam for ${data.subjectName} — ${result.studentName} · fee ₹${feeAmount}`,
     batchId: result.batchId,
   });
 
-  return { exam: serializeBackPaper(exam), message: 'Back paper exam created' };
+  return {
+    exam: serializeBackPaper(withDue),
+    feeDueId: feeDue?.id ?? null,
+    message: feeAmount > 0
+      ? `Back paper created — pay ₹${feeAmount} fee on mobile or record payment here before marks entry`
+      : 'Back paper exam created',
+  };
 }
 
 export async function enterBackPaperMarks(
@@ -803,6 +915,11 @@ export async function enterBackPaperMarks(
   if (!exam) throw new Error('Back paper exam not found');
   if (exam.status === ExamBackPaperStatus.PUBLISHED) {
     throw new Error('Back paper result already published');
+  }
+  const feeAmount = (exam as { feeAmount?: number }).feeAmount ?? 0;
+  const feePaid = Boolean((exam as { feePaid?: boolean }).feePaid);
+  if (feeAmount > 0 && !feePaid) {
+    throw new Error('Back paper fee must be paid before entering marks');
   }
 
   const maxMarks = data.newMaxMarks ?? exam.originalMaxMarks;
@@ -903,17 +1020,38 @@ export async function publishBackPaperResult(institutionId: string, examId: stri
 export async function updateRevaluationConfig(
   institutionId: string,
   academicYear: string,
-  data: { revaluationFee?: number; recheckFee?: number; gracePeriodDays?: number; passingPercent?: number },
+  data: {
+    revaluationFee?: number;
+    recheckFee?: number;
+    backPaperFee?: number;
+    gracePeriodDays?: number;
+    passingPercent?: number;
+  },
 ) {
   const config = await prisma.examRevaluationConfig.upsert({
     where: { institutionId_academicYear: { institutionId, academicYear } },
-    create: { institutionId, academicYear, ...data },
-    update: data,
+    create: {
+      institutionId,
+      academicYear,
+      revaluationFee: data.revaluationFee ?? 500,
+      recheckFee: data.recheckFee ?? 300,
+      backPaperFee: data.backPaperFee ?? 400,
+      gracePeriodDays: data.gracePeriodDays ?? GRACE_PERIOD_DAYS,
+      passingPercent: data.passingPercent ?? 36,
+    },
+    update: {
+      ...(data.revaluationFee !== undefined ? { revaluationFee: data.revaluationFee } : {}),
+      ...(data.recheckFee !== undefined ? { recheckFee: data.recheckFee } : {}),
+      ...(data.backPaperFee !== undefined ? { backPaperFee: data.backPaperFee } : {}),
+      ...(data.gracePeriodDays !== undefined ? { gracePeriodDays: data.gracePeriodDays } : {}),
+      ...(data.passingPercent !== undefined ? { passingPercent: data.passingPercent } : {}),
+    },
   });
   return {
     config: {
       revaluationFee: config.revaluationFee,
       recheckFee: config.recheckFee,
+      backPaperFee: (config as { backPaperFee?: number }).backPaperFee ?? 400,
       gracePeriodDays: config.gracePeriodDays,
       passingPercent: config.passingPercent,
     },
@@ -1007,3 +1145,345 @@ export async function seedRevaluationDemo(institutionId: string, academicYear = 
 
   return { seeded: true, message: 'Demo revaluation request and back paper exam created' };
 }
+
+/** Called when a linked FeeDue is paid via Razorpay / Fees module. */
+export async function applyExamFeeDuePayment(
+  institutionId: string,
+  feeDueId: string,
+  opts: { receiptNumber?: string; paymentMode?: string; actor?: string } = {},
+) {
+  const now = new Date();
+  const receipt = opts.receiptNumber || `ONLINE-${feeDueId.slice(-8).toUpperCase()}`;
+  const mode = opts.paymentMode || 'ONLINE';
+  const actor = opts.actor || 'Online Payment';
+
+  const request = await prisma.examRevaluationRequest.findFirst({
+    where: { institutionId, feeDueId, feePaid: false },
+  });
+  if (request) {
+    if (new Date() > request.gracePeriodEndsAt) {
+      return { synced: false, reason: 'grace_expired', kind: 'REVALUATION' as const };
+    }
+    await prisma.examRevaluationRequest.update({
+      where: { id: request.id },
+      data: {
+        feePaid: true,
+        feePaidAt: now,
+        feeReceiptNumber: receipt,
+        feePaymentMode: mode,
+        status: ExamRevaluationStatus.FEE_PAID,
+      },
+    });
+    await logAudit(institutionId, {
+      entityType: 'REVALUATION_REQUEST',
+      entityId: request.id,
+      action: 'FEE_PAID',
+      actor,
+      details: `₹${request.feeAmount} paid online — ${receipt}`,
+      batchId: request.batchId ?? undefined,
+    });
+    return { synced: true, kind: 'REVALUATION' as const, id: request.id };
+  }
+
+  const backPaper = await prisma.examBackPaperExam.findFirst({
+    where: { institutionId, feeDueId, feePaid: false },
+  });
+  if (backPaper) {
+    await prisma.examBackPaperExam.update({
+      where: { id: backPaper.id },
+      data: {
+        feePaid: true,
+        feePaidAt: now,
+        feeReceiptNumber: receipt,
+        feePaymentMode: mode,
+      },
+    });
+    await logAudit(institutionId, {
+      entityType: 'BACK_PAPER_EXAM',
+      entityId: backPaper.id,
+      action: 'FEE_PAID',
+      actor,
+      details: `₹${(backPaper as { feeAmount?: number }).feeAmount ?? 0} paid online — ${receipt}`,
+    });
+    return { synced: true, kind: 'BACK_PAPER' as const, id: backPaper.id };
+  }
+
+  return { synced: false, reason: 'not_exam_fee', kind: null };
+}
+
+export async function recordBackPaperFeePayment(
+  institutionId: string,
+  examId: string,
+  data: { feeReceiptNumber: string; feePaymentMode: string },
+  actor: string,
+) {
+  const exam = await prisma.examBackPaperExam.findFirst({ where: { institutionId, id: examId } });
+  if (!exam) throw new Error('Back paper exam not found');
+  if ((exam as { feePaid?: boolean }).feePaid) throw new Error('Fee already paid');
+
+  const now = new Date();
+  const updated = await prisma.examBackPaperExam.update({
+    where: { id: exam.id },
+    data: {
+      feePaid: true,
+      feePaidAt: now,
+      feeReceiptNumber: data.feeReceiptNumber.trim(),
+      feePaymentMode: data.feePaymentMode.trim(),
+    },
+  });
+
+  const feeDueId = (exam as { feeDueId?: string | null }).feeDueId;
+  if (feeDueId) {
+    await prisma.feeDue.updateMany({
+      where: { id: feeDueId, institutionId, status: { not: FeeDueStatus.PAID } },
+      data: { status: FeeDueStatus.PAID },
+    });
+  }
+
+  await logAudit(institutionId, {
+    entityType: 'BACK_PAPER_EXAM',
+    entityId: exam.id,
+    action: 'FEE_PAID',
+    actor,
+    details: `₹${(exam as { feeAmount?: number }).feeAmount ?? 0} paid — Receipt ${data.feeReceiptNumber}`,
+  });
+
+  return { exam: serializeBackPaper(updated), message: 'Back paper fee recorded — marks entry unlocked' };
+}
+
+async function ensureFeeDueForRequest(request: {
+  id: string;
+  institutionId: string;
+  studentId: string;
+  admissionNumber: string;
+  academicYear: string;
+  subjectName: string;
+  requestType: ExamRevaluationRequestType;
+  feeAmount: number;
+  feeDueId: string | null;
+}) {
+  if (request.feeDueId) {
+    const existing = await prisma.feeDue.findFirst({ where: { id: request.feeDueId } });
+    if (existing) return existing;
+  }
+  const due = await createLinkedFeeDue({
+    institutionId: request.institutionId,
+    studentId: request.studentId,
+    admissionNumber: request.admissionNumber,
+    academicYear: request.academicYear,
+    title: `${request.requestType === 'RECHECK' ? 'Recheck' : 'Revaluation'} fee — ${request.subjectName}`,
+    amount: request.feeAmount,
+    remarks: `REVAL:${request.id}`,
+  });
+  if (due) {
+    await prisma.examRevaluationRequest.update({ where: { id: request.id }, data: { feeDueId: due.id } });
+  }
+  return due;
+}
+
+export async function createRevaluationPaymentOrder(
+  institutionId: string,
+  requestId: string,
+  opts: { accountId?: string } = {},
+) {
+  const request = await prisma.examRevaluationRequest.findFirst({ where: { institutionId, id: requestId } });
+  if (!request) throw new Error('Request not found');
+  if (request.feePaid) throw new Error('Fee already paid');
+  if (new Date() > request.gracePeriodEndsAt) throw new Error('Grace period has expired');
+
+  const due = await ensureFeeDueForRequest(request);
+  if (!due) throw new Error('Could not create fee due');
+
+  const order = await prisma.paymentOrder.create({
+    data: {
+      institutionId,
+      feeDueId: due.id,
+      accountId: opts.accountId || '',
+      amount: due.amount,
+      status: 'CREATED',
+      provider: 'RAZORPAY',
+    },
+  });
+
+  if (!isRazorpayConfigured()) {
+    await prisma.paymentOrder.update({
+      where: { id: order.id },
+      data: { providerOrderId: `stub_${order.id}` },
+    });
+    // Dev / unconfigured: complete payment immediately so mobile flow works
+    await prisma.feeDue.update({ where: { id: due.id }, data: { status: FeeDueStatus.PAID } });
+    await applyExamFeeDuePayment(institutionId, due.id, {
+      receiptNumber: `STUB-${order.id.slice(-6).toUpperCase()}`,
+      paymentMode: 'ONLINE',
+      actor: 'Mobile Stub Payment',
+    });
+    await prisma.paymentOrder.update({
+      where: { id: order.id },
+      data: { status: 'PAID', providerPaymentId: `stub_pay_${order.id}` },
+    });
+    return {
+      orderId: order.id,
+      feeDueId: due.id,
+      amount: due.amount,
+      currency: 'INR',
+      stub: true,
+      paid: true,
+      message: 'Payment recorded (gateway not configured). Request marked fee paid.',
+    };
+  }
+
+  const razorpayOrder = await createRazorpayOrder({
+    amountInr: due.amount,
+    receipt: order.id,
+    notes: { feeDueId: due.id, revaluationRequestId: request.id, institutionId },
+  });
+  await prisma.paymentOrder.update({
+    where: { id: order.id },
+    data: { providerOrderId: razorpayOrder.id },
+  });
+
+  return {
+    orderId: order.id,
+    feeDueId: due.id,
+    amount: due.amount,
+    amountPaise: razorpayOrder.amount,
+    currency: razorpayOrder.currency,
+    razorpayKeyId: process.env.RAZORPAY_KEY_ID,
+    providerOrderId: razorpayOrder.id,
+    stub: false,
+    paid: false,
+  };
+}
+
+export async function createBackPaperPaymentOrder(
+  institutionId: string,
+  examId: string,
+  opts: { accountId?: string } = {},
+) {
+  const exam = await prisma.examBackPaperExam.findFirst({ where: { institutionId, id: examId } });
+  if (!exam) throw new Error('Back paper exam not found');
+  if ((exam as { feePaid?: boolean }).feePaid) throw new Error('Fee already paid');
+  const feeAmount = (exam as { feeAmount?: number }).feeAmount ?? 0;
+  if (feeAmount <= 0) throw new Error('No fee due for this back paper');
+
+  let feeDueId = (exam as { feeDueId?: string | null }).feeDueId;
+  let due = feeDueId ? await prisma.feeDue.findFirst({ where: { id: feeDueId } }) : null;
+  if (!due) {
+    due = await createLinkedFeeDue({
+      institutionId,
+      studentId: exam.studentId,
+      admissionNumber: exam.admissionNumber,
+      academicYear: exam.academicYear,
+      title: `Back paper fee — ${exam.subjectName}`,
+      amount: feeAmount,
+      remarks: `BKP:${exam.id}`,
+    });
+    if (due) {
+      feeDueId = due.id;
+      await prisma.examBackPaperExam.update({ where: { id: exam.id }, data: { feeDueId: due.id } });
+    }
+  }
+  if (!due) throw new Error('Could not create fee due');
+
+  const order = await prisma.paymentOrder.create({
+    data: {
+      institutionId,
+      feeDueId: due.id,
+      accountId: opts.accountId || '',
+      amount: due.amount,
+      status: 'CREATED',
+      provider: 'RAZORPAY',
+    },
+  });
+
+  if (!isRazorpayConfigured()) {
+    await prisma.paymentOrder.update({
+      where: { id: order.id },
+      data: { providerOrderId: `stub_${order.id}`, status: 'PAID', providerPaymentId: `stub_pay_${order.id}` },
+    });
+    await prisma.feeDue.update({ where: { id: due.id }, data: { status: FeeDueStatus.PAID } });
+    await applyExamFeeDuePayment(institutionId, due.id, {
+      receiptNumber: `STUB-${order.id.slice(-6).toUpperCase()}`,
+      paymentMode: 'ONLINE',
+      actor: 'Mobile Stub Payment',
+    });
+    return {
+      orderId: order.id,
+      feeDueId: due.id,
+      amount: due.amount,
+      currency: 'INR',
+      stub: true,
+      paid: true,
+      message: 'Payment recorded (gateway not configured). Back paper fee marked paid.',
+    };
+  }
+
+  const razorpayOrder = await createRazorpayOrder({
+    amountInr: due.amount,
+    receipt: order.id,
+    notes: { feeDueId: due.id, backPaperExamId: exam.id, institutionId },
+  });
+  await prisma.paymentOrder.update({
+    where: { id: order.id },
+    data: { providerOrderId: razorpayOrder.id },
+  });
+
+  return {
+    orderId: order.id,
+    feeDueId: due.id,
+    amount: due.amount,
+    amountPaise: razorpayOrder.amount,
+    currency: razorpayOrder.currency,
+    razorpayKeyId: process.env.RAZORPAY_KEY_ID,
+    providerOrderId: razorpayOrder.id,
+    stub: false,
+    paid: false,
+  };
+}
+
+// ── Mobile student/parent APIs ───────────────────────────────────────────────
+
+export async function getMobileRevaluationOverview(
+  institutionId: string,
+  studentId: string,
+  academicYear?: string,
+) {
+  const student = await prisma.student.findFirst({ where: { id: studentId, institutionId } });
+  if (!student) throw new Error('Student not found');
+  const year = academicYear || student.academicYear;
+  const config = await getOrCreateConfig(institutionId, year);
+
+  const [requests, backPapers, eligibleAll, failedAll] = await Promise.all([
+    prisma.examRevaluationRequest.findMany({
+      where: { institutionId, studentId, academicYear: year },
+      orderBy: [{ requestedAt: 'desc' }],
+    }),
+    prisma.examBackPaperExam.findMany({
+      where: { institutionId, studentId, academicYear: year },
+      orderBy: [{ createdAt: 'desc' }],
+    }),
+    getEligibleStudentsForRevaluation(institutionId, year, student.className, student.sectionName || undefined),
+    getFailedStudentsForBackPaper(institutionId, year, student.className, student.sectionName || undefined),
+  ]);
+
+  const eligible = eligibleAll.eligible.filter((e) => e.studentId === studentId);
+  const failed = failedAll.failed.filter((f) => f.studentId === studentId);
+
+  return {
+    studentId,
+    academicYear: year,
+    paymentsEnabled: isRazorpayConfigured(),
+    config: {
+      revaluationFee: config.revaluationFee,
+      recheckFee: config.recheckFee,
+      backPaperFee: (config as { backPaperFee?: number }).backPaperFee ?? 400,
+      gracePeriodDays: config.gracePeriodDays,
+      passingPercent: config.passingPercent,
+    },
+    requests: requests.map(serializeRequest),
+    backPapers: backPapers.map(serializeBackPaper),
+    eligible,
+    failed,
+  };
+}
+

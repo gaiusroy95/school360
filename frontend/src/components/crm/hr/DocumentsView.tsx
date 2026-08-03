@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  CheckCircle2, FileText, FolderOpen, RefreshCw,
+  CheckCircle2, FileText, FolderOpen,
   Shield, UserCheck, AlertTriangle,
 } from 'lucide-react';
 import {
@@ -57,10 +57,10 @@ export function DocumentsView() {
   const [message, setMessage] = useState('');
   const [search, setSearch] = useState('');
 
-  const load = useCallback(async (seed = false) => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      setData(await fetchEdomsDashboard(seed));
+      setData(await fetchEdomsDashboard());
     } finally { setLoading(false); }
   }, []);
 
@@ -80,11 +80,6 @@ export function DocumentsView() {
         breadcrumb="HR & Payroll Management › Documents & Onboarding"
         title="Employee Documents & Onboarding (EDOMS)"
         subtitle="Paperless joining from offer acceptance to confirmation — document verification, checklists, assets & ERP provisioning"
-        actions={(
-          <button type="button" onClick={() => void load(true)} disabled={busy} className={am.btnSecondary}>
-            <RefreshCw size={14} /> Load Demo
-          </button>
-        )}
       />
 
       <div className={am.content}>

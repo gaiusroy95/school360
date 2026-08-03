@@ -1,11 +1,35 @@
-import { EventInvitationsView } from './communication/EventInvitationsView';
-import { SurveysFeedbackView } from './communication/SurveysFeedbackView';
+import { lazy, Suspense, type ReactNode } from 'react';
 import { SubModuleView } from './shared/SubModuleView';
-import { EventDashboardView } from './events/EventDashboardView';
-import { EventCalendarView } from './events/EventCalendarView';
-import { EventAttendeesView } from './events/EventAttendeesView';
-import { EventReportsView } from './events/EventReportsView';
-import { WardensStaffView } from './hostel/WardensStaffView';
+
+const EventInvitationsView = lazy(() =>
+  import('./communication/EventInvitationsView').then((m) => ({ default: m.EventInvitationsView })),
+);
+const SurveysFeedbackView = lazy(() =>
+  import('./communication/SurveysFeedbackView').then((m) => ({ default: m.SurveysFeedbackView })),
+);
+const EventDashboardView = lazy(() =>
+  import('./events/EventDashboardView').then((m) => ({ default: m.EventDashboardView })),
+);
+const EventCalendarView = lazy(() =>
+  import('./events/EventCalendarView').then((m) => ({ default: m.EventCalendarView })),
+);
+const EventAttendeesView = lazy(() =>
+  import('./events/EventAttendeesView').then((m) => ({ default: m.EventAttendeesView })),
+);
+const EventReportsView = lazy(() =>
+  import('./events/EventReportsView').then((m) => ({ default: m.EventReportsView })),
+);
+const WardensStaffView = lazy(() =>
+  import('./hostel/WardensStaffView').then((m) => ({ default: m.WardensStaffView })),
+);
+
+function wrap(node: ReactNode) {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[30vh] text-sm text-slate-400">Loading page…</div>}>
+      {node}
+    </Suspense>
+  );
+}
 
 export function EventManagementCRM({
   currentView = 'Event Dashboard',
@@ -15,31 +39,31 @@ export function EventManagementCRM({
   onNavigate?: (view: string) => void;
 }) {
   if (currentView === 'Event Dashboard' || !currentView) {
-    return <EventDashboardView onNavigate={onNavigate} />;
+    return wrap(<EventDashboardView onNavigate={onNavigate} />);
   }
   if (currentView === 'Events List') {
-    return <EventInvitationsView />;
+    return wrap(<EventInvitationsView />);
   }
   if (currentView === 'Create Event') {
-    return <EventInvitationsView initialComposeOpen headerTitle="Create Event" headerSubtitle="Set up a new school event with invitations and RSVP tracking" />;
+    return wrap(<EventInvitationsView initialComposeOpen headerTitle="Create Event" headerSubtitle="Set up a new school event with invitations and RSVP tracking" />);
   }
   if (currentView === 'Event Calendar') {
-    return <EventCalendarView />;
+    return wrap(<EventCalendarView />);
   }
   if (currentView === 'Registrations') {
-    return <EventAttendeesView mode="registrations" />;
+    return wrap(<EventAttendeesView mode="registrations" />);
   }
   if (currentView === 'Tickets & Passes') {
-    return <EventAttendeesView mode="tickets" />;
+    return wrap(<EventAttendeesView mode="tickets" />);
   }
   if (currentView === 'Volunteers') {
-    return <WardensStaffView />;
+    return wrap(<WardensStaffView />);
   }
   if (currentView === 'Feedback & Surveys') {
-    return <SurveysFeedbackView />;
+    return wrap(<SurveysFeedbackView />);
   }
   if (currentView === 'Reports & Analytics') {
-    return <EventReportsView />;
+    return wrap(<EventReportsView />);
   }
   if (currentView === 'Vendors & Sponsors' || currentView === 'Task Management' || currentView === 'Certificates') {
     return <SubModuleView module="Event Management" title={currentView} />;
@@ -47,5 +71,5 @@ export function EventManagementCRM({
   if (currentView) {
     return <SubModuleView module="Event Management" title={currentView} />;
   }
-  return <EventDashboardView onNavigate={onNavigate} />;
+  return wrap(<EventDashboardView onNavigate={onNavigate} />);
 }

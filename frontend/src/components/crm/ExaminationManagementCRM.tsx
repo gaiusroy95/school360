@@ -1,57 +1,97 @@
+import { lazy, Suspense, type ReactNode } from 'react';
 import { SubModuleView } from './shared/SubModuleView';
-import { MarksEntryView } from './ExaminationManagement/MarksEntryView';
-import { ExamDashboardView } from './ExaminationManagement/ExamDashboardView';
-import { ExamScheduleView } from './ExaminationManagement/ExamScheduleView';
-import { SubjectsSyllabusView } from './ExaminationManagement/SubjectsSyllabusView';
-import { QuestionBankView } from './ExaminationManagement/QuestionBankView';
-import { PaperManagementView } from './ExaminationManagement/PaperManagementView';
-import { SeatingArrangementView } from './ExaminationManagement/SeatingArrangementView';
-import { InvigilationManagementView } from './ExaminationManagement/InvigilationManagementView';
-import { ResultProcessingView } from './ExaminationManagement/ResultProcessingView';
-import { ReportCardsView } from './ExaminationManagement/ReportCardsView';
-import { RevaluationRecheckView } from './ExaminationManagement/RevaluationRecheckView';
-import { GradePromotionView } from './ExaminationManagement/GradePromotionView';
-import { CertificatesView } from './ExaminationManagement/CertificatesView';
-import { ExamAnalyticsView } from './ExaminationManagement/ExamAnalyticsView';
-import { EvaluationEngineView } from './ExaminationManagement/EvaluationEngineView';
+
+const MarksEntryView = lazy(() =>
+  import('./ExaminationManagement/MarksEntryView').then((m) => ({ default: m.MarksEntryView })),
+);
+const ExamDashboardView = lazy(() =>
+  import('./ExaminationManagement/ExamDashboardView').then((m) => ({ default: m.ExamDashboardView })),
+);
+const ExamScheduleView = lazy(() =>
+  import('./ExaminationManagement/ExamScheduleView').then((m) => ({ default: m.ExamScheduleView })),
+);
+const SubjectsSyllabusView = lazy(() =>
+  import('./ExaminationManagement/SubjectsSyllabusView').then((m) => ({ default: m.SubjectsSyllabusView })),
+);
+const QuestionBankView = lazy(() =>
+  import('./ExaminationManagement/QuestionBankView').then((m) => ({ default: m.QuestionBankView })),
+);
+const PaperManagementView = lazy(() =>
+  import('./ExaminationManagement/PaperManagementView').then((m) => ({ default: m.PaperManagementView })),
+);
+const SeatingArrangementView = lazy(() =>
+  import('./ExaminationManagement/SeatingArrangementView').then((m) => ({ default: m.SeatingArrangementView })),
+);
+const InvigilationManagementView = lazy(() =>
+  import('./ExaminationManagement/InvigilationManagementView').then((m) => ({ default: m.InvigilationManagementView })),
+);
+const ResultProcessingView = lazy(() =>
+  import('./ExaminationManagement/ResultProcessingView').then((m) => ({ default: m.ResultProcessingView })),
+);
+const ReportCardsView = lazy(() =>
+  import('./ExaminationManagement/ReportCardsView').then((m) => ({ default: m.ReportCardsView })),
+);
+const RevaluationRecheckView = lazy(() =>
+  import('./ExaminationManagement/RevaluationRecheckView').then((m) => ({ default: m.RevaluationRecheckView })),
+);
+const GradePromotionView = lazy(() =>
+  import('./ExaminationManagement/GradePromotionView').then((m) => ({ default: m.GradePromotionView })),
+);
+const CertificatesView = lazy(() =>
+  import('./ExaminationManagement/CertificatesView').then((m) => ({ default: m.CertificatesView })),
+);
+const ExamAnalyticsView = lazy(() =>
+  import('./ExaminationManagement/ExamAnalyticsView').then((m) => ({ default: m.ExamAnalyticsView })),
+);
+const EvaluationEngineView = lazy(() =>
+  import('./ExaminationManagement/EvaluationEngineView').then((m) => ({ default: m.EvaluationEngineView })),
+);
 
 type Props = {
   currentView?: string;
   onNavigate?: (view: string) => void;
 };
 
+function wrap(node: ReactNode) {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[30vh] text-sm text-slate-400">Loading page…</div>}>
+      {node}
+    </Suspense>
+  );
+}
+
 export function ExaminationManagementCRM({ currentView = 'Exam Dashboard', onNavigate }: Props) {
   switch (currentView) {
     case 'Exam Dashboard':
-      return <ExamDashboardView onNavigate={onNavigate} />;
+      return wrap(<ExamDashboardView onNavigate={onNavigate} />);
     case 'Exam Schedule':
-      return <ExamScheduleView />;
+      return wrap(<ExamScheduleView />);
     case 'Subjects & Syllabus':
-      return <SubjectsSyllabusView />;
+      return wrap(<SubjectsSyllabusView />);
     case 'Question Bank':
-      return <QuestionBankView />;
+      return wrap(<QuestionBankView />);
     case 'Paper Management':
-      return <PaperManagementView />;
+      return wrap(<PaperManagementView />);
     case 'Seating Arrangement':
-      return <SeatingArrangementView />;
+      return wrap(<SeatingArrangementView />);
     case 'Invigilation Management':
-      return <InvigilationManagementView />;
+      return wrap(<InvigilationManagementView />);
     case 'Marks Entry':
-      return <MarksEntryView />;
+      return wrap(<MarksEntryView />);
     case 'Result Processing':
-      return <ResultProcessingView />;
+      return wrap(<ResultProcessingView />);
     case 'Report Cards':
-      return <ReportCardsView />;
+      return wrap(<ReportCardsView />);
     case 'Revaluation / Recheck':
-      return <RevaluationRecheckView />;
+      return wrap(<RevaluationRecheckView />);
     case 'Grade & Promotion':
-      return <GradePromotionView />;
+      return wrap(<GradePromotionView />);
     case 'Certificates':
-      return <CertificatesView />;
+      return wrap(<CertificatesView />);
     case 'Exam Analytics':
-      return <ExamAnalyticsView />;
+      return wrap(<ExamAnalyticsView />);
     case 'Evaluation Engine':
-      return <EvaluationEngineView />;
+      return wrap(<EvaluationEngineView />);
     default:
       return <SubModuleView module="Examination Management" title={currentView} />;
   }

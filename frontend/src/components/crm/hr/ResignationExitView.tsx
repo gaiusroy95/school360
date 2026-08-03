@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  CheckCircle2, DoorOpen, RefreshCw, Shield, Users,
+  CheckCircle2, DoorOpen, Shield, Users,
 } from 'lucide-react';
 import {
   advanceExitWorkflow,
@@ -86,10 +86,10 @@ export function ResignationExitView() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
 
-  const load = useCallback(async (seed = false) => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      setData(await fetchExitDashboard(seed));
+      setData(await fetchExitDashboard());
     } finally { setLoading(false); }
   }, []);
 
@@ -105,11 +105,6 @@ export function ResignationExitView() {
         breadcrumb="HR & Payroll Management › Resignation & Exit"
         title="Staff Resignation, Exit Management & F&F Settlement (SEMS)"
         subtitle="Digital resignation workflow — approvals, notice period, handover, clearance, full & final settlement & alumni archival"
-        actions={(
-          <button type="button" onClick={() => void load(true)} disabled={busy} className={am.btnSecondary}>
-            <RefreshCw size={14} /> Load Demo
-          </button>
-        )}
       />
 
       <div className={am.content}>

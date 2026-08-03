@@ -119,6 +119,7 @@ export type ExamScheduleMeta = {
   academicYears: string[];
   examTypes: { id: string; label: string }[];
   eventTypes: { id: string; label: string }[];
+  examModes?: { id: string; label: string }[];
   classes: string[];
   sectionsByClass: Record<string, string[]>;
 };
@@ -139,6 +140,18 @@ export type ExamCalendarEvent = {
   endTime: string;
   status: string;
   source: 'calendar' | 'class_test';
+  examMode?: string | null;
+  paperSource?: string | null;
+  questionPaperId?: string | null;
+  marksAssignmentId?: string | null;
+  publishAt?: string | null;
+  examLink?: string | null;
+  examLinkToken?: string | null;
+  linkPublishedAt?: string | null;
+  isLinkLive?: boolean;
+  academicCalendarEventId?: string | null;
+  resultsCapturedAt?: string | null;
+  syncedToCalendar?: boolean;
 };
 
 export type ExamScheduleCalendar = {
@@ -200,6 +213,129 @@ export async function seedExamScheduleCalendar(academicYear?: string) {
   return api<{ seeded: boolean; sessions: number }>(
     '/api/examination/schedule/seed',
     { method: 'POST', body: JSON.stringify({ academicYear }) },
+  );
+}
+
+export type ExamScheduleCreateMeta = {
+  academicYear: string;
+  subjects: string[];
+  subjectsByClass: Record<string, string[]>;
+  papers: {
+    id: string;
+    title: string;
+    className: string;
+    sectionName: string;
+    subjectName: string;
+    purpose: string;
+    status: string;
+    numQuestions: number;
+    isDigitalExam: boolean;
+    durationMinutes: number;
+    publishedToMobile: boolean;
+  }[];
+  examSeries: { id: string; name: string; examType: string }[];
+  teachers: { name: string; email: string }[];
+  marksColumns: { key: string; label: string; maxMarks: number }[];
+  examModes: { id: string; label: string; description: string }[];
+};
+
+export type ScheduledExamSession = {
+  id: string;
+  recordId: string;
+  academicYear: string;
+  eventType: string;
+  examType: string | null;
+  seriesName: string;
+  className: string;
+  sectionName: string;
+  subjectName: string;
+  examDate: string;
+  startTime: string;
+  endTime: string;
+  status: string;
+  examMode: 'DIGITAL' | 'MANUAL';
+  paperSource: string;
+  questionPaperId: string | null;
+  questionPaperTitle: string | null;
+  questionCount: number | null;
+  marksAssignmentId: string | null;
+  marksColumnKey: string | null;
+  maxMarks: number;
+  publishAt: string | null;
+  examLinkToken: string | null;
+  examLink: string | null;
+  linkPublishedAt: string | null;
+  isLinkLive: boolean;
+  academicCalendarEventId: string | null;
+  resultsCapturedAt: string | null;
+  notes: string;
+};
+
+export async function fetchExamScheduleCreateMeta(academicYear?: string) {
+  return api<ExamScheduleCreateMeta>(
+    `/api/examination/schedule/create-meta${qs({ academicYear })}`,
+  );
+}
+
+export async function createScheduledExam(payload: {
+  academicYear: string;
+  examMode: 'DIGITAL' | 'MANUAL';
+  examType: string;
+  seriesName: string;
+  className: string;
+  sectionName: string;
+  subjectName: string;
+  examDate: string;
+  startTime?: string;
+  endTime?: string;
+  scheduleId?: string;
+  maxMarks?: number;
+  notes?: string;
+  syncToAcademicCalendar?: boolean;
+  publishAt?: string;
+  paperSource?: 'QUESTION_BANK' | 'PAPER_UPLOAD' | 'NONE';
+  questionPaperId?: string;
+  uploadedPaperMeta?: { fileName: string; mimeType?: string; fileData?: string; sizeBytes?: number }[];
+  newPaperQuestions?: {
+    type: string;
+    difficulty: string;
+    questionText: string;
+    options?: string[];
+    correctAnswer?: string;
+    marks?: number;
+  }[];
+  newPaperTitle?: string;
+  teacherName?: string;
+  createMarksAssignment?: boolean;
+}) {
+  return api<{ session: ScheduledExamSession; message: string }>(
+    '/api/examination/schedule/create-exam',
+    { method: 'POST', body: JSON.stringify(payload) },
+  );
+}
+
+export async function syncExamScheduleCalendar(payload: {
+  academicYear: string;
+  year?: number;
+  month?: number;
+}) {
+  return api<{ synced: number; message: string }>(
+    '/api/examination/schedule/sync-calendar',
+    { method: 'POST', body: JSON.stringify(payload) },
+  );
+}
+
+export async function captureExamSessionResults(sessionId: string) {
+  return api<{ captured: number; attemptCount: number; sheetId: string; message: string }>(
+    `/api/examination/schedule/sessions/${sessionId}/capture-results`,
+    { method: 'POST', body: JSON.stringify({}) },
+  );
+}
+
+export async function publishDueDigitalExams() {
+  return api<{ published: number }>(
+    '/api/examination/schedule/publish-due',
+    { method: 'POST', body: JSON.stringify({}) },
   );
 }
 
@@ -277,11 +413,50 @@ export async function fetchExamSyllabusOverview(params?: {
   return api<ExamSyllabusOverview>(`/api/examination/syllabus${qs(params)}`);
 }
 
-export async function seedExamSyllabus(academicYear?: string) {
-  return api<{ seeded: boolean; records: number }>(
-    '/api/examination/syllabus/seed',
-    { method: 'POST', body: JSON.stringify({ academicYear }) },
-  );
+export async function fetchExamSyllabusSystemSource(academicYear?: string) {
+  return api<{
+    academicYear: string;
+    summary: {
+      academicSubjects: number;
+      subjectOfferings: number;
+      curriculumChapters: number;
+      examSyllabusRecords: number;
+      uniqueClassSubjectPairs: number;
+    };
+    subjects: { subjectName: string; subjectCode: string; subjectType: string }[];
+    offerings: {
+      className: string;
+      sectionName: string;
+      classGroup: string;
+      subjectName: string;
+      teacherName: string;
+      chapterCount: number;
+    }[];
+    chapters: {
+      id: string;
+      className: string;
+      sectionName: string;
+      subjectName: string;
+      unitNumber: number;
+      chapterTitle: string;
+      completionPercent: number;
+      term: string;
+    }[];
+  }>(`/api/examination/syllabus/system-source${qs({ academicYear })}`);
+}
+
+export async function syncExamSyllabusFromSystem(academicYear?: string) {
+  return api<{
+    synced: boolean;
+    created: number;
+    updated: number;
+    subjects: number;
+    chapters: number;
+    message: string;
+  }>('/api/examination/syllabus/sync-from-system', {
+    method: 'POST',
+    body: JSON.stringify({ academicYear }),
+  });
 }
 
 export type QuestionType = 'Multiple Choice' | 'True/False' | 'Short Answer';
@@ -339,6 +514,12 @@ export type QuestionBankMeta = {
   difficulties: Difficulty[];
   purposes: { id: ExamPaperPurpose; label: string }[];
   sources: { id: ExamPaperSource; label: string }[];
+  aiProviders?: {
+    gemini: boolean;
+    openai: boolean;
+    groq: boolean;
+    priority: readonly string[];
+  };
 };
 
 export type PdfFileUpload = { fileName: string; mimeType: string; fileData: string };
@@ -384,9 +565,9 @@ export async function generateQuestionPaperFromPdf(payload: {
   questionType: QuestionType;
   difficulty: Difficulty;
 }) {
-  return api<{ suggestedTitle: string; fileMeta: unknown[]; questions: QuestionInput[] }>(
+  return api<{ suggestedTitle: string; fileMeta: unknown[]; questions: QuestionInput[]; usedVision?: boolean }>(
     '/api/examination/question-bank/generate-from-pdf',
-    { method: 'POST', body: JSON.stringify(payload) },
+    { method: 'POST', body: JSON.stringify(payload), timeoutMs: 180_000 },
   );
 }
 
@@ -405,6 +586,7 @@ export async function scanQuestionPaperOcr(payload: {
   }>('/api/examination/question-bank/scan-ocr', {
     method: 'POST',
     body: JSON.stringify(payload),
+    timeoutMs: 180_000,
   });
 }
 
@@ -421,7 +603,7 @@ export async function generateQuestionPaperFromSyllabus(payload: {
 }) {
   return api<{ suggestedTitle: string; sourceText: string; questions: QuestionInput[] }>(
     '/api/examination/question-bank/generate-from-syllabus',
-    { method: 'POST', body: JSON.stringify(payload) },
+    { method: 'POST', body: JSON.stringify(payload), timeoutMs: 180_000 },
   );
 }
 
@@ -508,6 +690,44 @@ export type PaperManagementRecord = QuestionPaperSummary & {
   mobileVisibleOn: string | null;
   mobileVisibleOnKey: string | null;
   canPublishToMobile: boolean;
+  isLinkPublished: boolean;
+  linkPublishedAt: string | null;
+  linkPublishedBy: string;
+  examLink: string | null;
+  credentialCount: number;
+  linkToken: string | null;
+};
+
+export type PaperPrintPayload = {
+  paper: {
+    id: string;
+    title: string;
+    classGroup: string;
+    subjectName: string;
+    purposeLabel: string;
+    academicYear: string;
+    durationMinutes: number;
+    passMarksPercent: number;
+    questionType: string;
+    difficulty: string;
+    questions: {
+      number: number;
+      questionText: string;
+      options: string[];
+      type?: string;
+      marks?: number;
+    }[];
+  };
+};
+
+export type PaperLinkCredential = {
+  studentId: string;
+  studentName: string;
+  admissionNumber?: string;
+  rollNumber?: string;
+  userId: string;
+  password: string;
+  lastLoginAt?: string | null;
 };
 
 export type PaperManagementOverview = {
@@ -516,6 +736,7 @@ export type PaperManagementOverview = {
     totalPapers: number;
     mobilePublished: number;
     mobilePending: number;
+    linkPublished: number;
     digitalExams: number;
     totalQuestions: number;
   };
@@ -547,7 +768,7 @@ export async function fetchPaperManagementPapers(params?: {
   return api<PaperManagementOverview>(`/api/examination/paper-management/papers${qs(params)}`);
 }
 
-export async function publishPaperToMobile(paperId: string, visibleOn: 'APP' | 'BOTH' = 'BOTH') {
+export async function publishPaperToMobile(paperId: string, visibleOn: 'APP' | 'BOTH' = 'APP') {
   return api<{
     paper: PaperManagementRecord;
     message: string;
@@ -563,6 +784,40 @@ export async function publishPaperToMobile(paperId: string, visibleOn: 'APP' | '
 export async function unpublishPaperFromMobile(paperId: string) {
   return api<{ paper: PaperManagementRecord; message: string }>(
     `/api/examination/paper-management/papers/${paperId}/unpublish-mobile`,
+    { method: 'POST', body: JSON.stringify({}) },
+  );
+}
+
+export async function fetchPaperPrintPayload(paperId: string) {
+  return api<PaperPrintPayload>(`/api/examination/paper-management/papers/${paperId}/print`);
+}
+
+export async function publishPaperAsLink(paperId: string) {
+  return api<{
+    paper: PaperManagementRecord;
+    examLink: string;
+    credentials: PaperLinkCredential[];
+    studentCount: number;
+    message: string;
+  }>(`/api/examination/paper-management/papers/${paperId}/publish-link`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export async function fetchPaperLinkCredentials(paperId: string) {
+  return api<{
+    paperId: string;
+    title: string;
+    examLink: string | null;
+    isLinkPublished: boolean;
+    credentials: PaperLinkCredential[];
+  }>(`/api/examination/paper-management/papers/${paperId}/credentials`);
+}
+
+export async function unpublishPaperLink(paperId: string) {
+  return api<{ paper: PaperManagementRecord; message: string }>(
+    `/api/examination/paper-management/papers/${paperId}/unpublish-link`,
     { method: 'POST', body: JSON.stringify({}) },
   );
 }
@@ -1445,6 +1700,7 @@ export type RevaluationRequest = {
   feeReceiptNumber: string;
   feePaymentMode: string;
   feePaidAt: string | null;
+  feeDueId?: string | null;
   gracePeriodEndsAt: string;
   resultPublishedAt: string | null;
   withinGracePeriod: boolean;
@@ -1484,12 +1740,19 @@ export type BackPaperExam = {
   newMarks: number | null;
   newMaxMarks: number | null;
   newGrade: string;
+  feeAmount: number;
+  feePaid: boolean;
+  feeReceiptNumber: string;
+  feePaymentMode: string;
+  feePaidAt: string | null;
+  feeDueId: string | null;
   marksEnteredAt: string | null;
   marksEnteredBy: string;
   publishedAt: string | null;
   remarks: string;
   createdBy: string;
   createdAt: string;
+  canPayFee: boolean;
   canEnterMarks: boolean;
   canPublish: boolean;
 };
@@ -1500,8 +1763,10 @@ export async function fetchRevaluationMeta() {
     academicYears: string[];
     classes: string[];
     sectionsByClass: Record<string, string[]>;
-    config: { revaluationFee: number; recheckFee: number; gracePeriodDays: number; passingPercent: number };
+    config: { revaluationFee: number; recheckFee: number; backPaperFee: number; gracePeriodDays: number; passingPercent: number };
     summary: { received: number; underReview: number; approved: number; rejected: number; published: number; backPapers: number };
+    mobileSync?: boolean;
+    paymentsEnabled?: boolean;
   }>('/api/examination/revaluation/meta');
 }
 
@@ -1594,10 +1859,20 @@ export async function updateRevaluationConfig(data: {
   academicYear?: string;
   revaluationFee?: number;
   recheckFee?: number;
+  backPaperFee?: number;
   gracePeriodDays?: number;
   passingPercent?: number;
 }) {
-  return api<{ config: { revaluationFee: number; recheckFee: number; gracePeriodDays: number; passingPercent: number }; message: string }>(
+  return api<{
+    config: {
+      revaluationFee: number;
+      recheckFee: number;
+      backPaperFee: number;
+      gracePeriodDays: number;
+      passingPercent: number;
+    };
+    message: string;
+  }>(
     '/api/examination/revaluation/config',
     { method: 'PUT', body: JSON.stringify(data) },
   );
@@ -1630,6 +1905,7 @@ export async function fetchFailedStudentsForBackPaper(params?: {
       max: number;
       grade: string;
       passingMarks: number;
+      backPaperFee?: number;
     }[];
   }>(`/api/examination/revaluation/back-papers/failed-students${qs(params)}`);
 }
@@ -1642,6 +1918,13 @@ export async function createBackPaperExam(data: {
 }) {
   return api<{ exam: BackPaperExam; message: string }>(
     '/api/examination/revaluation/back-papers',
+    { method: 'POST', body: JSON.stringify(data) },
+  );
+}
+
+export async function payBackPaperFee(examId: string, data: { feeReceiptNumber: string; feePaymentMode?: string }) {
+  return api<{ exam: BackPaperExam; message: string }>(
+    `/api/examination/revaluation/back-papers/${examId}/pay-fee`,
     { method: 'POST', body: JSON.stringify(data) },
   );
 }
@@ -1813,7 +2096,11 @@ export async function fetchCertificatesMeta() {
     academicYears: string[];
     classes: string[];
     sectionsByClass: Record<string, string[]>;
-    categories: unknown[];
+    categories: {
+      id: string;
+      label: string;
+      subCategories: { id: string; label: string; activities: string[] }[];
+    }[];
     templateDesigns: { id: CertificateCategory; label: string; description: string; colors: { primary: string; accent: string; bg: string } }[];
     summary: { recorded: number; generated: number; issued: number; total: number };
   }>('/api/examination/certificates/meta');
@@ -1837,6 +2124,29 @@ export async function fetchCertificates(params?: {
       byCategory: { category: string; label: string; count: number }[];
     };
   }>(`/api/examination/certificates${qs(params)}`);
+}
+
+export async function createCertificateFromAdmin(data: {
+  studentId: string;
+  category: CertificateCategory | string;
+  activityTitle: string;
+  activityId?: string;
+  subCategory?: string;
+  academicYear?: string;
+  term?: string;
+  performanceScore: number;
+  maxScore?: number;
+  performanceGrade?: string;
+  performanceBand?: string;
+  remarks?: string;
+  recordedBy?: string;
+  generate?: boolean;
+  issue?: boolean;
+}) {
+  return api<{ certificate: CoScholasticCertificate; message: string }>(
+    '/api/examination/certificates/record',
+    { method: 'POST', body: JSON.stringify(data) },
+  );
 }
 
 export async function generateCertificates(certificateIds: string[]) {

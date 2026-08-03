@@ -41,6 +41,14 @@ const CHANNEL_OPTIONS = [
   { key: 'pos' as OnlinePaymentChannel, label: 'POS', paymentMode: 'Card' },
 ];
 
+const FETCH_LABELS: Record<OnlinePaymentChannel | 'all', string> = {
+  online: 'Online',
+  bankTransfer: 'Bank Transfer',
+  upi: 'UPI',
+  pos: 'POS',
+  all: 'all payment channels',
+};
+
 function currentPeriod() {
   const d = new Date();
   return { year: d.getFullYear(), month: d.getMonth() + 1 };
@@ -51,9 +59,9 @@ export function OnlinePaymentsView() {
   const [academicYear, setAcademicYear] = useState('2025-26');
   const [years, setYears] = useState<string[]>(['2025-26']);
   const [period, setPeriod] = useState(currentPeriod());
-  const [channelFilter, setChannelFilter] = useState<OnlinePaymentChannel | ''>('');
   const [loading, setLoading] = useState(true);
-  const [fetching, setFetching] = useState<OnlinePaymentChannel | ''>('');
+  const [fetching, setFetching] = useState<OnlinePaymentChannel | 'all' | ''>('');
+  const [lastSynced, setLastSynced] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -67,42 +75,46 @@ export function OnlinePaymentsView() {
     remarks: '',
   });
 
-  const load = useCallback(
-    async (channel?: OnlinePaymentChannel | '') => {
-      setLoading(true);
-      setError('');
-      try {
-        const meta = await fetchFeeDashboardMeta();
-        if (meta.academicYears?.length) setYears(meta.academicYears);
-        const year = academicYear || meta.defaultAcademicYear || '2025-26';
-        if (!academicYear && meta.defaultAcademicYear) setAcademicYear(meta.defaultAcademicYear);
+  const load = useCallback(async (): Promise<boolean> => {
+    setLoading(true);
+    setError('');
+    try {
+      const meta = await fetchFeeDashboardMeta();
+      if (meta.academicYears?.length) setYears(meta.academicYears);
+      const year = academicYear || meta.defaultAcademicYear || '2025-26';
+      if (!academicYear && meta.defaultAcademicYear) setAcademicYear(meta.defaultAcademicYear);
 
-        const data = await getOnlinePaymentsReport({
-          academicYear: year,
-          year: String(period.year),
-          month: String(period.month),
-          channel: channel || undefined,
-        });
-        setReport(data);
-        setChannelFilter(channel || '');
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to load online payments');
-      } finally {
-        setLoading(false);
-        setFetching('');
-      }
-    },
-    [academicYear, period.year, period.month],
-  );
+      // Always load the full multi-channel matrix (no channel filter)
+      const data = await getOnlinePaymentsReport({
+        academicYear: year,
+        year: String(period.year),
+        month: String(period.month),
+      });
+      setReport(data);
+      setLastSynced(data.fetchedAt);
+      return true;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load online payments');
+      return false;
+    } finally {
+      setLoading(false);
+      setFetching('');
+    }
+  }, [academicYear, period.year, period.month]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const fetchChannel = async (channel: OnlinePaymentChannel) => {
+  /** Fetch buttons refresh the entire matrix (all channels) simultaneously. */
+  const fetchChannel = async (channel: OnlinePaymentChannel | 'all') => {
     setFetching(channel);
-    setMessage(`Fetched ${CHANNEL_OPTIONS.find((c) => c.key === channel)?.label} report`);
-    await load(channel);
+    const ok = await load();
+    if (ok) {
+      setMessage(
+        `Synced ${FETCH_LABELS[channel]} into the collection matrix — Online, Bank Transfer, UPI and POS are shown together.`,
+      );
+    }
   };
 
   const handleExport = async () => {
@@ -137,7 +149,7 @@ export function OnlinePaymentsView() {
         wb,
         `Online_Payments_${data.periodLabel.replace(/\s+/g, '_')}.xlsx`,
       );
-      setMessage('Excel report downloaded');
+      setMessage('Excel report downloaded (full matrix)');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Export failed');
     }
@@ -186,13 +198,14 @@ export function OnlinePaymentsView() {
       });
       setMessage(`Payment recorded via ${ch.label}`);
       setShowModal(false);
-      void load(channelFilter || undefined);
+      void load();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Payment recording failed');
     }
   };
 
   const matrixRows = useMemo(() => report?.matrix || [], [report]);
+  const monthTotal = report?.totalCollected ?? report?.columnTotals?.total ?? 0;
 
   if (loading && !report) {
     return <AcademicLoading label="Loading online payments…" />;
@@ -203,7 +216,7 @@ export function OnlinePaymentsView() {
       <AcademicPageHeader
         breadcrumb="Fees & Finance › Online Payments"
         title="Online Payments"
-        subtitle="Bank, UPI & POS collection matrix — fetch reports and export to Excel"
+        subtitle="Bank, UPI, POS & Online collection matrix — all channels sync into one report"
         actions={
           <>
             <select
@@ -224,11 +237,7 @@ export function OnlinePaymentsView() {
                 if (y && m) setPeriod({ year: y, month: m });
               }}
             />
-            <button
-              type="button"
-              onClick={() => void load(channelFilter || undefined)}
-              className={am.btnSecondary}
-            >
+            <button type="button" onClick={() => void load()} className={am.btnSecondary}>
               <RefreshCcw size={14} /> Refresh
             </button>
             <button type="button" onClick={() => void handleExport()} className={am.btnSecondary}>
@@ -248,49 +257,53 @@ export function OnlinePaymentsView() {
         <div className="flex flex-wrap items-stretch gap-3">
           <button
             type="button"
-            disabled={fetching === 'bankTransfer'}
+            disabled={!!fetching}
             onClick={() => void fetchChannel('bankTransfer')}
             className="flex-1 min-w-[160px] bg-gradient-to-r from-green-600 to-green-500 text-white rounded-xl px-4 py-3 text-sm font-bold shadow-sm hover:opacity-95 disabled:opacity-60"
           >
-            {fetching === 'bankTransfer' ? 'Fetching…' : 'Fetch bank transfer reports'}
+            {fetching === 'bankTransfer' ? 'Syncing…' : 'Fetch bank transfer reports'}
           </button>
           <button
             type="button"
-            disabled={fetching === 'upi'}
+            disabled={!!fetching}
             onClick={() => void fetchChannel('upi')}
             className="flex-1 min-w-[160px] bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-900 rounded-xl px-4 py-3 text-sm font-bold shadow-sm hover:opacity-95 disabled:opacity-60"
           >
-            {fetching === 'upi' ? 'Fetching…' : 'Fetch UPI reports'}
+            {fetching === 'upi' ? 'Syncing…' : 'Fetch UPI reports'}
           </button>
           <button
             type="button"
-            disabled={fetching === 'pos'}
+            disabled={!!fetching}
             onClick={() => void fetchChannel('pos')}
             className="flex-1 min-w-[160px] bg-gradient-to-r from-orange-600 to-orange-500 text-white rounded-xl px-4 py-3 text-sm font-bold shadow-sm hover:opacity-95 disabled:opacity-60"
           >
-            {fetching === 'pos' ? 'Fetching…' : 'Fetch POS reports'}
+            {fetching === 'pos' ? 'Syncing…' : 'Fetch POS reports'}
           </button>
-          <div className="bg-white border border-slate-200 rounded-xl px-5 py-3 min-w-[120px] shadow-sm">
+          <button
+            type="button"
+            disabled={!!fetching}
+            onClick={() => void fetchChannel('all')}
+            className="flex-1 min-w-[160px] bg-gradient-to-r from-indigo-600 to-blue-500 text-white rounded-xl px-4 py-3 text-sm font-bold shadow-sm hover:opacity-95 disabled:opacity-60"
+          >
+            {fetching === 'all' ? 'Syncing…' : 'Fetch all channels'}
+          </button>
+          <div className="bg-white border border-slate-200 rounded-xl px-5 py-3 min-w-[160px] shadow-sm">
             <p className="text-[10px] font-bold uppercase text-slate-500 tracking-wide">This Month</p>
-            <p className="text-3xl font-bold text-slate-900 mt-1">{report?.transactionCount ?? 0}</p>
+            <p className="text-2xl font-bold text-slate-900 mt-1 tabular-nums">{formatInr(monthTotal)}</p>
             <p className="text-[10px] text-slate-400">{report?.periodLabel}</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">
+              {report?.transactionCount ?? 0} transaction{(report?.transactionCount || 0) === 1 ? '' : 's'}
+            </p>
           </div>
         </div>
 
-        {channelFilter && (
-          <div className="text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 flex items-center justify-between">
-            <span>
-              Showing <strong>{CHANNEL_OPTIONS.find((c) => c.key === channelFilter)?.label}</strong> collections only
-            </span>
-            <button
-              type="button"
-              className="font-semibold underline"
-              onClick={() => void load()}
-            >
-              Clear filter
-            </button>
-          </div>
-        )}
+        <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+          Showing <strong>all payment channels</strong> together (Online · Bank Transfer · UPI · POS) for{' '}
+          {report?.periodLabel}. Each Fetch button refreshes the full matrix — it does not filter columns.
+          {lastSynced && (
+            <span className="text-slate-400"> · Last synced {new Date(lastSynced).toLocaleString('en-IN')}</span>
+          )}
+        </div>
 
         {loading ? (
           <AcademicLoading />
@@ -334,7 +347,7 @@ export function OnlinePaymentsView() {
         )}
 
         <p className="text-[11px] text-slate-400">
-          Data from fee receipts, transport/hostel collections, mobile payment orders & paid fines for{' '}
+          Data from fee receipts, transport/hostel collections, mobile payment orders &amp; paid fines for{' '}
           {report?.periodLabel}. Cash collections are excluded. Export downloads the full matrix as Excel.
         </p>
       </div>

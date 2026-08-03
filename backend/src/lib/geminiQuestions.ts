@@ -20,7 +20,15 @@ export function getGeminiApiKey(): string {
 
 function geminiModelCandidates(): string[] {
   const preferred = process.env.GEMINI_MODEL?.trim();
-  const defaults = ['gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-flash'];
+  // Free-tier friendly Flash models (newest first). Override with GEMINI_MODEL in .env.
+  const defaults = [
+    'gemini-2.0-flash',
+    'gemini-2.5-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-flash-latest',
+    'gemini-1.5-flash-latest',
+    'gemini-1.5-flash',
+  ];
   return [...new Set([preferred, ...defaults].filter(Boolean))] as string[];
 }
 
@@ -30,11 +38,11 @@ function isRetryableModelError(message: string): boolean {
     msg.includes('not found') ||
     msg.includes('404') ||
     msg.includes('is not supported') ||
-    msg.includes('model') && msg.includes('invalid')
+    (msg.includes('model') && msg.includes('invalid'))
   );
 }
 
-function formatGeminiError(err: unknown): Error {
+export function formatGeminiError(err: unknown): Error {
   const message = err instanceof Error ? err.message : String(err);
   if (message.includes('API key not valid') || message.includes('API_KEY_INVALID')) {
     return new Error(
@@ -45,6 +53,9 @@ function formatGeminiError(err: unknown): Error {
     return new Error(
       'GEMINI_API_KEY is not configured on the server. Add it to backend/.env and restart the API.',
     );
+  }
+  if (message.toLowerCase().includes('quota') || message.includes('429')) {
+    return new Error('Gemini API quota exceeded. Wait a moment and try again, or check your Google AI billing.');
   }
   return err instanceof Error ? err : new Error(message);
 }
@@ -70,6 +81,11 @@ export async function runGeminiJsonRequest(
       return responseText;
     } catch (err) {
       lastError = formatGeminiError(err);
+      const msg = lastError.message.toLowerCase();
+      // Invalid / missing key — no point trying other Gemini models
+      if (msg.includes('invalid') || msg.includes('not configured') || msg.includes('api key')) {
+        throw lastError;
+      }
       if (isRetryableModelError(lastError.message)) continue;
       throw lastError;
     }
@@ -78,11 +94,28 @@ export async function runGeminiJsonRequest(
   throw lastError || new Error('No compatible Gemini model available. Check GEMINI_MODEL in backend/.env');
 }
 
+/** Vision / multimodal Gemini JSON request with model fallback (PDF + images). */
+export async function runGeminiVisionJsonRequest(
+  temperature: number,
+  request: (model: GenerativeModel) => Promise<string>,
+): Promise<string> {
+  return runGeminiJsonRequest(temperature, request);
+}
+
 export function parseJsonFromModel(text: string): unknown {
   const trimmed = text.trim();
   const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
   const raw = fence ? fence[1].trim() : trimmed;
-  return JSON.parse(raw);
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const start = raw.indexOf('{');
+    const end = raw.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      return JSON.parse(raw.slice(start, end + 1));
+    }
+    throw new Error('AI returned invalid JSON. Please try again with a clearer PDF.');
+  }
 }
 
 export async function generateQuestionsFromText(params: {

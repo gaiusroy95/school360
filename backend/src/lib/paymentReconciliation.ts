@@ -1,5 +1,10 @@
 import {
+  BankDepositStatus,
+  ExpenseEntryStatus,
+  ExpensePaymentMethod,
+  FeeApprovalStatus,
   FeeFineLevyStatus,
+  FeeInvoiceStatus,
   FeePaymentMode,
   PaymentOrderStatus,
   PaymentReconciliationAction,
@@ -73,19 +78,33 @@ function emptyCollectionMatrix(): CollectionMatrix {
 }
 
 function feeHeadToCategory(headKey: string): CollectionCategory {
-  const k = headKey.toLowerCase();
-  if (k.includes('hostel') || k === 'hostelfee' || k === 'messfee') return 'hostelFee';
-  if (k.includes('transport')) return 'transportFee';
-  if (k.includes('admission')) return 'admissionFee';
-  if (k.includes('exam')) return 'examinationFee';
-  if (k.includes('library')) return 'libraryFee';
+  const k = headKey.toLowerCase().replace(/[_\s-]/g, '');
+  if (k.includes('hostel') || k === 'messfee' || k === 'hostelfee') return 'hostelFee';
+  if (k.includes('transport') || k === 'transportfee') return 'transportFee';
+  if (k.includes('admission') || k === 'admissionfee') return 'admissionFee';
+  if (k.includes('exam') || k === 'examinationfee') return 'examinationFee';
+  if (k.includes('library') || k.includes('librarysecurity')) return 'libraryFee';
   if (k.includes('fine') || k.includes('penalty')) return 'fineCollection';
+  // Fee Collection student fee heads → Student Fee collection header
   if (
     k.includes('tuition') ||
     k.includes('registration') ||
     k.includes('annual') ||
     k.includes('sports') ||
-    k.includes('development')
+    k.includes('development') ||
+    k.includes('computer') ||
+    k.includes('picnic') ||
+    k.includes('fieldtrip') ||
+    k.includes('addon') ||
+    k.includes('caution') ||
+    k === 'tuitionfee' ||
+    k === 'registrationfee' ||
+    k === 'annualcharges' ||
+    k === 'sportsfee' ||
+    k === 'computerlabfee' ||
+    k === 'picnicfieldtrip' ||
+    k === 'addonfee' ||
+    k === 'cautionmoney'
   ) {
     return 'studentFee';
   }
@@ -122,22 +141,38 @@ function addCollection(
   matrix[category][mode] = round2(matrix[category][mode] + amount);
 }
 
+/** School ERP calendar day — always Asia/Kolkata (matches Online Payments / fee counters). */
+const RECON_TZ = 'Asia/Kolkata';
+const RECON_TZ_OFFSET = '+05:30';
+
+function toCalendarDateKey(dateInput: string | Date): string {
+  if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateInput.trim())) {
+    return dateInput.trim().slice(0, 10);
+  }
+  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: RECON_TZ }).format(d);
+}
+
 function dayRange(dateInput: string | Date) {
-  const d = typeof dateInput === 'string' ? new Date(dateInput) : new Date(dateInput);
-  const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-  const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-  return { start, end, dateOnly: start };
+  const key = toCalendarDateKey(dateInput);
+  // Absolute IST day window so UPI/online receipts land on the same calendar day as Online Payments
+  const start = new Date(`${key}T00:00:00.000${RECON_TZ_OFFSET}`);
+  const end = new Date(`${key}T23:59:59.999${RECON_TZ_OFFSET}`);
+  // Noon UTC keeps @db.Date stable (avoids previous-day shift from local midnight)
+  const [y, m, d] = key.split('-').map(Number);
+  const dateOnly = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  return { start, end, dateOnly };
 }
 
 function previousDate(dateInput: string | Date) {
-  const d = typeof dateInput === 'string' ? new Date(dateInput) : new Date(dateInput);
-  const prev = new Date(d);
-  prev.setDate(prev.getDate() - 1);
+  const key = toCalendarDateKey(dateInput);
+  const [y, m, d] = key.split('-').map(Number);
+  const prev = new Date(Date.UTC(y, m - 1, d - 1, 12, 0, 0));
   return prev;
 }
 
 function formatDateKey(d: Date) {
-  return d.toISOString().slice(0, 10);
+  return toCalendarDateKey(d);
 }
 
 export type ReconciliationManualInputs = {
@@ -152,6 +187,38 @@ export type ReconciliationManualInputs = {
   previousDayOutstanding: number;
   principalRequired: boolean;
   remarks: string;
+};
+
+export type ReconciliationSyncSources = {
+  feeReceipts: number;
+  transportCollections: number;
+  hostelCollections: number;
+  invoicePayments: number;
+  paidFines: number;
+  onlinePaymentOrders: number;
+  expensePayments: number;
+  discountsApproved: number;
+  scholarshipsApproved: number;
+  cashBankDeposits: number;
+  chequeBankDeposits: number;
+  systemCashDeposited: number;
+  systemChequeDeposited: number;
+  systemOnlineGateway: number;
+};
+
+/** Posted into Accounts & Ledger only after day-closing approval / freeze. */
+export type ReconciliationLedgerPosting = {
+  revenueByCategory: Record<string, number>;
+  discounts: number;
+  scholarships: number;
+  operatingExpenses: number;
+  capitalExpenses: number;
+  payrollPaid: number;
+  vendorPayments: number;
+  refunds: number;
+  bankCharges: number;
+  cashExpensePayments: number;
+  bankExpensePayments: number;
 };
 
 export type ReconciliationReport = {
@@ -174,6 +241,9 @@ export type ReconciliationReport = {
   reconciliationSummary: Array<{ label: string; amount: number; highlight?: boolean }>;
   systemVerification: Array<{ label: string; amount: number; highlight?: boolean }>;
   totalAvailableFunds: number;
+  syncSources: ReconciliationSyncSources;
+  /** Structured figures for Accounts & Ledger after this day is approved. */
+  ledgerPosting: ReconciliationLedgerPosting;
   totals: {
     cashCollection: number;
     onlineCollection: number;
@@ -190,48 +260,95 @@ export type ReconciliationReport = {
   };
 };
 
+function parseBreakdownItems(breakdown: unknown): { key: string; amount: number }[] {
+  if (Array.isArray(breakdown)) {
+    return breakdown.map((item) => {
+      const row = item as { key?: string; amount?: number };
+      return { key: String(row.key || ''), amount: Number(row.amount) || 0 };
+    });
+  }
+  if (breakdown && typeof breakdown === 'object') {
+    return Object.entries(breakdown as Record<string, unknown>).map(([key, value]) => ({
+      key,
+      amount: Number(value) || 0,
+    }));
+  }
+  return [];
+}
+
+function distributeAmountAcrossLineItems(
+  lineItems: { key: string; amount: number }[],
+  amountPaid: number,
+): { key: string; amount: number }[] {
+  const positive = lineItems.filter((i) => i.amount > 0);
+  if (positive.length === 0) {
+    return amountPaid > 0 ? [{ key: 'tuitionFee', amount: amountPaid }] : [];
+  }
+  const lineTotal = positive.reduce((s, i) => s + i.amount, 0);
+  if (lineTotal <= 0) return [{ key: positive[0].key, amount: amountPaid }];
+  // Scale paid amount across heads (partial invoice payments)
+  return positive.map((i) => ({
+    key: i.key,
+    amount: round2((i.amount / lineTotal) * amountPaid),
+  }));
+}
+
 async function aggregateCollections(
   institutionId: string,
   academicYear: string,
   start: Date,
   end: Date,
-) {
+): Promise<{
+  matrix: CollectionMatrix;
+  sync: Omit<
+    ReconciliationSyncSources,
+    | 'cashBankDeposits'
+    | 'chequeBankDeposits'
+    | 'systemCashDeposited'
+    | 'systemChequeDeposited'
+    | 'systemOnlineGateway'
+    | 'expensePayments'
+    | 'discountsApproved'
+    | 'scholarshipsApproved'
+  >;
+}> {
   const matrix = emptyCollectionMatrix();
+  const receiptIds = new Set<string>();
 
   const receipts = await prisma.feeReceipt.findMany({
     where: { institutionId, academicYear, collectedAt: { gte: start, lte: end } },
   });
 
   for (const r of receipts) {
+    receiptIds.add(r.id);
     const mode = feePaymentModeToCollection(r.paymentMode);
     if (!mode) continue;
-    const breakdown = Array.isArray(r.feeBreakdown) ? r.feeBreakdown : [];
-    if (breakdown.length === 0) {
+    const items = parseBreakdownItems(r.feeBreakdown);
+    if (items.length === 0) {
+      // No head breakdown — still book full amount under Student Fee so every collection reconciles
       addCollection(matrix, 'studentFee', mode, r.amountPaid);
       continue;
     }
-    for (const item of breakdown) {
-      const row = item as { key?: string; amount?: number };
-      const amount = Number(row.amount) || 0;
-      if (amount <= 0) continue;
-      addCollection(matrix, feeHeadToCategory(String(row.key || '')), mode, amount);
+    let booked = 0;
+    for (const item of items) {
+      if (item.amount <= 0) continue;
+      const category = feeHeadToCategory(item.key);
+      addCollection(matrix, category, mode, item.amount);
+      booked = round2(booked + item.amount);
+    }
+    // Any unpaid remainder from receipt total still flows into Student Fee
+    const remainder = round2(r.amountPaid - booked);
+    if (remainder > 0.01) {
+      addCollection(matrix, 'studentFee', mode, remainder);
     }
   }
 
-  const [transportRows, hostelRows, paidOrders, paidFines] = await Promise.all([
+  const [transportRows, hostelRows, paidFines, paidInvoices, paidOrders] = await Promise.all([
     prisma.transportFeeCollection.findMany({
       where: { institutionId, academicYear, collectedAt: { gte: start, lte: end } },
     }),
     prisma.hostelFeeCollection.findMany({
       where: { institutionId, academicYear, collectedAt: { gte: start, lte: end } },
-    }),
-    prisma.paymentOrder.findMany({
-      where: {
-        institutionId,
-        status: PaymentOrderStatus.PAID,
-        updatedAt: { gte: start, lte: end },
-      },
-      include: { feeDue: { select: { feeHead: true, amount: true } } },
     }),
     prisma.feeFineLevy.findMany({
       where: {
@@ -241,11 +358,32 @@ async function aggregateCollections(
         collectedAt: { gte: start, lte: end },
       },
     }),
+    // Invoice payments not already represented by a fee receipt (deposit / manual invoice settle)
+    prisma.feeInvoice.findMany({
+      where: {
+        institutionId,
+        academicYear,
+        amountPaid: { gt: 0 },
+        status: { in: [FeeInvoiceStatus.PAID, FeeInvoiceStatus.PARTIAL] },
+        updatedAt: { gte: start, lte: end },
+      },
+    }),
+    // Gateway / mobile payment orders (same source as Online Payments → Online column)
+    prisma.paymentOrder.findMany({
+      where: {
+        institutionId,
+        status: PaymentOrderStatus.PAID,
+        updatedAt: { gte: start, lte: end },
+      },
+      include: { feeDue: { select: { feeHead: true, academicYear: true } } },
+    }),
   ]);
 
   for (const t of transportRows) {
     const mode = paymentModeStringToCollection(t.paymentMode);
     if (!mode) continue;
+    // Prefer dedicated transport collections; if same-day receipts already booked transport heads,
+    // still include module collections (they are separate receipts in Fee Collection).
     addCollection(matrix, 'transportFee', mode, t.amount);
   }
 
@@ -255,15 +393,127 @@ async function aggregateCollections(
     addCollection(matrix, 'hostelFee', mode, h.amount);
   }
 
-  for (const o of paidOrders) {
-    addCollection(matrix, feeHeadToCategory(o.feeDue.feeHead), 'online', o.amount);
-  }
-
+  // Align with Online Payments: paid fines book under UPI / Fine Collection
   for (const f of paidFines) {
-    addCollection(matrix, 'fineCollection', 'cash', f.amount);
+    addCollection(matrix, 'fineCollection', 'upi', f.amount);
   }
 
-  return matrix;
+  // PaymentOrders that already created a same-day UPI FeeReceipt must not double-count
+  let onlinePaymentOrders = 0;
+  for (const o of paidOrders) {
+    if (o.feeDue.academicYear && o.feeDue.academicYear !== academicYear) continue;
+
+    const coveredByReceipt = receipts.some((r) => {
+      if (r.paymentMode !== FeePaymentMode.UPI && r.paymentMode !== FeePaymentMode.CARD) {
+        return false;
+      }
+      if (Math.abs(r.amountPaid - o.amount) > 0.01) return false;
+      if (o.providerPaymentId && r.remarks?.includes(o.providerPaymentId)) return true;
+      if (r.remarks?.toLowerCase().includes('online payment')) {
+        return parseBreakdownItems(r.feeBreakdown).some(
+          (i) => i.key === o.feeDue.feeHead && Math.abs(i.amount - o.amount) < 0.01,
+        );
+      }
+      return parseBreakdownItems(r.feeBreakdown).some(
+        (i) => i.key === o.feeDue.feeHead && Math.abs(i.amount - o.amount) < 0.01,
+      );
+    });
+    if (coveredByReceipt) continue;
+
+    addCollection(matrix, feeHeadToCategory(o.feeDue.feeHead), 'online', o.amount);
+    onlinePaymentOrders += 1;
+  }
+
+  let invoicePaymentCount = 0;
+  const linkedReceiptIds = paidInvoices
+    .map((inv) => inv.feeReceiptId)
+    .filter((id): id is string => Boolean(id && id.trim()));
+  const existingLinkedReceipts =
+    linkedReceiptIds.length > 0
+      ? await prisma.feeReceipt.findMany({
+          where: { institutionId, id: { in: linkedReceiptIds } },
+          select: { id: true },
+        })
+      : [];
+  const linkedExists = new Set(existingLinkedReceipts.map((r) => r.id));
+
+  for (const inv of paidInvoices) {
+    if (inv.feeReceiptId && (receiptIds.has(inv.feeReceiptId) || linkedExists.has(inv.feeReceiptId))) {
+      continue;
+    }
+
+    const mode = paymentModeStringToCollection(inv.paymentMode || 'BANK_TRANSFER') || 'bankTransfer';
+    const items = distributeAmountAcrossLineItems(parseBreakdownItems(inv.lineItems), inv.amountPaid);
+    if (items.length === 0 && inv.amountPaid > 0) {
+      addCollection(matrix, 'studentFee', mode, inv.amountPaid);
+      invoicePaymentCount += 1;
+      continue;
+    }
+    for (const item of items) {
+      if (item.amount <= 0) continue;
+      addCollection(matrix, feeHeadToCategory(item.key), mode, item.amount);
+    }
+    invoicePaymentCount += 1;
+  }
+
+  return {
+    matrix,
+    sync: {
+      feeReceipts: receipts.length,
+      transportCollections: transportRows.length,
+      hostelCollections: hostelRows.length,
+      invoicePayments: invoicePaymentCount,
+      paidFines: paidFines.length,
+      onlinePaymentOrders,
+    },
+  };
+}
+
+async function getDayBankDeposits(
+  institutionId: string,
+  academicYear: string,
+  dateOnly: Date,
+) {
+  const [cashDeposits, chequeDeposits] = await Promise.all([
+    prisma.bankCashDeposit.findMany({
+      where: {
+        institutionId,
+        academicYear,
+        depositDate: dateOnly,
+        status: {
+          in: [
+            BankDepositStatus.APPROVED,
+            BankDepositStatus.DEPOSITED,
+            BankDepositStatus.REALIZED,
+          ],
+        },
+      },
+    }),
+    prisma.bankChequeDeposit.findMany({
+      where: {
+        institutionId,
+        academicYear,
+        depositDate: dateOnly,
+        status: {
+          in: [
+            BankDepositStatus.APPROVED,
+            BankDepositStatus.DEPOSITED,
+            BankDepositStatus.REALIZED,
+          ],
+        },
+      },
+    }),
+  ]);
+
+  const systemCashDeposited = round2(cashDeposits.reduce((s, d) => s + d.depositAmount, 0));
+  const systemChequeDeposited = round2(chequeDeposits.reduce((s, d) => s + d.depositAmount, 0));
+
+  return {
+    cashDeposits,
+    chequeDeposits,
+    systemCashDeposited,
+    systemChequeDeposited,
+  };
 }
 
 function sumMatrixMode(matrix: CollectionMatrix, mode: CollectionPaymentMode) {
@@ -313,72 +563,157 @@ export async function buildReconciliationReport(
   const { start, end, dateOnly } = dayRange(dateInput);
   const date = formatDateKey(dateOnly);
 
-  const matrix = await aggregateCollections(institutionId, academicYear, start, end);
+  const { matrix, sync: collectionSync } = await aggregateCollections(
+    institutionId,
+    academicYear,
+    start,
+    end,
+  );
   const { openingCash, openingBank } = await getPreviousClosingBalances(institutionId, dateOnly);
+  const bankDeposits = await getDayBankDeposits(institutionId, academicYear, dateOnly);
 
   const cashCollection = sumMatrixMode(matrix, 'cash');
-  const onlineCollection = sumMatrixMode(matrix, 'online');
+  const onlineOnly = sumMatrixMode(matrix, 'online');
   const bankTransferReceived = sumMatrixMode(matrix, 'bankTransfer');
-  const chequeCleared = sumMatrixMode(matrix, 'cheque');
+  const chequeFromCollections = sumMatrixMode(matrix, 'cheque');
   const upiCollection = sumMatrixMode(matrix, 'upi');
   const posCollection = sumMatrixMode(matrix, 'pos');
   const erpTotalCollection = sumMatrixAll(matrix);
+  const systemOnlineGateway = round2(onlineOnly + upiCollection + posCollection);
 
-  const cashDepositedToBank = round2(manual.cashDepositedToBank || 0);
+  // Prefer explicit manual inputs; otherwise sync from Bank & Cash Book / gateway totals
+  const cashDepositedToBank = round2(
+    manual.cashDepositedToBank != null && Number(manual.cashDepositedToBank) > 0
+      ? Number(manual.cashDepositedToBank)
+      : bankDeposits.systemCashDeposited,
+  );
   const cashWithdrawnFromBank = round2(manual.cashWithdrawnFromBank || 0);
-  const cashPayments = round2(manual.cashPayments || 0);
+
+  const [vendorPayments, salaryPayments, onlineRefunds, paidExpenses, dayDiscounts, dayScholarships] =
+    await Promise.all([
+      prisma.transportVendorPayment.findMany({
+        where: { institutionId, paymentDate: dateOnly },
+      }),
+      prisma.payrollSlip.findMany({
+        where: {
+          institutionId,
+          status: PayrollSlipStatus.PAID,
+          paidAt: { gte: start, lte: end },
+        },
+      }),
+      prisma.feeRefund.findMany({
+        where: {
+          institutionId,
+          academicYear,
+          status: FeeApprovalStatus.PROCESSED,
+          processedAt: { gte: start, lte: end },
+        },
+      }),
+      // Expense Management — PAID entries feed reconciliation (then Accounts & Ledger after approval)
+      prisma.expenseEntry.findMany({
+        where: {
+          institutionId,
+          academicYear,
+          status: ExpenseEntryStatus.PAID,
+          OR: [
+            { paidAt: { gte: start, lte: end } },
+            { paidAt: null, expenseDate: dateOnly },
+          ],
+        },
+        include: { category: true },
+      }),
+      prisma.feeDiscount.findMany({
+        where: {
+          institutionId,
+          academicYear,
+          status: { in: [FeeApprovalStatus.APPROVED, FeeApprovalStatus.ACTIVE] },
+          approvedAt: { gte: start, lte: end },
+        },
+        select: { settlementAmount: true },
+      }),
+      prisma.feeScholarshipAward.findMany({
+        where: {
+          institutionId,
+          academicYear,
+          status: FeeApprovalStatus.APPROVED,
+          approvedAt: { gte: start, lte: end },
+        },
+        select: { amount: true },
+      }),
+    ]);
+
+  const vendorPaymentTotal = round2(vendorPayments.reduce((s, v) => s + v.amount, 0));
+  const salaryPaymentTotal = round2(salaryPayments.reduce((s, v) => s + v.netPay, 0));
+  const onlineRefundTotal = round2(onlineRefunds.reduce((s, v) => s + v.amount, 0));
+  const discountsApproved = round2(dayDiscounts.reduce((s, d) => s + d.settlementAmount, 0));
+  const scholarshipsApproved = round2(dayScholarships.reduce((s, a) => s + a.amount, 0));
+
+  let systemCashExpensePayments = 0;
+  let systemBankExpensePayments = 0;
+  let operatingExpenses = 0;
+  let capitalExpenses = 0;
+  for (const e of paidExpenses) {
+    const amt = round2(e.amount + e.gstAmount);
+    if (e.assetType?.trim()) {
+      capitalExpenses = round2(capitalExpenses + amt);
+    } else {
+      operatingExpenses = round2(operatingExpenses + amt);
+    }
+    if (e.paymentMethod === ExpensePaymentMethod.CASH) {
+      systemCashExpensePayments = round2(systemCashExpensePayments + amt);
+    } else {
+      systemBankExpensePayments = round2(systemBankExpensePayments + amt);
+    }
+  }
+
+  // Prefer explicit manual cash payments; otherwise sync paid cash expenses from Expense Management
+  const cashPayments = round2(
+    manual.cashPayments != null && Number(manual.cashPayments) > 0
+      ? Number(manual.cashPayments)
+      : systemCashExpensePayments,
+  );
   const bankCharges = round2(manual.bankCharges || 0);
   const openingPettyCash = round2(manual.openingPettyCash || 0);
   const previousDayOutstanding = round2(manual.previousDayOutstanding || 0);
   const bankStatementTotal = round2(manual.bankStatementTotal || 0);
   const cashCount = round2(manual.cashCount || 0);
-  const gatewaySettlement = round2(manual.gatewaySettlement || 0);
+  const gatewaySettlement = round2(
+    manual.gatewaySettlement != null && Number(manual.gatewaySettlement) > 0
+      ? Number(manual.gatewaySettlement)
+      : systemOnlineGateway,
+  );
 
-  const [vendorPayments, salaryPayments, onlineRefunds] = await Promise.all([
-    prisma.transportVendorPayment.findMany({
-      where: { institutionId, paymentDate: dateOnly },
-    }),
-    prisma.payrollSlip.findMany({
-      where: {
-        institutionId,
-        status: PayrollSlipStatus.PAID,
-        paidAt: { gte: start, lte: end },
-      },
-    }),
-    prisma.feeRefund.findMany({
-      where: {
-        institutionId,
-        academicYear,
-        status: 'PROCESSED',
-        processedAt: { gte: start, lte: end },
-      },
-    }),
-  ]);
-
-  const vendorPaymentTotal = round2(vendorPayments.reduce((s, v) => s + v.amount, 0));
-  const salaryPaymentTotal = round2(salaryPayments.reduce((s, v) => s + v.netPay, 0));
-  const onlineRefundTotal = round2(onlineRefunds.reduce((s, v) => s + v.amount, 0));
+  // Prefer bank cheque deposit slips for bank movement; fall back to day's cheque collections
+  const chequeCleared = round2(
+    bankDeposits.systemChequeDeposited > 0
+      ? bankDeposits.systemChequeDeposited
+      : chequeFromCollections,
+  );
 
   const closingCashInHand = round2(
     openingCash + cashCollection - cashPayments - cashDepositedToBank + cashWithdrawnFromBank,
   );
   const closingBankBalance = round2(
     openingBank +
-      onlineCollection +
-      upiCollection +
-      posCollection +
+      systemOnlineGateway +
       bankTransferReceived +
       chequeCleared +
       cashDepositedToBank -
       onlineRefundTotal -
       vendorPaymentTotal -
       salaryPaymentTotal -
+      systemBankExpensePayments -
       bankCharges,
   );
 
   const totalCreditCollection = erpTotalCollection;
   const totalDebitPayment = round2(
-    cashPayments + onlineRefundTotal + vendorPaymentTotal + salaryPaymentTotal + bankCharges,
+    cashPayments +
+      onlineRefundTotal +
+      vendorPaymentTotal +
+      salaryPaymentTotal +
+      systemBankExpensePayments +
+      bankCharges,
   );
   const totalAvailableFunds = round2(closingCashInHand + closingBankBalance);
   const ledgerBalance = totalAvailableFunds;
@@ -399,6 +734,37 @@ export async function buildReconciliationReport(
     };
   });
 
+  const revenueByCategory: Record<string, number> = {};
+  for (const row of collectionSummary) {
+    revenueByCategory[row.category] = row.total;
+  }
+
+  const ledgerPosting: ReconciliationLedgerPosting = {
+    revenueByCategory,
+    discounts: discountsApproved,
+    scholarships: scholarshipsApproved,
+    operatingExpenses,
+    capitalExpenses,
+    payrollPaid: salaryPaymentTotal,
+    vendorPayments: vendorPaymentTotal,
+    refunds: onlineRefundTotal,
+    bankCharges,
+    cashExpensePayments: cashPayments,
+    bankExpensePayments: systemBankExpensePayments,
+  };
+
+  const syncSources: ReconciliationSyncSources = {
+    ...collectionSync,
+    expensePayments: paidExpenses.length,
+    discountsApproved: dayDiscounts.length,
+    scholarshipsApproved: dayScholarships.length,
+    cashBankDeposits: bankDeposits.cashDeposits.length,
+    chequeBankDeposits: bankDeposits.chequeDeposits.length,
+    systemCashDeposited: bankDeposits.systemCashDeposited,
+    systemChequeDeposited: bankDeposits.systemChequeDeposited,
+    systemOnlineGateway,
+  };
+
   return {
     date,
     academicYear,
@@ -418,13 +784,14 @@ export async function buildReconciliationReport(
     ],
     bankMovement: [
       { label: 'Opening Bank Balance', amount: openingBank, rowType: 'item' },
-      { label: '+ Online Collection', amount: round2(onlineCollection + upiCollection + posCollection), rowType: 'item' },
+      { label: '+ Online Collection', amount: systemOnlineGateway, rowType: 'item' },
       { label: '+ Bank Transfer Received', amount: bankTransferReceived, rowType: 'item' },
-      { label: '+ Cheque Cleared', amount: chequeCleared, rowType: 'item' },
+      { label: '+ Cheque Cleared / Deposited', amount: chequeCleared, rowType: 'item' },
       { label: '+ Cash Deposited', amount: cashDepositedToBank, rowType: 'item' },
       { label: '- Online Refund', amount: onlineRefundTotal, rowType: 'item' },
       { label: '- Vendor Payments', amount: vendorPaymentTotal, rowType: 'item' },
       { label: '- Salary Payment', amount: salaryPaymentTotal, rowType: 'item' },
+      { label: '- Expense Payments (Bank)', amount: systemBankExpensePayments, rowType: 'item' },
       { label: '- Bank Charges', amount: bankCharges, rowType: 'item' },
       { label: '= Closing Bank Balance', amount: closingBankBalance, rowType: 'total' },
     ],
@@ -449,15 +816,19 @@ export async function buildReconciliationReport(
       { label: 'Bank Statement Total', amount: bankStatementTotal },
       { label: 'Cash Count', amount: cashCount },
       { label: 'Gateway Settlement', amount: gatewaySettlement },
+      { label: 'Bank Cash Book Deposits', amount: bankDeposits.systemCashDeposited },
+      { label: 'Cheque Deposit Slips', amount: bankDeposits.systemChequeDeposited },
       { label: 'Ledger Balance', amount: ledgerBalance },
       { label: 'Expected Balance', amount: expectedBalance },
       { label: 'Actual Balance', amount: actualBalance },
       { label: 'Difference', amount: difference, highlight: true },
     ],
     totalAvailableFunds,
+    syncSources,
+    ledgerPosting,
     totals: {
       cashCollection,
-      onlineCollection: round2(onlineCollection + upiCollection + posCollection),
+      onlineCollection: systemOnlineGateway,
       bankTransferReceived,
       chequeCleared,
       totalCreditCollection,
@@ -561,6 +932,18 @@ export async function getOrCreateReconciliation(
         reconciliationDate: dateOnly,
         academicYear: year,
       },
+      include: { approvals: true },
+    });
+  } else if (
+    academicYear &&
+    record.academicYear !== year &&
+    (record.status === PaymentReconciliationStatus.DRAFT ||
+      record.status === PaymentReconciliationStatus.RETURNED)
+  ) {
+    // Keep draft recon aligned with the academic year filter so online receipts sync
+    record = await prisma.paymentReconciliation.update({
+      where: { id: record.id },
+      data: { academicYear: year },
       include: { approvals: true },
     });
   }
@@ -934,9 +1317,20 @@ export async function getReconciliationPdfPayload(institutionId: string, id: str
     select: { name: true },
   });
 
+  const approved =
+    data.status === PaymentReconciliationStatus.DAY_CLOSING_COMPLETED ||
+    data.status === PaymentReconciliationStatus.FROZEN;
+
   return {
     institutionName: institution?.name || 'Institution',
     reconciliation: serializeRecord(data, report),
     generatedAt: new Date().toISOString(),
+    printable: true,
+    approved,
+    approvedLabel: approved
+      ? data.status === PaymentReconciliationStatus.DAY_CLOSING_COMPLETED
+        ? 'APPROVED — DAY CLOSING COMPLETED'
+        : 'FROZEN — DAY CLOSING'
+      : `DRAFT / ${data.status.replace(/_/g, ' ')}`,
   };
 }

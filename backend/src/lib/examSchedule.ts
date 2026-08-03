@@ -55,6 +55,10 @@ export async function getExamScheduleMeta(institutionId: string) {
     academicYears: filters.academicYears,
     examTypes: Object.entries(EXAM_TYPE_LABELS).map(([id, label]) => ({ id, label })),
     eventTypes: Object.entries(EVENT_TYPE_LABELS).map(([id, label]) => ({ id, label })),
+    examModes: [
+      { id: 'DIGITAL', label: 'Digital Exam' },
+      { id: 'MANUAL', label: 'Manual Exam' },
+    ],
     classes: filters.classes,
     sectionsByClass: filters.sectionsByClass,
   };
@@ -76,7 +80,24 @@ export type ExamCalendarEvent = {
   endTime: string;
   status: string;
   source: 'calendar' | 'class_test';
+  examMode?: string | null;
+  paperSource?: string | null;
+  questionPaperId?: string | null;
+  marksAssignmentId?: string | null;
+  publishAt?: string | null;
+  examLink?: string | null;
+  examLinkToken?: string | null;
+  linkPublishedAt?: string | null;
+  isLinkLive?: boolean;
+  academicCalendarEventId?: string | null;
+  resultsCapturedAt?: string | null;
+  syncedToCalendar?: boolean;
 };
+
+function examLinkUrl(token: string) {
+  const base = (process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+  return `${base}/exam/${token}`;
+}
 
 export async function getExamScheduleCalendar(
   institutionId: string,
@@ -134,23 +155,41 @@ export async function getExamScheduleCalendar(
     }),
   ]);
 
-  const sessionEvents: ExamCalendarEvent[] = sessions.map((s) => ({
-    id: s.id,
-    eventType: s.eventType,
-    eventTypeLabel: EVENT_TYPE_LABELS[s.eventType],
-    examType: s.examType,
-    examTypeLabel: s.examType ? EXAM_TYPE_LABELS[s.examType] : null,
-    seriesName: s.seriesName,
-    className: s.className,
-    sectionName: s.sectionName,
-    subjectName: s.subjectName,
-    date: toDateKey(s.examDate),
-    dateDisplay: formatDateDisplay(s.examDate),
-    startTime: s.startTime,
-    endTime: s.endTime,
-    status: s.status,
-    source: 'calendar' as const,
-  }));
+  const sessionEvents: ExamCalendarEvent[] = sessions.map((s) => {
+    const token = s.examLinkToken || null;
+    const publishAt = s.publishAt || null;
+    const linkPublishedAt = s.linkPublishedAt || null;
+    const isLinkLive = Boolean(linkPublishedAt || (publishAt && publishAt.getTime() <= Date.now()));
+    return {
+      id: s.id,
+      eventType: s.eventType,
+      eventTypeLabel: EVENT_TYPE_LABELS[s.eventType],
+      examType: s.examType,
+      examTypeLabel: s.examType ? EXAM_TYPE_LABELS[s.examType] : null,
+      seriesName: s.seriesName,
+      className: s.className,
+      sectionName: s.sectionName,
+      subjectName: s.subjectName,
+      date: toDateKey(s.examDate),
+      dateDisplay: formatDateDisplay(s.examDate),
+      startTime: s.startTime,
+      endTime: s.endTime,
+      status: s.status,
+      source: 'calendar' as const,
+      examMode: s.examMode || 'MANUAL',
+      paperSource: s.paperSource || 'NONE',
+      questionPaperId: s.questionPaperId || null,
+      marksAssignmentId: s.marksAssignmentId || null,
+      publishAt: publishAt?.toISOString() || null,
+      examLinkToken: token,
+      examLink: token ? examLinkUrl(token) : null,
+      linkPublishedAt: linkPublishedAt?.toISOString() || null,
+      isLinkLive,
+      academicCalendarEventId: s.academicCalendarEventId || null,
+      resultsCapturedAt: s.resultsCapturedAt?.toISOString() || null,
+      syncedToCalendar: Boolean(s.academicCalendarEventId),
+    };
+  });
 
   const classTestEvents: ExamCalendarEvent[] = classTests.map((ct) => ({
     id: ct.id,

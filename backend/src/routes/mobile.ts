@@ -52,6 +52,8 @@ import {
   getMobileLmsContent,
   getMobileProfile,
   getMobileTests,
+  startMobileTest,
+  submitMobileTest,
   getMobileTimetable,
   getReminderPreferences,
   listMobileConsents,
@@ -595,6 +597,154 @@ mobileRouter.get(
       return res.json(await getMobileTests(req.mobileUser!, studentQuery(req)));
     } catch (e) {
       return res.status(400).json({ error: e instanceof Error ? e.message : 'Failed to load tests' });
+    }
+  }),
+);
+
+mobileRouter.post(
+  '/tests/:paperId/start',
+  ...studentParentOnly,
+  asyncHandler(async (req, res) => {
+    try {
+      return res.status(201).json(await startMobileTest(req.mobileUser!, req.params.paperId, studentQuery(req)));
+    } catch (e) {
+      return res.status(400).json({ error: e instanceof Error ? e.message : 'Failed to start test' });
+    }
+  }),
+);
+
+mobileRouter.post(
+  '/tests/:paperId/submit',
+  ...studentParentOnly,
+  asyncHandler(async (req, res) => {
+    try {
+      const body = req.body ?? {};
+      if (!body.attemptId) return res.status(400).json({ error: 'attemptId is required' });
+      return res.json(await submitMobileTest(req.mobileUser!, req.params.paperId, {
+        attemptId: String(body.attemptId),
+        answers: body.answers && typeof body.answers === 'object' ? body.answers : {},
+        studentId: studentQuery(req).studentId,
+      }));
+    } catch (e) {
+      return res.status(400).json({ error: e instanceof Error ? e.message : 'Failed to submit test' });
+    }
+  }),
+);
+
+mobileRouter.get(
+  '/revaluation',
+  ...studentParentOnly,
+  asyncHandler(async (req, res) => {
+    try {
+      const { getMobileRevaluationOverview } = await import('../lib/examRevaluation.js');
+      const { resolveStudentId } = await import('../lib/mobileScope.js');
+      const studentId = resolveStudentId(req.mobileUser!, studentQuery(req).studentId);
+      const academicYear = typeof req.query.academicYear === 'string' ? req.query.academicYear : undefined;
+      return res.json(await getMobileRevaluationOverview(req.mobileUser!.institutionId, studentId, academicYear));
+    } catch (e) {
+      return res.status(400).json({ error: e instanceof Error ? e.message : 'Failed to load revaluation' });
+    }
+  }),
+);
+
+mobileRouter.post(
+  '/revaluation/requests',
+  ...studentParentOnly,
+  asyncHandler(async (req, res) => {
+    try {
+      const { createRevaluationRequest } = await import('../lib/examRevaluation.js');
+      const { resolveStudentId } = await import('../lib/mobileScope.js');
+      const studentId = resolveStudentId(req.mobileUser!, studentQuery(req).studentId);
+      const body = req.body ?? {};
+      const studentResultId = typeof body.studentResultId === 'string' ? body.studentResultId : '';
+      const subjectName = typeof body.subjectName === 'string' ? body.subjectName : '';
+      const requestType = body.requestType === 'RECHECK' ? 'RECHECK' as const : 'REVALUATION' as const;
+      if (!studentResultId || !subjectName) {
+        return res.status(400).json({ error: 'studentResultId and subjectName are required' });
+      }
+      // Ensure the result belongs to this student
+      const result = await prisma.examStudentResult.findFirst({
+        where: { id: studentResultId, studentId, institutionId: req.mobileUser!.institutionId },
+      });
+      if (!result) return res.status(403).json({ error: 'Not allowed for this student' });
+      return res.status(201).json(await createRevaluationRequest(
+        req.mobileUser!.institutionId,
+        { studentResultId, subjectName, requestType, remarks: typeof body.remarks === 'string' ? body.remarks : undefined },
+        req.mobileUser!.displayName || req.mobileUser!.role,
+      ));
+    } catch (e) {
+      return res.status(400).json({ error: e instanceof Error ? e.message : 'Failed to create request' });
+    }
+  }),
+);
+
+mobileRouter.post(
+  '/revaluation/requests/:id/pay',
+  ...studentParentOnly,
+  asyncHandler(async (req, res) => {
+    try {
+      const { createRevaluationPaymentOrder } = await import('../lib/examRevaluation.js');
+      const { resolveStudentId } = await import('../lib/mobileScope.js');
+      const studentId = resolveStudentId(req.mobileUser!, studentQuery(req).studentId);
+      const request = await prisma.examRevaluationRequest.findFirst({
+        where: { id: req.params.id, institutionId: req.mobileUser!.institutionId, studentId },
+      });
+      if (!request) return res.status(404).json({ error: 'Request not found' });
+      return res.json(await createRevaluationPaymentOrder(req.mobileUser!.institutionId, request.id, {
+        accountId: req.mobileUser!.accountId,
+      }));
+    } catch (e) {
+      return res.status(400).json({ error: e instanceof Error ? e.message : 'Payment failed' });
+    }
+  }),
+);
+
+mobileRouter.post(
+  '/revaluation/back-papers',
+  ...studentParentOnly,
+  asyncHandler(async (req, res) => {
+    try {
+      const { createBackPaperExam } = await import('../lib/examRevaluation.js');
+      const { resolveStudentId } = await import('../lib/mobileScope.js');
+      const studentId = resolveStudentId(req.mobileUser!, studentQuery(req).studentId);
+      const body = req.body ?? {};
+      const studentResultId = typeof body.studentResultId === 'string' ? body.studentResultId : '';
+      const subjectName = typeof body.subjectName === 'string' ? body.subjectName : '';
+      if (!studentResultId || !subjectName) {
+        return res.status(400).json({ error: 'studentResultId and subjectName are required' });
+      }
+      const result = await prisma.examStudentResult.findFirst({
+        where: { id: studentResultId, studentId, institutionId: req.mobileUser!.institutionId },
+      });
+      if (!result) return res.status(403).json({ error: 'Not allowed for this student' });
+      return res.status(201).json(await createBackPaperExam(
+        req.mobileUser!.institutionId,
+        { studentResultId, subjectName },
+        req.mobileUser!.displayName || req.mobileUser!.role,
+      ));
+    } catch (e) {
+      return res.status(400).json({ error: e instanceof Error ? e.message : 'Failed to create back paper' });
+    }
+  }),
+);
+
+mobileRouter.post(
+  '/revaluation/back-papers/:id/pay',
+  ...studentParentOnly,
+  asyncHandler(async (req, res) => {
+    try {
+      const { createBackPaperPaymentOrder } = await import('../lib/examRevaluation.js');
+      const { resolveStudentId } = await import('../lib/mobileScope.js');
+      const studentId = resolveStudentId(req.mobileUser!, studentQuery(req).studentId);
+      const exam = await prisma.examBackPaperExam.findFirst({
+        where: { id: req.params.id, institutionId: req.mobileUser!.institutionId, studentId },
+      });
+      if (!exam) return res.status(404).json({ error: 'Back paper not found' });
+      return res.json(await createBackPaperPaymentOrder(req.mobileUser!.institutionId, exam.id, {
+        accountId: req.mobileUser!.accountId,
+      }));
+    } catch (e) {
+      return res.status(400).json({ error: e instanceof Error ? e.message : 'Payment failed' });
     }
   }),
 );

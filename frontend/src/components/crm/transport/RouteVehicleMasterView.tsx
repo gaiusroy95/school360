@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Copy, Archive, Search, Shield, Smartphone, FileText, CheckCircle2, Plus, RefreshCw,
+  Copy, Archive, Search, Shield, Smartphone, FileText, CheckCircle2, Plus,
 } from 'lucide-react';
 import {
   archiveMasterRoute,
@@ -46,9 +46,9 @@ export function RouteVehicleMasterView() {
   const [routeForm, setRouteForm] = useState({ routeName: '', routeType: 'Two-way', branch: 'Main Campus', distanceKm: 12 });
   const [vehicleForm, setVehicleForm] = useState({ vehicleNumber: '', registrationNumber: '', vehicleType: 'Bus', capacity: 40 });
 
-  const load = useCallback(async (seed = false) => {
+  const load = useCallback(async () => {
     setLoading(true);
-    try { setData(await fetchTransportMaster(seed, academicYear)); }
+    try { setData(await fetchTransportMaster(undefined, academicYear)); }
     finally { setLoading(false); }
   }, [academicYear]);
 
@@ -73,14 +73,9 @@ export function RouteVehicleMasterView() {
         title="Route & Vehicle Master"
         subtitle="Centralized transport master — routes, vehicles, GPS devices, drivers, attendants & mobile app sync"
         actions={(
-          <div className="flex gap-2">
-            <select value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} className={`${am.input} text-xs`}>
-              {(data?.academicYears ?? ['2025-26']).map((y) => <option key={y} value={y}>{y}</option>)}
-            </select>
-            <button type="button" onClick={() => void load(true)} disabled={busy} className={am.btnSecondary}>
-              <RefreshCw size={14} /> Load Demo
-            </button>
-          </div>
+          <select value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} className={`${am.input} text-xs`}>
+            {(data?.academicYears ?? ['2025-26']).map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
         )}
       />
 

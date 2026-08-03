@@ -2105,3 +2105,39 @@ hrRouter.get(
     return res.json(data);
   }),
 );
+
+// ─── Approval Hierarchy (module → role → person) ───────────────────────────
+
+hrRouter.get(
+  '/approval-hierarchy',
+  asyncHandler(async (_req, res) => {
+    const { listApprovalHierarchy } = await import('../lib/approvalHierarchy.js');
+    const institutionId = await getDefaultInstitutionId();
+    const records = await listApprovalHierarchy(institutionId);
+    return res.json({ records });
+  }),
+);
+
+hrRouter.patch(
+  '/approval-hierarchy/:id',
+  asyncHandler(async (req, res) => {
+    const bodySchema = z.object({
+      employeeId: z.string().optional(),
+      assigneeName: z.string().optional(),
+      assigneeEmail: z.string().optional(),
+      isActive: z.boolean().optional(),
+    });
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const { updateApprovalMapping } = await import('../lib/approvalHierarchy.js');
+    const institutionId = await getDefaultInstitutionId();
+    try {
+      const record = await updateApprovalMapping(institutionId, req.params.id, parsed.data);
+      return res.json({ record });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Update failed';
+      return res.status(400).json({ error: message });
+    }
+  }),
+);

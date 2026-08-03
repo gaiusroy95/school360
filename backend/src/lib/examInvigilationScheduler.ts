@@ -1,5 +1,6 @@
 import { runDailyInvigilationRotation } from './examInvigilation.js';
 import { runScheduledResultPublications } from './examResultProcessing.js';
+import { publishDueDigitalExams } from './examScheduleCreate.js';
 import { getDefaultInstitutionId } from './institution.js';
 
 let lastRunKey = '';
@@ -32,12 +33,16 @@ export function startInvigilationScheduler() {
   setInterval(async () => {
     const { hour, minute } = getISTHourMinute();
 
-    // Check scheduled result publications every minute
+    // Check scheduled result publications + digital exam publish every minute
     try {
       const institutionId = await getDefaultInstitutionId();
       const pubResult = await runScheduledResultPublications(institutionId);
       if (pubResult.published > 0) {
         console.log('[result-cron]', `Published ${pubResult.published} scheduled result batch(es)`);
+      }
+      const examPub = await publishDueDigitalExams(institutionId);
+      if (examPub.published > 0) {
+        console.log('[exam-link-cron]', `Published ${examPub.published} digital exam link(s)`);
       }
     } catch (err) {
       console.error('[result-cron] Scheduled publication failed:', err);

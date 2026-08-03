@@ -18,17 +18,28 @@ export function TopBar({ onMenuClick, onNavigate }: TopBarProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [alerts, setAlerts] = useState<{ id: string; title: string; desc: string }[]>([]);
+  const [alertsLoaded, setAlertsLoaded] = useState(false);
+  const [alertsLoading, setAlertsLoading] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
 
   const searchIndex = useMemo(() => buildSearchIndex(menuItems), []);
   const results = useMemo(() => searchRoutes(searchIndex, query), [searchIndex, query]);
 
-  useEffect(() => {
+  const loadAlerts = () => {
+    if (alertsLoaded || alertsLoading) return;
+    setAlertsLoading(true);
     void fetchMainDashboard()
-      .then((d) => setAlerts(d.alerts.map((a) => ({ id: a.id, title: a.title, desc: a.desc }))))
-      .catch(() => setAlerts([]));
-  }, []);
+      .then((d) => {
+        setAlerts(d.alerts.map((a) => ({ id: a.id, title: a.title, desc: a.desc })));
+        setAlertsLoaded(true);
+      })
+      .catch(() => {
+        setAlerts([]);
+        setAlertsLoaded(true);
+      })
+      .finally(() => setAlertsLoading(false));
+  };
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
@@ -105,7 +116,13 @@ export function TopBar({ onMenuClick, onNavigate }: TopBarProps) {
         <div className="relative" ref={notifRef}>
           <button
             type="button"
-            onClick={() => setNotifOpen((o) => !o)}
+            onClick={() => {
+              setNotifOpen((o) => {
+                const next = !o;
+                if (next) loadAlerts();
+                return next;
+              });
+            }}
             className="relative text-slate-400 hover:text-slate-600 transition-colors"
             aria-label="Notifications"
           >
@@ -119,7 +136,9 @@ export function TopBar({ onMenuClick, onNavigate }: TopBarProps) {
           {notifOpen && (
             <div className="absolute right-0 top-full mt-1 w-72 bg-white border border-slate-200 rounded-lg shadow-lg z-50 py-2">
               <p className="px-3 py-1 text-[10px] font-bold text-slate-500 uppercase">Alerts</p>
-              {alerts.length > 0 ? alerts.map((a) => (
+              {alertsLoading ? (
+                <p className="px-3 py-4 text-xs text-slate-400 text-center">Loading alerts…</p>
+              ) : alerts.length > 0 ? alerts.map((a) => (
                 <div key={a.id} className="px-3 py-2 border-t border-slate-50">
                   <p className="text-xs font-bold text-slate-800">{a.title}</p>
                   <p className="text-[10px] text-slate-500 mt-0.5">{a.desc}</p>

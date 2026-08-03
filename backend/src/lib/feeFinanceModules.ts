@@ -1,6 +1,7 @@
 import {
   FeeApprovalStatus,
   FeeDiscountScope,
+  FeeDueStatus,
   FeeFineCategory,
   FeeFineLevyStatus,
   FeeInvoiceStatus,
@@ -17,6 +18,13 @@ import {
   loadFeeCollectionContext,
   resolveCollectionFeeSchedule,
 } from './feeConfig.js';
+import {
+  formatFeePeriod,
+  getInvoicePeriodMeta,
+  inferFeePeriodFromDate,
+  type FeePeriodType,
+} from './feeInvoicePeriods.js';
+import { getFeeStructureHeadCatalog } from './feeMasterSync.js';
 import { getInstitutionFilterMeta } from './students.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -279,6 +287,10 @@ function serializeFeeRefund(row: {
   status: FeeApprovalStatus;
   originalReceipt: string;
   paymentMode: string;
+  depositBreakdown?: Prisma.JsonValue;
+  pendingApproverRole?: string;
+  pendingApproverName?: string;
+  pendingApproverEmail?: string;
   requestedBy: string;
   approvedBy: string;
   approvedAt: Date | null;
@@ -288,6 +300,14 @@ function serializeFeeRefund(row: {
   createdAt: Date;
   updatedAt: Date;
 }) {
+  const breakdown = Array.isArray(row.depositBreakdown)
+    ? (row.depositBreakdown as Array<{ key?: string; label?: string; amount?: number }>).map((r) => ({
+        key: String(r.key || ''),
+        label: String(r.label || r.key || ''),
+        amount: round2(Number(r.amount) || 0),
+      }))
+    : [];
+
   return {
     id: row.id,
     recordId: row.recordId,
@@ -303,6 +323,10 @@ function serializeFeeRefund(row: {
     status: row.status,
     originalReceipt: row.originalReceipt,
     paymentMode: row.paymentMode,
+    depositBreakdown: breakdown,
+    pendingApproverRole: row.pendingApproverRole || '',
+    pendingApproverName: row.pendingApproverName || '',
+    pendingApproverEmail: row.pendingApproverEmail || '',
     requestedBy: row.requestedBy,
     approvedBy: row.approvedBy,
     approvedAt: row.approvedAt?.toISOString() ?? null,
@@ -348,11 +372,19 @@ function serializeFeeFineLevy(row: {
   studentName: string;
   admissionNumber: string;
   className: string;
+  sectionName?: string;
   amount: number;
   reason: string;
   status: FeeFineLevyStatus;
   dueDate: Date | null;
   collectedAt: Date | null;
+  pendingApproverRole?: string;
+  pendingApproverName?: string;
+  pendingApproverEmail?: string;
+  requestedBy?: string;
+  approvedBy?: string;
+  approvedAt?: Date | null;
+  rejectionReason?: string;
   createdAt: Date;
   updatedAt: Date;
   fineType?: { code: string; name: string; category: FeeFineCategory };
@@ -368,11 +400,19 @@ function serializeFeeFineLevy(row: {
     studentName: row.studentName,
     admissionNumber: row.admissionNumber,
     className: row.className,
+    sectionName: row.sectionName || '',
     amount: round2(row.amount),
     reason: row.reason,
     status: row.status,
     dueDate: row.dueDate ? row.dueDate.toISOString().slice(0, 10) : null,
     collectedAt: row.collectedAt?.toISOString() ?? null,
+    pendingApproverRole: row.pendingApproverRole || '',
+    pendingApproverName: row.pendingApproverName || '',
+    pendingApproverEmail: row.pendingApproverEmail || '',
+    requestedBy: row.requestedBy || '',
+    approvedBy: row.approvedBy || '',
+    approvedAt: row.approvedAt?.toISOString() ?? null,
+    rejectionReason: row.rejectionReason || '',
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -427,8 +467,18 @@ function serializeScholarshipAward(row: {
   studentName: string;
   admissionNumber: string;
   className: string;
+  sectionName?: string;
   amount: number;
+  reason?: string;
+  totalDueFees?: number;
+  entranceTestResult?: string;
+  lastClassPercent?: number;
+  lastClassTotal?: number;
+  lastClassObtain?: number;
   status: FeeApprovalStatus;
+  pendingApproverRole?: string;
+  pendingApproverName?: string;
+  pendingApproverEmail?: string;
   approvedBy: string;
   approvedAt: Date | null;
   remarks: string;
@@ -446,14 +496,82 @@ function serializeScholarshipAward(row: {
     studentName: row.studentName,
     admissionNumber: row.admissionNumber,
     className: row.className,
+    sectionName: row.sectionName || '',
     amount: round2(row.amount),
+    reason: row.reason || '',
+    totalDueFees: round2(row.totalDueFees ?? 0),
+    entranceTestResult: row.entranceTestResult || '',
+    lastClassPercent: round2(row.lastClassPercent ?? 0),
+    lastClassTotal: round2(row.lastClassTotal ?? 0),
+    lastClassObtain: round2(row.lastClassObtain ?? 0),
     status: row.status,
+    pendingApproverRole: row.pendingApproverRole || '',
+    pendingApproverName: row.pendingApproverName || '',
+    pendingApproverEmail: row.pendingApproverEmail || '',
     approvedBy: row.approvedBy,
     approvedAt: row.approvedAt?.toISOString() ?? null,
     remarks: row.remarks,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+function parseDateOnly(value?: string | Date | null): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const d = new Date(trimmed.length <= 10 ? `${trimmed}T00:00:00.000Z` : trimmed);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function dateOnlyIso(value?: Date | null): string | null {
+  return value ? value.toISOString().slice(0, 10) : null;
+}
+
+function isExpiredDate(value?: Date | null, today = startOfTodayUtc()): boolean {
+  if (!value) return false;
+  return value.getTime() < today.getTime();
+}
+
+function startOfTodayUtc(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
+function daysUntil(value?: Date | null, today = startOfTodayUtc()): number | null {
+  if (!value) return null;
+  return Math.ceil((value.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+}
+
+type TransportVendorDocument = {
+  id: string;
+  name: string;
+  type: string;
+  mimeType: string;
+  fileData: string;
+  uploadedAt: string;
+};
+
+function asDocumentList(value: Prisma.JsonValue): TransportVendorDocument[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      const row = item as Record<string, unknown>;
+      const id = String(row.id || '').trim();
+      const name = String(row.name || '').trim();
+      const fileData = String(row.fileData || '').trim();
+      if (!id || !name || !fileData) return null;
+      return {
+        id,
+        name,
+        type: String(row.type || 'OTHER'),
+        mimeType: String(row.mimeType || 'application/octet-stream'),
+        fileData,
+        uploadedAt: String(row.uploadedAt || new Date().toISOString()),
+      };
+    })
+    .filter((x): x is TransportVendorDocument => x !== null);
 }
 
 function serializeTransportVendor(row: {
@@ -467,11 +585,44 @@ function serializeTransportVendor(row: {
   routesCovered: string;
   vehicleCount: number;
   bankDetails: Prisma.JsonValue;
+  ownerPan?: string;
+  ownerAadhaar?: string;
+  driver1Name?: string;
+  driver1Mobile?: string;
+  driver1DlNumber?: string;
+  driver1DlExpiry?: Date | null;
+  driver1PoliceVerification?: string;
+  driver2Name?: string;
+  driver2Mobile?: string;
+  driver2DlNumber?: string;
+  driver2DlExpiry?: Date | null;
+  driver2PoliceVerification?: string;
+  vehicleRegNo?: string;
+  vehicleChassisNo?: string;
+  vehicleType?: string;
+  pollutionCertDate?: Date | null;
+  pollutionExpiryDate?: Date | null;
+  insurancePolicyNo?: string;
+  insuranceExpiryDate?: Date | null;
+  trackingGpsDeviceId?: string;
+  trackingPhoneAccess?: string;
+  documents?: Prisma.JsonValue;
+  complianceCategory?: string;
+  pendingApproverRole?: string;
+  pendingApproverName?: string;
+  pendingApproverEmail?: string;
+  requestedBy?: string;
+  approvedBy?: string;
+  approvedAt?: Date | null;
+  rejectionReason?: string;
   status: TransportVendorStatus;
   remarks: string;
   createdAt: Date;
   updatedAt: Date;
 }) {
+  const pollutionExpiryDate = row.pollutionExpiryDate ?? null;
+  const insuranceExpiryDate = row.insuranceExpiryDate ?? null;
+  const today = startOfTodayUtc();
   return {
     id: row.id,
     vendorCode: row.vendorCode,
@@ -483,6 +634,40 @@ function serializeTransportVendor(row: {
     routesCovered: row.routesCovered,
     vehicleCount: row.vehicleCount,
     bankDetails: asJsonObject(row.bankDetails),
+    ownerPan: row.ownerPan || '',
+    ownerAadhaar: row.ownerAadhaar || '',
+    driver1Name: row.driver1Name || '',
+    driver1Mobile: row.driver1Mobile || '',
+    driver1DlNumber: row.driver1DlNumber || '',
+    driver1DlExpiry: dateOnlyIso(row.driver1DlExpiry),
+    driver1PoliceVerification: row.driver1PoliceVerification || '',
+    driver2Name: row.driver2Name || '',
+    driver2Mobile: row.driver2Mobile || '',
+    driver2DlNumber: row.driver2DlNumber || '',
+    driver2DlExpiry: dateOnlyIso(row.driver2DlExpiry),
+    driver2PoliceVerification: row.driver2PoliceVerification || '',
+    vehicleRegNo: row.vehicleRegNo || '',
+    vehicleChassisNo: row.vehicleChassisNo || '',
+    vehicleType: row.vehicleType || '',
+    pollutionCertDate: dateOnlyIso(row.pollutionCertDate),
+    pollutionExpiryDate: dateOnlyIso(pollutionExpiryDate),
+    insurancePolicyNo: row.insurancePolicyNo || '',
+    insuranceExpiryDate: dateOnlyIso(insuranceExpiryDate),
+    trackingGpsDeviceId: row.trackingGpsDeviceId || '',
+    trackingPhoneAccess: row.trackingPhoneAccess || '',
+    documents: asDocumentList(row.documents ?? []),
+    complianceCategory: row.complianceCategory || 'NORMAL',
+    pollutionExpired: isExpiredDate(pollutionExpiryDate, today),
+    insuranceExpired: isExpiredDate(insuranceExpiryDate, today),
+    pollutionDaysLeft: daysUntil(pollutionExpiryDate, today),
+    insuranceDaysLeft: daysUntil(insuranceExpiryDate, today),
+    pendingApproverRole: row.pendingApproverRole || '',
+    pendingApproverName: row.pendingApproverName || '',
+    pendingApproverEmail: row.pendingApproverEmail || '',
+    requestedBy: row.requestedBy || '',
+    approvedBy: row.approvedBy || '',
+    approvedAt: row.approvedAt?.toISOString() ?? null,
+    rejectionReason: row.rejectionReason || '',
     status: row.status,
     remarks: row.remarks,
     createdAt: row.createdAt.toISOString(),
@@ -499,8 +684,10 @@ function serializeTransportCollection(row: {
   studentName: string;
   admissionNumber: string;
   className: string;
+  sectionName?: string;
   routeName: string;
   amount: number;
+  totalDueFees?: number;
   paymentMode: string;
   collectedBy: string;
   collectedAt: Date;
@@ -517,8 +704,10 @@ function serializeTransportCollection(row: {
     studentName: row.studentName,
     admissionNumber: row.admissionNumber,
     className: row.className,
+    sectionName: row.sectionName || '',
     routeName: row.routeName,
     amount: round2(row.amount),
+    totalDueFees: round2(row.totalDueFees ?? 0),
     paymentMode: row.paymentMode,
     collectedBy: row.collectedBy,
     collectedAt: row.collectedAt.toISOString(),
@@ -574,20 +763,39 @@ async function nextSequentialNumber(
 }
 
 function lineItemsFromBreakdown(breakdown: unknown): LineItem[] {
-  if (!Array.isArray(breakdown)) return [];
-  return breakdown
-    .map((item) => {
-      const row = item as { key?: string; label?: string; amount?: number };
-      const key = String(row.key || '').trim();
-      const amount = round2(Number(row.amount) || 0);
-      if (!key || amount <= 0) return null;
-      return {
-        key,
-        label: row.label || FEE_HEAD_LABELS[key] || key,
-        amount,
-      };
-    })
-    .filter((x): x is LineItem => x !== null);
+  // Array form: [{ key, label, amount }]
+  if (Array.isArray(breakdown)) {
+    return breakdown
+      .map((item) => {
+        const row = item as { key?: string; label?: string; amount?: number };
+        const key = String(row.key || '').trim();
+        const amount = round2(Number(row.amount) || 0);
+        if (!key || amount <= 0) return null;
+        return {
+          key,
+          label: row.label || FEE_HEAD_LABELS[key] || key,
+          amount,
+        };
+      })
+      .filter((x): x is LineItem => x !== null);
+  }
+
+  // Object form from mobile/online payments: { tuitionFee: 5000, examinationFee: 500 }
+  if (breakdown && typeof breakdown === 'object') {
+    return Object.entries(breakdown as Record<string, unknown>)
+      .map(([key, value]) => {
+        const amount = round2(Number(value) || 0);
+        if (!key || amount <= 0) return null;
+        return {
+          key,
+          label: FEE_HEAD_LABELS[key] || key,
+          amount,
+        };
+      })
+      .filter((x): x is LineItem => x !== null);
+  }
+
+  return [];
 }
 
 async function lineItemsFromSchedule(
@@ -932,6 +1140,7 @@ export async function generateInvoiceFromReceipt(
       admissionNumber: receipt.admissionNumber,
       className: receipt.className,
       sectionName: receipt.sectionName,
+      feePeriod: inferFeePeriodFromDate(receipt.collectedAt || new Date(), receipt.academicYear),
       lineItems: lineItems as unknown as Prisma.InputJsonValue,
       totalFee: totals.totalFee,
       netPayable: totals.netPayable,
@@ -941,9 +1150,15 @@ export async function generateInvoiceFromReceipt(
       paymentMode: receipt.paymentMode,
       preparedBy: opts.preparedBy ?? receipt.collectedBy,
       feeReceiptId: receipt.id,
+      remarks: receipt.remarks || '',
       institutionSnapshot: {
         ...ctx.institutionProfile,
         generatedFrom: 'receipt',
+        syncSource: receipt.collectedBy?.toLowerCase().includes('razorpay')
+          || receipt.remarks?.toLowerCase().includes('online')
+          || receipt.paymentMode === 'UPI'
+          ? 'mobile_or_link'
+          : 'counter',
       } as Prisma.InputJsonValue,
     },
   });
@@ -1001,9 +1216,12 @@ export async function createFeeInvoice(
     parentEmail?: string;
     photoUrl?: string;
     feePeriod?: string;
+    periodType?: FeePeriodType;
+    periodValue?: string;
     invoiceDate?: string | Date;
     dueDate?: string | Date | null;
     lineItems?: LineItem[];
+    selectedHeads?: { key: string; amount?: number; label?: string }[];
     concessionAmount?: number;
     lateFee?: number;
     previousDues?: number;
@@ -1013,25 +1231,84 @@ export async function createFeeInvoice(
     status?: FeeInvoiceStatus;
   },
 ) {
-  const studentName = data.studentName?.trim();
+  let studentName = data.studentName?.trim();
+  let studentId = data.studentId ?? '';
+  let admissionNumber = data.admissionNumber ?? '';
+  let className = data.className ?? '';
+  let sectionName = data.sectionName ?? '';
+  let rollNumber = data.rollNumber ?? '';
+  let parentName = data.parentName ?? '';
+  let parentMobile = data.parentMobile ?? '';
+  let parentEmail = data.parentEmail ?? '';
+  let photoUrl = data.photoUrl ?? '';
+  let academicYear = data.academicYear?.trim();
+
+  if (studentId) {
+    const student = await prisma.student.findFirst({ where: { id: studentId, institutionId } });
+    if (!student) throw new Error('Student not found');
+    studentName = [student.firstName, student.lastName].filter(Boolean).join(' ') || studentName;
+    admissionNumber = student.admissionNumber || admissionNumber;
+    className = student.className || className;
+    sectionName = student.sectionName || sectionName;
+    rollNumber = student.rollNumber || rollNumber;
+    parentName = student.fatherName || parentName;
+    parentMobile = student.fatherMobile || student.mobile || parentMobile;
+    parentEmail = student.email || parentEmail;
+    photoUrl = student.photoUrl || photoUrl;
+    academicYear = academicYear || student.academicYear;
+  }
+
   if (!studentName) throw new Error('Student name is required');
-  if (!data.academicYear?.trim()) throw new Error('Academic year is required');
+  if (!academicYear) throw new Error('Academic year is required');
 
   const ctx = await loadFeeCollectionContext(institutionId);
+
   let lineItems = (data.lineItems || []).map((i) => ({
     key: i.key,
     label: i.label || FEE_HEAD_LABELS[i.key] || i.key,
     amount: round2(i.amount),
-  }));
+  })).filter((i) => i.amount > 0);
 
-  if (lineItems.length === 0 && data.className) {
-    lineItems = await lineItemsFromSchedule(
-      institutionId,
-      data.className,
-      data.sectionName || '',
-    );
+  // Selected fee-structure heads (deposit invoice flow)
+  if (lineItems.length === 0 && data.selectedHeads?.length) {
+    const schedule = await resolveCollectionFeeSchedule(institutionId, {
+      className,
+      sectionName,
+      studentId: studentId || undefined,
+      academicYear,
+    });
+    const scheduleMap = new Map((schedule?.heads || []).map((h) => [h.key, h]));
+    lineItems = data.selectedHeads
+      .map((h) => {
+        const fromSchedule = scheduleMap.get(h.key);
+        const amount = round2(
+          h.amount !== undefined && h.amount !== null
+            ? Number(h.amount)
+            : (fromSchedule?.amount ?? 0),
+        );
+        if (amount <= 0) return null;
+        return {
+          key: h.key,
+          label: h.label || fromSchedule?.label || FEE_HEAD_LABELS[h.key] || h.key,
+          amount,
+        };
+      })
+      .filter((x): x is LineItem => x !== null);
   }
-  if (lineItems.length === 0) throw new Error('At least one line item is required');
+
+  if (lineItems.length === 0 && className) {
+    lineItems = await lineItemsFromSchedule(institutionId, className, sectionName || '');
+  }
+  if (lineItems.length === 0) throw new Error('Select at least one fee head with amount > 0');
+
+  let feePeriod = data.feePeriod?.trim() || '';
+  if (!feePeriod && data.periodType) {
+    feePeriod = formatFeePeriod({
+      periodType: data.periodType,
+      periodValue: data.periodValue || 'FY',
+      academicYear,
+    });
+  }
 
   const totals = computeInvoiceTotals(lineItems, {
     concessionAmount: data.concessionAmount,
@@ -1046,24 +1323,24 @@ export async function createFeeInvoice(
       ? invoiceStatusFromPayment(totals.netPayable, totals.amountPaid)
       : FeeInvoiceStatus.PENDING);
 
-  const invoiceNumber = await generateInvoiceNumber(institutionId, data.academicYear);
+  const invoiceNumber = await generateInvoiceNumber(institutionId, academicYear);
 
   const row = await prisma.feeInvoice.create({
     data: {
       institutionId,
       invoiceNumber,
-      academicYear: data.academicYear,
-      studentId: data.studentId ?? '',
+      academicYear,
+      studentId,
       studentName,
-      admissionNumber: data.admissionNumber ?? '',
-      className: data.className ?? '',
-      sectionName: data.sectionName ?? '',
-      rollNumber: data.rollNumber ?? '',
-      parentName: data.parentName ?? '',
-      parentMobile: data.parentMobile ?? '',
-      parentEmail: data.parentEmail ?? '',
-      photoUrl: data.photoUrl ?? '',
-      feePeriod: data.feePeriod ?? '',
+      admissionNumber,
+      className,
+      sectionName,
+      rollNumber,
+      parentName,
+      parentMobile,
+      parentEmail,
+      photoUrl,
+      feePeriod,
       invoiceDate: data.invoiceDate ? new Date(data.invoiceDate) : new Date(),
       dueDate: data.dueDate ? new Date(data.dueDate) : null,
       status,
@@ -1077,10 +1354,117 @@ export async function createFeeInvoice(
       balance: totals.balance,
       remarks: data.remarks ?? '',
       preparedBy: data.preparedBy ?? '',
-      institutionSnapshot: ctx.institutionProfile as unknown as Prisma.InputJsonValue,
+      institutionSnapshot: {
+        ...ctx.institutionProfile,
+        generatedFrom: 'admin_deposit',
+        periodType: data.periodType || null,
+        periodValue: data.periodValue || null,
+      } as Prisma.InputJsonValue,
     },
   });
   return serializeFeeInvoice(row);
+}
+
+export async function getInvoiceCreateMeta(
+  institutionId: string,
+  opts: { academicYear?: string; studentId?: string; className?: string; sectionName?: string } = {},
+) {
+  const filters = await getInstitutionFilterMeta(institutionId);
+  const academicYear = opts.academicYear || filters.defaultAcademicYear;
+  const catalog = await getFeeStructureHeadCatalog(institutionId);
+
+  let student: {
+    id: string;
+    name: string;
+    admissionNumber: string;
+    className: string;
+    sectionName: string;
+    rollNumber: string;
+    parentName: string;
+    parentMobile: string;
+    academicYear: string;
+  } | null = null;
+
+  let className = opts.className || '';
+  let sectionName = opts.sectionName || '';
+
+  if (opts.studentId) {
+    const row = await prisma.student.findFirst({ where: { id: opts.studentId, institutionId } });
+    if (row) {
+      student = {
+        id: row.id,
+        name: [row.firstName, row.lastName].filter(Boolean).join(' '),
+        admissionNumber: row.admissionNumber,
+        className: row.className,
+        sectionName: row.sectionName,
+        rollNumber: row.rollNumber,
+        parentName: row.fatherName || '',
+        parentMobile: row.fatherMobile || row.mobile || '',
+        academicYear: row.academicYear,
+      };
+      className = row.className;
+      sectionName = row.sectionName;
+    }
+  }
+
+  const schedule = className
+    ? await resolveCollectionFeeSchedule(institutionId, {
+      className,
+      sectionName,
+      studentId: opts.studentId,
+      academicYear: student?.academicYear || academicYear,
+    })
+    : null;
+
+  const scheduleMap = new Map((schedule?.heads || []).map((h) => [h.key, h]));
+  const feeHeads = catalog
+    .filter((h) => h.showInInvoice !== false)
+    .map((h) => ({
+      key: h.key,
+      label: h.label,
+      amount: round2(scheduleMap.get(h.key)?.amount ?? h.defaultAmount ?? 0),
+      selectedByDefault: (scheduleMap.get(h.key)?.amount ?? 0) > 0,
+      fromStructure: scheduleMap.has(h.key),
+    }));
+
+  // Include any structure heads missing from catalog
+  for (const h of schedule?.heads || []) {
+    if (!feeHeads.some((x) => x.key === h.key)) {
+      feeHeads.push({
+        key: h.key,
+        label: h.label,
+        amount: round2(h.amount),
+        selectedByDefault: h.amount > 0,
+        fromStructure: true,
+      });
+    }
+  }
+
+  return {
+    defaultAcademicYear: academicYear,
+    academicYears: filters.academicYears,
+    classes: filters.classes,
+    sectionsByClass: filters.sectionsByClass,
+    periods: getInvoicePeriodMeta(academicYear),
+    student,
+    feeHeads,
+    scheduleSource: schedule?.source || null,
+    scheduleFrequency: schedule?.frequency || null,
+  };
+}
+
+export async function syncInvoicesFromPayments(
+  institutionId: string,
+  opts: { academicYear?: string; preparedBy?: string } = {},
+) {
+  const result = await generateInvoicesFromReceipts(institutionId, opts);
+  return {
+    created: result.created,
+    invoices: result.invoices,
+    message: result.created > 0
+      ? `Synced ${result.created} invoice(s) from fee receipts (counter, mobile app, and payment links)`
+      : 'All receipts already have invoices — nothing new to sync',
+  };
 }
 
 export async function ensurePendingFeeInvoiceForStudent(
@@ -1198,10 +1582,289 @@ export async function listFeeDiscounts(
   return rows.map(serializeFeeDiscount);
 }
 
+/** Outstanding dues for Account Settlement — auto-populated from FeeDue + open invoices. */
+export async function getStudentSettlementDues(
+  institutionId: string,
+  opts: {
+    academicYear?: string;
+    studentId?: string;
+    admissionNumber?: string;
+  },
+) {
+  const academicYear = opts.academicYear || '2025-26';
+  const studentId = opts.studentId?.trim() || '';
+  const admissionNumber = opts.admissionNumber?.trim() || '';
+  if (!studentId && !admissionNumber) {
+    throw new Error('Select a student to load total due fees');
+  }
+
+  const student = studentId
+    ? await prisma.student.findFirst({
+        where: { id: studentId, institutionId },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          admissionNumber: true,
+          className: true,
+          sectionName: true,
+          academicYear: true,
+        },
+      })
+    : await prisma.student.findFirst({
+        where: { institutionId, admissionNumber },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          admissionNumber: true,
+          className: true,
+          sectionName: true,
+          academicYear: true,
+        },
+      });
+
+  const resolvedStudentId = student?.id || studentId;
+  const resolvedAdmission = student?.admissionNumber || admissionNumber;
+
+  const [dues, invoices] = await Promise.all([
+    prisma.feeDue.findMany({
+      where: {
+        institutionId,
+        academicYear,
+        status: { in: [FeeDueStatus.PENDING, FeeDueStatus.OVERDUE] },
+        OR: [
+          ...(resolvedStudentId ? [{ studentId: resolvedStudentId }] : []),
+          ...(resolvedAdmission ? [{ admissionNumber: resolvedAdmission }] : []),
+        ],
+      },
+    }),
+    prisma.feeInvoice.findMany({
+      where: {
+        institutionId,
+        academicYear,
+        balance: { gt: 0 },
+        status: {
+          in: [
+            FeeInvoiceStatus.PENDING,
+            FeeInvoiceStatus.PARTIAL,
+            FeeInvoiceStatus.OVERDUE,
+            FeeInvoiceStatus.DRAFT,
+          ],
+        },
+        OR: [
+          ...(resolvedStudentId ? [{ studentId: resolvedStudentId }] : []),
+          ...(resolvedAdmission ? [{ admissionNumber: resolvedAdmission }] : []),
+        ],
+      },
+    }),
+  ]);
+
+  const dueFromLevies = round2(dues.reduce((s, d) => s + d.amount, 0));
+  const dueFromInvoices = round2(invoices.reduce((s, i) => s + i.balance, 0));
+  // Prefer the higher signal so we don't understate; invoice balances often mirror dues
+  const totalDueFees = round2(Math.max(dueFromLevies, dueFromInvoices));
+
+  return {
+    academicYear,
+    studentId: resolvedStudentId || '',
+    studentName: student
+      ? `${student.firstName} ${student.lastName}`.trim()
+      : '',
+    admissionNumber: resolvedAdmission || '',
+    className: student?.className || '',
+    sectionName: student?.sectionName || '',
+    totalDueFees,
+    dueFromLevies,
+    dueFromInvoices,
+    pendingDueCount: dues.length,
+    openInvoiceCount: invoices.length,
+  };
+}
+
+/** Outstanding fees across all academic sessions for account settlement. */
+export async function getStudentAllSessionDues(
+  institutionId: string,
+  opts: {
+    studentId?: string;
+    admissionNumber?: string;
+  },
+) {
+  const studentId = opts.studentId?.trim() || '';
+  const admissionNumber = opts.admissionNumber?.trim() || '';
+  if (!studentId && !admissionNumber) {
+    throw new Error('Select a student to load total due fees');
+  }
+
+  const student = studentId
+    ? await prisma.student.findFirst({
+        where: { id: studentId, institutionId },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          admissionNumber: true,
+          className: true,
+          sectionName: true,
+          academicYear: true,
+        },
+      })
+    : await prisma.student.findFirst({
+        where: { institutionId, admissionNumber },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          admissionNumber: true,
+          className: true,
+          sectionName: true,
+          academicYear: true,
+        },
+      });
+
+  const resolvedStudentId = student?.id || studentId;
+  const resolvedAdmission = student?.admissionNumber || admissionNumber;
+  const studentOr: Array<{ studentId?: string; admissionNumber?: string }> = [
+    ...(resolvedStudentId ? [{ studentId: resolvedStudentId }] : []),
+    ...(resolvedAdmission ? [{ admissionNumber: resolvedAdmission }] : []),
+  ];
+
+  const [dues, invoices] = await Promise.all([
+    prisma.feeDue.findMany({
+      where: {
+        institutionId,
+        status: { in: [FeeDueStatus.PENDING, FeeDueStatus.OVERDUE] },
+        OR: studentOr,
+      },
+      select: { academicYear: true, amount: true },
+    }),
+    prisma.feeInvoice.findMany({
+      where: {
+        institutionId,
+        balance: { gt: 0 },
+        status: {
+          in: [
+            FeeInvoiceStatus.PENDING,
+            FeeInvoiceStatus.PARTIAL,
+            FeeInvoiceStatus.OVERDUE,
+            FeeInvoiceStatus.DRAFT,
+          ],
+        },
+        OR: studentOr,
+      },
+      select: { academicYear: true, balance: true },
+    }),
+  ]);
+
+  const sessionMap = new Map<string, { dueFromLevies: number; dueFromInvoices: number }>();
+  for (const d of dues) {
+    const key = d.academicYear || 'Unknown';
+    const cur = sessionMap.get(key) || { dueFromLevies: 0, dueFromInvoices: 0 };
+    cur.dueFromLevies = round2(cur.dueFromLevies + d.amount);
+    sessionMap.set(key, cur);
+  }
+  for (const inv of invoices) {
+    const key = inv.academicYear || 'Unknown';
+    const cur = sessionMap.get(key) || { dueFromLevies: 0, dueFromInvoices: 0 };
+    cur.dueFromInvoices = round2(cur.dueFromInvoices + inv.balance);
+    sessionMap.set(key, cur);
+  }
+
+  const sessions = [...sessionMap.entries()]
+    .map(([academicYear, v]) => ({
+      academicYear,
+      dueFromLevies: v.dueFromLevies,
+      dueFromInvoices: v.dueFromInvoices,
+      totalDueFees: round2(Math.max(v.dueFromLevies, v.dueFromInvoices)),
+    }))
+    .sort((a, b) => b.academicYear.localeCompare(a.academicYear));
+
+  const totalDueFees = round2(sessions.reduce((s, row) => s + row.totalDueFees, 0));
+
+  return {
+    studentId: resolvedStudentId || '',
+    studentName: student ? `${student.firstName} ${student.lastName}`.trim() : '',
+    admissionNumber: resolvedAdmission || '',
+    className: student?.className || '',
+    sectionName: student?.sectionName || '',
+    currentAcademicYear: student?.academicYear || '',
+    totalDueFees,
+    sessionCount: sessions.length,
+    sessions,
+    pendingDueCount: dues.length,
+    openInvoiceCount: invoices.length,
+  };
+}
+
+/** Applicants / new admissions for discount code student selection. */
+export async function listAdmissionDiscountCandidates(
+  institutionId: string,
+  opts: { academicYear?: string; q?: string } = {},
+) {
+  const q = opts.q?.trim().toLowerCase() || '';
+  const apps = await prisma.application.findMany({
+    where: { institutionId },
+    select: {
+      id: true,
+      applicationId: true,
+      studentName: true,
+      classApplied: true,
+      status: true,
+      submittedAt: true,
+      admissionRecord: {
+        select: {
+          admissionNumber: true,
+          className: true,
+          sectionName: true,
+          academicYear: true,
+          student: {
+            select: { id: true, admissionNumber: true, className: true, sectionName: true },
+          },
+        },
+      },
+    },
+    orderBy: { submittedAt: 'desc' },
+    take: 400,
+  });
+
+  return apps
+    .map((app) => {
+      const adm = app.admissionRecord;
+      const student = adm?.student;
+      const admissionNumber =
+        student?.admissionNumber || adm?.admissionNumber || app.applicationId || '';
+      const className = student?.className || adm?.className || app.classApplied || '';
+      const sectionName = student?.sectionName || adm?.sectionName || '';
+      return {
+        key: `app:${app.id}`,
+        source: 'APPLICATION' as const,
+        applicationId: app.applicationId,
+        applicationDbId: app.id,
+        studentId: student?.id || '',
+        studentName: app.studentName,
+        admissionNumber,
+        className,
+        sectionName,
+        academicYear: adm?.academicYear || opts.academicYear || '',
+        status: String(app.status),
+        submittedAt: app.submittedAt.toISOString(),
+      };
+    })
+    .filter((row) => {
+      if (!q) return true;
+      return (
+        row.studentName.toLowerCase().includes(q) ||
+        row.admissionNumber.toLowerCase().includes(q) ||
+        row.applicationId.toLowerCase().includes(q) ||
+        row.className.toLowerCase().includes(q)
+      );
+    });
+}
+
 export async function createFeeDiscount(
   institutionId: string,
   data: {
-    name: string;
+    name?: string;
     description?: string;
     discountType?: string;
     value?: number;
@@ -1211,24 +1874,42 @@ export async function createFeeDiscount(
     studentId?: string;
     studentName?: string;
     admissionNumber?: string;
+    className?: string;
+    sectionName?: string;
     settlementAmount?: number;
+    totalDueFees?: number;
     remarks?: string;
     code?: string;
+    /** When true, create directly in PENDING_APPROVAL (Save & Send for Approval). */
+    submitForApproval?: boolean;
   },
   requestedBy: string,
 ) {
-  const name = data.name?.trim();
+  const scope = data.scope ?? FeeDiscountScope.NEW_ADMISSION;
+  const isSettlement = scope === FeeDiscountScope.ACCOUNT_SETTLEMENT;
+
+  if (isSettlement && !data.studentName?.trim() && !data.studentId?.trim()) {
+    throw new Error('Select a student for account settlement');
+  }
+  if (isSettlement && !(Number(data.settlementAmount) > 0)) {
+    throw new Error('Settlement amount is required');
+  }
+  if (isSettlement && !data.remarks?.trim()) {
+    throw new Error('Reason for settlement is required');
+  }
+
+  const studentName = data.studentName?.trim() || '';
+  const name =
+    data.name?.trim() ||
+    (isSettlement
+      ? `Account Settlement — ${studentName || data.admissionNumber || 'Student'}`
+      : '');
   if (!name) throw new Error('Discount name is required');
   if (!data.academicYear?.trim()) throw new Error('Academic year is required');
 
-  const scope = data.scope ?? FeeDiscountScope.NEW_ADMISSION;
-  if (scope === FeeDiscountScope.ACCOUNT_SETTLEMENT && !data.studentName?.trim()) {
-    throw new Error('Student name is required for account settlement discounts');
-  }
-
   const code =
     data.code?.trim() ||
-    (scope === FeeDiscountScope.ACCOUNT_SETTLEMENT
+    (isSettlement
       ? `STL-${Date.now().toString().slice(-8)}`
       : await generateDiscountCode(institutionId));
 
@@ -1237,23 +1918,34 @@ export async function createFeeDiscount(
   });
   if (existing) throw new Error(`Discount code "${code}" already exists`);
 
+  const classLabel = [data.className, data.sectionName].filter(Boolean).join('-');
+  const totalDue = round2(data.totalDueFees ?? 0);
+  const descriptionParts = [
+    data.description?.trim(),
+    isSettlement && classLabel ? `Class ${classLabel}` : '',
+    isSettlement && totalDue > 0 ? `Total due fees: ${totalDue}` : '',
+  ].filter(Boolean);
+
   const row = await prisma.feeDiscount.create({
     data: {
       institutionId,
       code,
       name,
-      description: data.description ?? '',
-      discountType: data.discountType ?? 'PERCENTAGE',
-      value: round2(data.value ?? 0),
+      description: descriptionParts.join(' | '),
+      discountType: data.discountType ?? (isSettlement ? 'FLAT' : 'PERCENTAGE'),
+      value: round2(isSettlement ? data.settlementAmount ?? 0 : data.value ?? 0),
       scope,
       academicYear: data.academicYear,
       maxUses: data.maxUses ?? 0,
       studentId: data.studentId ?? '',
-      studentName: data.studentName ?? '',
+      studentName,
       admissionNumber: data.admissionNumber ?? '',
       settlementAmount: round2(data.settlementAmount ?? 0),
       requestedBy,
-      status: FeeApprovalStatus.DRAFT,
+      status:
+        data.submitForApproval || isSettlement
+          ? FeeApprovalStatus.PENDING_APPROVAL
+          : FeeApprovalStatus.DRAFT,
       remarks: data.remarks ?? '',
     },
   });
@@ -1322,6 +2014,166 @@ export async function rejectFeeDiscount(
 
 // ─── Refunds ─────────────────────────────────────────────────────────────────
 
+const REFUND_DEPOSIT_HEADS: Array<{ key: string; label: string; match: string[] }> = [
+  { key: 'admissionFee', label: 'Admission Fee', match: ['admission'] },
+  { key: 'tuitionFee', label: 'Tuition Fee', match: ['tuition', 'studentfee', 'student_fee'] },
+  { key: 'transportFee', label: 'Transport Fee', match: ['transport'] },
+  { key: 'cautionMoney', label: 'Caution Money', match: ['caution'] },
+  {
+    key: 'librarySecurityDeposit',
+    label: 'Library Security Deposit',
+    match: ['librarysecurity', 'library_security', 'librarydeposit', 'library'],
+  },
+];
+
+function mapDepositHead(key: string): { key: string; label: string } | null {
+  const k = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+  for (const head of REFUND_DEPOSIT_HEADS) {
+    if (head.match.some((m) => k.includes(m.replace(/_/g, '')))) {
+      return { key: head.key, label: head.label };
+    }
+  }
+  return null;
+}
+
+/** Amounts already deposited by fee head — shown on New Refund Request. */
+export async function getStudentDepositedFees(
+  institutionId: string,
+  opts: {
+    academicYear?: string;
+    studentId?: string;
+    admissionNumber?: string;
+  },
+) {
+  const academicYear = opts.academicYear || '2025-26';
+  const studentId = opts.studentId?.trim() || '';
+  const admissionNumber = opts.admissionNumber?.trim() || '';
+  if (!studentId && !admissionNumber) {
+    throw new Error('Select a student to load deposited fees');
+  }
+
+  const student = studentId
+    ? await prisma.student.findFirst({
+        where: { id: studentId, institutionId },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          admissionNumber: true,
+          className: true,
+          sectionName: true,
+          admissionRecordId: true,
+        },
+      })
+    : await prisma.student.findFirst({
+        where: { institutionId, admissionNumber },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          admissionNumber: true,
+          className: true,
+          sectionName: true,
+          admissionRecordId: true,
+        },
+      });
+
+  const admNo = student?.admissionNumber || admissionNumber;
+  const admissionRecordId = student?.admissionRecordId || undefined;
+
+  const receiptOr = [
+    ...(admNo ? [{ admissionNumber: admNo }] : []),
+    ...(admissionRecordId ? [{ admissionRecordId }] : []),
+  ];
+
+  const receipts =
+    receiptOr.length > 0
+      ? await prisma.feeReceipt.findMany({
+          where: {
+            institutionId,
+            academicYear,
+            OR: receiptOr,
+          },
+          orderBy: { collectedAt: 'desc' },
+        })
+      : [];
+
+  const totals: Record<string, number> = {};
+  for (const head of REFUND_DEPOSIT_HEADS) totals[head.key] = 0;
+
+  let otherDeposited = 0;
+  for (const r of receipts) {
+    const items = Array.isArray(r.feeBreakdown)
+      ? (r.feeBreakdown as Array<{ key?: string; amount?: number }>)
+      : r.feeBreakdown && typeof r.feeBreakdown === 'object'
+        ? Object.entries(r.feeBreakdown as Record<string, unknown>).map(([key, amount]) => ({
+            key,
+            amount: Number(amount) || 0,
+          }))
+        : [];
+
+    if (items.length === 0) {
+      totals.tuitionFee = round2(totals.tuitionFee + r.amountPaid);
+      continue;
+    }
+
+    for (const item of items) {
+      const amount = Number(item.amount) || 0;
+      if (amount <= 0) continue;
+      const mapped = mapDepositHead(String(item.key || ''));
+      if (mapped) {
+        totals[mapped.key] = round2(totals[mapped.key] + amount);
+      } else {
+        otherDeposited = round2(otherDeposited + amount);
+      }
+    }
+  }
+
+  // Transport / hostel collections not always on fee receipts
+  const [transportRows, hostelRows] = await Promise.all([
+    admNo
+      ? prisma.transportFeeCollection.findMany({
+          where: { institutionId, academicYear, admissionNumber: admNo },
+        })
+      : Promise.resolve([]),
+    admNo
+      ? prisma.hostelFeeCollection.findMany({
+          where: { institutionId, academicYear, admissionNumber: admNo },
+        })
+      : Promise.resolve([]),
+  ]);
+  for (const t of transportRows) {
+    totals.transportFee = round2(totals.transportFee + t.amount);
+  }
+  for (const h of hostelRows) {
+    otherDeposited = round2(otherDeposited + h.amount);
+  }
+
+  const heads = REFUND_DEPOSIT_HEADS.map((h) => ({
+    key: h.key,
+    label: h.label,
+    amount: totals[h.key] || 0,
+  }));
+  if (otherDeposited > 0) {
+    heads.push({ key: 'other', label: 'Other Collections', amount: otherDeposited });
+  }
+
+  const totalDeposited = round2(heads.reduce((s, h) => s + h.amount, 0));
+
+  return {
+    academicYear,
+    studentId: student?.id || studentId || '',
+    studentName: student ? `${student.firstName} ${student.lastName}`.trim() : '',
+    admissionNumber: admNo || '',
+    className: student?.className || '',
+    sectionName: student?.sectionName || '',
+    heads,
+    totalDeposited,
+    receiptCount: receipts.length,
+    latestReceiptNumber: receipts[0]?.receiptNumber || '',
+  };
+}
+
 async function generateRefundRecordId(institutionId: string, academicYear: string) {
   const year = academicYearStart(academicYear);
   return nextSequentialNumber(institutionId, 'REF', year, () =>
@@ -1356,7 +2208,9 @@ export async function createFeeRefund(
     refundType?: FeeRefundType;
     reason?: string;
     originalReceipt?: string;
+    paymentMode?: string;
     remarks?: string;
+    depositBreakdown?: Array<{ key: string; label: string; amount: number }>;
   },
   requestedBy: string,
 ) {
@@ -1367,6 +2221,24 @@ export async function createFeeRefund(
   if (amount <= 0) throw new Error('Refund amount must be greater than zero');
 
   const recordId = await generateRefundRecordId(institutionId, data.academicYear);
+
+  // Route approval to HOD of Finance from HR Approval Hierarchy
+  const { resolveModuleApprover } = await import('./approvalHierarchy.js');
+  const approver = await resolveModuleApprover(institutionId, 'FEE_REFUND', 'HOD_FINANCE');
+
+  let depositBreakdown = data.depositBreakdown || [];
+  if (depositBreakdown.length === 0 && (data.studentId || data.admissionNumber)) {
+    try {
+      const deposited = await getStudentDepositedFees(institutionId, {
+        academicYear: data.academicYear,
+        studentId: data.studentId,
+        admissionNumber: data.admissionNumber,
+      });
+      depositBreakdown = deposited.heads;
+    } catch {
+      depositBreakdown = [];
+    }
+  }
 
   const row = await prisma.feeRefund.create({
     data: {
@@ -1382,6 +2254,11 @@ export async function createFeeRefund(
       amount,
       reason: data.reason ?? '',
       originalReceipt: data.originalReceipt ?? '',
+      paymentMode: data.paymentMode ?? 'BANK_TRANSFER',
+      depositBreakdown: depositBreakdown as unknown as Prisma.InputJsonValue,
+      pendingApproverRole: approver.roleLabel || approver.roleKey,
+      pendingApproverName: approver.assigneeName || '',
+      pendingApproverEmail: approver.assigneeEmail || '',
       requestedBy,
       status: FeeApprovalStatus.PENDING_APPROVAL,
       remarks: data.remarks ?? '',
@@ -1575,42 +2452,131 @@ export async function listFeeFineLevies(
 export async function levyFeeFine(
   institutionId: string,
   data: {
-    fineTypeId: string;
+    fineTypeId?: string;
+    category?: FeeFineCategory | string;
     academicYear: string;
     studentName: string;
     amount?: number;
     studentId?: string;
     admissionNumber?: string;
     className?: string;
+    sectionName?: string;
     reason?: string;
     dueDate?: string | Date | null;
+    submitForApproval?: boolean;
+    requestedBy?: string;
   },
 ) {
   const studentName = data.studentName?.trim();
   if (!studentName) throw new Error('Student name is required');
   if (!data.academicYear?.trim()) throw new Error('Academic year is required');
+  if (!data.reason?.trim()) throw new Error('Reason for fine is required');
 
-  const fineType = await prisma.feeFineType.findFirst({
-    where: { id: data.fineTypeId, institutionId },
-  });
-  if (!fineType) throw new Error('Fine type not found');
+  let fineType = data.fineTypeId
+    ? await prisma.feeFineType.findFirst({
+        where: { id: data.fineTypeId, institutionId },
+      })
+    : null;
+
+  if (!fineType && data.category) {
+    fineType = await prisma.feeFineType.findFirst({
+      where: {
+        institutionId,
+        category: data.category as FeeFineCategory,
+        status: FeeMasterStatus.ACTIVE,
+      },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  if (!fineType && data.category) {
+    const cat = String(data.category);
+    const code = `FN-${cat.replace(/_/g, '-').slice(0, 12)}-${Date.now().toString().slice(-4)}`;
+    fineType = await prisma.feeFineType.create({
+      data: {
+        institutionId,
+        code,
+        name: cat.replace(/_/g, ' '),
+        category: cat as FeeFineCategory,
+        defaultAmount: round2(data.amount ?? 0),
+        description: `Auto-created for ${cat} fines`,
+        status: FeeMasterStatus.ACTIVE,
+      },
+    });
+  }
+
+  if (!fineType) throw new Error('Select a fine category or fine type');
 
   const amount = round2(data.amount ?? fineType.defaultAmount);
   if (amount <= 0) throw new Error('Fine amount must be greater than zero');
 
+  const { resolveModuleApprover } = await import('./approvalHierarchy.js');
+  const approver = await resolveModuleApprover(institutionId, 'FEE_FINE', 'HOD_FINANCE');
+  const sendForApproval = data.submitForApproval !== false;
+
   const row = await prisma.feeFineLevy.create({
     data: {
       institutionId,
-      fineTypeId: data.fineTypeId,
+      fineTypeId: fineType.id,
       academicYear: data.academicYear,
       studentId: data.studentId ?? '',
       studentName,
       admissionNumber: data.admissionNumber ?? '',
       className: data.className ?? '',
+      sectionName: data.sectionName ?? '',
       amount,
-      reason: data.reason ?? '',
+      reason: data.reason.trim(),
       dueDate: data.dueDate ? new Date(data.dueDate) : null,
+      status: sendForApproval
+        ? FeeFineLevyStatus.PENDING_APPROVAL
+        : FeeFineLevyStatus.PENDING,
+      pendingApproverRole: approver.roleLabel || approver.roleKey,
+      pendingApproverName: approver.assigneeName || '',
+      pendingApproverEmail: approver.assigneeEmail || '',
+      requestedBy: data.requestedBy ?? '',
+    },
+    include: { fineType: { select: { code: true, name: true, category: true } } },
+  });
+  return serializeFeeFineLevy(row);
+}
+
+export async function approveFeeFineLevy(institutionId: string, id: string, approvedBy: string) {
+  const existing = await prisma.feeFineLevy.findFirst({ where: { id, institutionId } });
+  if (!existing) throw new Error('Fine levy not found');
+  if (existing.status !== FeeFineLevyStatus.PENDING_APPROVAL) {
+    throw new Error('Only fines pending approval can be approved');
+  }
+  const row = await prisma.feeFineLevy.update({
+    where: { id },
+    data: {
       status: FeeFineLevyStatus.PENDING,
+      approvedBy,
+      approvedAt: new Date(),
+      rejectionReason: '',
+    },
+    include: { fineType: { select: { code: true, name: true, category: true } } },
+  });
+  return serializeFeeFineLevy(row);
+}
+
+export async function rejectFeeFineLevy(
+  institutionId: string,
+  id: string,
+  approvedBy: string,
+  reason: string,
+) {
+  const existing = await prisma.feeFineLevy.findFirst({ where: { id, institutionId } });
+  if (!existing) throw new Error('Fine levy not found');
+  if (existing.status !== FeeFineLevyStatus.PENDING_APPROVAL) {
+    throw new Error('Only fines pending approval can be rejected');
+  }
+  const row = await prisma.feeFineLevy.update({
+    where: { id },
+    data: {
+      status: FeeFineLevyStatus.CANCELLED,
+      approvedBy,
+      approvedAt: new Date(),
+      rejectionReason: reason?.trim() || 'Rejected',
     },
     include: { fineType: { select: { code: true, name: true, category: true } } },
   });
@@ -1620,8 +2586,14 @@ export async function levyFeeFine(
 export async function markFinePaid(institutionId: string, id: string) {
   const existing = await prisma.feeFineLevy.findFirst({ where: { id, institutionId } });
   if (!existing) throw new Error('Fine levy not found');
+  if (existing.status === FeeFineLevyStatus.PENDING_APPROVAL) {
+    throw new Error('Approve the fine before marking it paid');
+  }
   if (existing.status === FeeFineLevyStatus.WAIVED) {
     throw new Error('Waived fines cannot be marked as paid');
+  }
+  if (existing.status === FeeFineLevyStatus.CANCELLED) {
+    throw new Error('Cancelled fines cannot be marked as paid');
   }
   const row = await prisma.feeFineLevy.update({
     where: { id },
@@ -1636,6 +2608,9 @@ export async function waiveFeeFine(institutionId: string, id: string) {
   if (!existing) throw new Error('Fine levy not found');
   if (existing.status === FeeFineLevyStatus.PAID) {
     throw new Error('Paid fines cannot be waived');
+  }
+  if (existing.status === FeeFineLevyStatus.CANCELLED) {
+    throw new Error('Cancelled fines cannot be waived');
   }
   const row = await prisma.feeFineLevy.update({
     where: { id },
@@ -1773,45 +2748,304 @@ export async function listScholarshipAwards(
   return rows.map(serializeScholarshipAward);
 }
 
+export async function getStudentScholarshipContext(
+  institutionId: string,
+  opts: {
+    academicYear?: string;
+    studentId?: string;
+    admissionNumber?: string;
+  },
+) {
+  const dues = await getStudentSettlementDues(institutionId, opts);
+  const studentId = dues.studentId;
+  if (!studentId) {
+    return {
+      ...dues,
+      entranceTestResult: '',
+      entranceTestScore: null as number | null,
+      entranceTestMax: null as number | null,
+      lastClassPercent: 0,
+      lastClassTotal: 0,
+      lastClassObtain: 0,
+      lastClassSource: '',
+    };
+  }
+
+  const student = await prisma.student.findFirst({
+    where: { id: studentId, institutionId },
+    select: {
+      id: true,
+      entranceScore: true,
+      customFields: true,
+      admissionRecord: {
+        select: {
+          application: {
+            select: {
+              entranceTestScore: true,
+              entranceTestMax: true,
+              manualEntranceTest: {
+                select: {
+                  percentScore: true,
+                  totalMaxMarks: true,
+                  totalObtained: true,
+                },
+              },
+              seatAllocation: {
+                select: { entranceScore: true },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const application = student?.admissionRecord?.application;
+  let entranceTestScore: number | null = null;
+  let entranceTestMax: number | null = null;
+  let entranceTestResult = '';
+
+  if (application?.manualEntranceTest) {
+    entranceTestScore = application.manualEntranceTest.percentScore;
+    entranceTestMax = application.manualEntranceTest.totalMaxMarks;
+    entranceTestResult = `${round2(application.manualEntranceTest.totalObtained)} / ${round2(application.manualEntranceTest.totalMaxMarks)} (${round2(application.manualEntranceTest.percentScore)}%)`;
+  } else if (application?.entranceTestScore != null) {
+    entranceTestScore = application.entranceTestScore;
+    entranceTestMax = application.entranceTestMax ?? 100;
+    entranceTestResult = `${round2(entranceTestScore)} / ${round2(entranceTestMax)}`;
+  } else if (application?.seatAllocation?.entranceScore != null) {
+    entranceTestScore = application.seatAllocation.entranceScore;
+    entranceTestResult = String(round2(entranceTestScore));
+  } else if (student?.entranceScore != null) {
+    entranceTestScore = student.entranceScore;
+    entranceTestResult = String(round2(entranceTestScore));
+  }
+
+  let lastClassPercent = 0;
+  let lastClassTotal = 0;
+  let lastClassObtain = 0;
+  let lastClassSource = '';
+
+  const session = await prisma.studentSessionHistory.findFirst({
+    where: { institutionId, studentId },
+    orderBy: { promotedAt: 'desc' },
+    select: {
+      finalPercentage: true,
+      resultSnapshot: true,
+      fromClassName: true,
+      fromAcademicYear: true,
+    },
+  });
+
+  if (session) {
+    lastClassSource = `Session history (${session.fromClassName || session.fromAcademicYear})`;
+    const snap = (session.resultSnapshot || {}) as Record<string, unknown>;
+    lastClassPercent = round2(
+      session.finalPercentage ??
+        (typeof snap.percentage === 'number' ? snap.percentage : 0) ??
+        0,
+    );
+    lastClassTotal = round2(
+      typeof snap.totalMax === 'number'
+        ? snap.totalMax
+        : typeof snap.total === 'number'
+          ? snap.total
+          : 0,
+    );
+    lastClassObtain = round2(
+      typeof snap.totalObtained === 'number'
+        ? snap.totalObtained
+        : typeof snap.obtain === 'number'
+          ? snap.obtain
+          : 0,
+    );
+    if (lastClassPercent > 0 && lastClassTotal <= 0) {
+      lastClassTotal = 100;
+      lastClassObtain = round2((lastClassPercent / 100) * lastClassTotal);
+    }
+  }
+
+  if (lastClassPercent <= 0 && lastClassObtain <= 0) {
+    const examResult = await prisma.examStudentResult.findFirst({
+      where: { institutionId, studentId },
+      orderBy: { createdAt: 'desc' },
+      select: { percentage: true, totalMax: true, totalObtained: true },
+    });
+    if (examResult) {
+      lastClassPercent = round2(examResult.percentage);
+      lastClassTotal = round2(examResult.totalMax);
+      lastClassObtain = round2(examResult.totalObtained);
+      lastClassSource = 'Exam result';
+    }
+  }
+
+  if (lastClassPercent <= 0 && lastClassObtain <= 0) {
+    const classTest = await prisma.academicClassTestScore.findFirst({
+      where: { institutionId, studentId },
+      orderBy: { updatedAt: 'desc' },
+      select: { percentage: true, maxMarks: true, marksObtained: true },
+    });
+    if (classTest) {
+      lastClassPercent = round2(classTest.percentage);
+      lastClassTotal = round2(classTest.maxMarks);
+      lastClassObtain = round2(classTest.marksObtained);
+      lastClassSource = 'Class test';
+    }
+  }
+
+  if (lastClassPercent <= 0 && lastClassObtain <= 0 && student?.customFields) {
+    const cf = student.customFields as Record<string, unknown>;
+    const percent = Number(cf.lastClassPercent ?? cf.previousPercent ?? 0);
+    const total = Number(cf.lastClassTotal ?? cf.previousTotal ?? 0);
+    const obtain = Number(cf.lastClassObtain ?? cf.previousObtain ?? 0);
+    if (percent > 0 || obtain > 0 || total > 0) {
+      lastClassPercent = round2(percent);
+      lastClassTotal = round2(total);
+      lastClassObtain = round2(obtain);
+      lastClassSource = 'Student profile';
+    }
+  }
+
+  return {
+    ...dues,
+    entranceTestResult,
+    entranceTestScore,
+    entranceTestMax,
+    lastClassPercent,
+    lastClassTotal,
+    lastClassObtain,
+    lastClassSource,
+  };
+}
+
+function computeScholarshipAwardAmount(
+  scholarship: { waiverType: string; waiverValue: number; budgetAllocated: number; budgetUsed: number },
+  totalDueFees: number,
+  requestedAmount?: number,
+) {
+  const remaining = round2(scholarship.budgetAllocated - scholarship.budgetUsed);
+  let amount = round2(requestedAmount ?? 0);
+  if (amount <= 0) {
+    const waiverType = (scholarship.waiverType || '').toUpperCase();
+    if (waiverType === 'PERCENT' || waiverType === 'PERCENTAGE') {
+      amount = round2((Math.max(totalDueFees, 0) * scholarship.waiverValue) / 100);
+    } else {
+      amount = round2(scholarship.waiverValue);
+    }
+  }
+  if (scholarship.budgetAllocated > 0 && remaining > 0 && amount > remaining) {
+    amount = remaining;
+  }
+  return amount;
+}
+
 export async function awardScholarship(
   institutionId: string,
   data: {
     scholarshipId: string;
     academicYear: string;
     studentName: string;
-    amount: number;
+    amount?: number;
     studentId?: string;
     admissionNumber?: string;
     className?: string;
+    sectionName?: string;
+    reason?: string;
     remarks?: string;
+    totalDueFees?: number;
+    entranceTestResult?: string;
+    lastClassPercent?: number;
+    lastClassTotal?: number;
+    lastClassObtain?: number;
   },
 ) {
   const studentName = data.studentName?.trim();
   if (!studentName) throw new Error('Student name is required');
   if (!data.academicYear?.trim()) throw new Error('Academic year is required');
-  const amount = round2(data.amount);
-  if (amount <= 0) throw new Error('Award amount must be greater than zero');
+  const reason = (data.reason ?? data.remarks ?? '').trim();
+  if (!reason) throw new Error('Reason for scholarship is required');
 
   const scholarship = await prisma.feeScholarship.findFirst({
     where: { id: data.scholarshipId, institutionId },
   });
   if (!scholarship) throw new Error('Scholarship not found');
-  if (scholarship.status !== FeeApprovalStatus.ACTIVE) {
+  if (
+    scholarship.status !== FeeApprovalStatus.ACTIVE &&
+    scholarship.status !== FeeApprovalStatus.APPROVED
+  ) {
     throw new Error('Scholarship must be active before awarding');
   }
+
+  let context = {
+    totalDueFees: round2(data.totalDueFees ?? 0),
+    entranceTestResult: data.entranceTestResult ?? '',
+    lastClassPercent: round2(data.lastClassPercent ?? 0),
+    lastClassTotal: round2(data.lastClassTotal ?? 0),
+    lastClassObtain: round2(data.lastClassObtain ?? 0),
+    sectionName: data.sectionName ?? '',
+    admissionNumber: data.admissionNumber ?? '',
+    className: data.className ?? '',
+    studentId: data.studentId ?? '',
+  };
+
+  if (data.studentId || data.admissionNumber) {
+    try {
+      const fetched = await getStudentScholarshipContext(institutionId, {
+        academicYear: data.academicYear,
+        studentId: data.studentId,
+        admissionNumber: data.admissionNumber,
+      });
+      context = {
+        totalDueFees: data.totalDueFees != null ? round2(data.totalDueFees) : fetched.totalDueFees,
+        entranceTestResult: data.entranceTestResult || fetched.entranceTestResult,
+        lastClassPercent:
+          data.lastClassPercent != null ? round2(data.lastClassPercent) : fetched.lastClassPercent,
+        lastClassTotal:
+          data.lastClassTotal != null ? round2(data.lastClassTotal) : fetched.lastClassTotal,
+        lastClassObtain:
+          data.lastClassObtain != null ? round2(data.lastClassObtain) : fetched.lastClassObtain,
+        sectionName: data.sectionName || fetched.sectionName || '',
+        admissionNumber: data.admissionNumber || fetched.admissionNumber || '',
+        className: data.className || fetched.className || '',
+        studentId: data.studentId || fetched.studentId || '',
+      };
+    } catch {
+      // keep provided snapshot
+    }
+  }
+
+  const amount = computeScholarshipAwardAmount(
+    scholarship,
+    context.totalDueFees,
+    data.amount,
+  );
+  if (amount <= 0) throw new Error('Award amount must be greater than zero');
+
+  const { resolveModuleApprover } = await import('./approvalHierarchy.js');
+  const approver = await resolveModuleApprover(institutionId, 'FEE_SCHOLARSHIP_AWARD', 'PRINCIPAL');
 
   const row = await prisma.feeScholarshipAward.create({
     data: {
       institutionId,
       scholarshipId: data.scholarshipId,
       academicYear: data.academicYear,
-      studentId: data.studentId ?? '',
+      studentId: context.studentId,
       studentName,
-      admissionNumber: data.admissionNumber ?? '',
-      className: data.className ?? '',
+      admissionNumber: context.admissionNumber,
+      className: context.className,
+      sectionName: context.sectionName,
       amount,
+      reason,
+      totalDueFees: context.totalDueFees,
+      entranceTestResult: context.entranceTestResult,
+      lastClassPercent: context.lastClassPercent,
+      lastClassTotal: context.lastClassTotal,
+      lastClassObtain: context.lastClassObtain,
       status: FeeApprovalStatus.PENDING_APPROVAL,
-      remarks: data.remarks ?? '',
+      pendingApproverRole: approver.roleLabel || approver.roleKey,
+      pendingApproverName: approver.assigneeName || '',
+      pendingApproverEmail: approver.assigneeEmail || '',
+      remarks: reason,
     },
     include: { scholarship: { select: { code: true, name: true } } },
   });
@@ -1848,6 +3082,9 @@ export async function approveScholarshipAward(
         status: FeeApprovalStatus.APPROVED,
         approvedBy,
         approvedAt: new Date(),
+        pendingApproverRole: '',
+        pendingApproverName: '',
+        pendingApproverEmail: '',
       },
       include: { scholarship: { select: { code: true, name: true } } },
     }),
@@ -1873,6 +3110,10 @@ export async function rejectScholarshipAward(
       approvedBy,
       approvedAt: new Date(),
       remarks: reason?.trim() || existing.remarks,
+      reason: reason?.trim() || existing.reason,
+      pendingApproverRole: '',
+      pendingApproverName: '',
+      pendingApproverEmail: '',
     },
     include: { scholarship: { select: { code: true, name: true } } },
   });
@@ -1881,7 +3122,86 @@ export async function rejectScholarshipAward(
 
 // ─── Transport Fee ─────────────────────────────────────────────────────────────
 
+export async function listTransportRouteOptions(institutionId: string, academicYear?: string) {
+  const where: Prisma.TransportRouteWhereInput = {
+    institutionId,
+    isActive: true,
+    isArchived: false,
+  };
+  if (academicYear) where.academicYear = academicYear;
+  const rows = await prisma.transportRoute.findMany({
+    where,
+    select: { id: true, routeCode: true, routeName: true, academicYear: true },
+    orderBy: { routeName: 'asc' },
+  });
+  if (rows.length === 0 && academicYear) {
+    return prisma.transportRoute.findMany({
+      where: { institutionId, isActive: true, isArchived: false },
+      select: { id: true, routeCode: true, routeName: true, academicYear: true },
+      orderBy: { routeName: 'asc' },
+    });
+  }
+  return rows;
+}
+
+export async function getStudentTransportCollectContext(
+  institutionId: string,
+  opts: {
+    academicYear?: string;
+    studentId?: string;
+    admissionNumber?: string;
+  },
+) {
+  const dues = await getStudentSettlementDues(institutionId, opts);
+  const academicYear = dues.academicYear;
+  const studentId = dues.studentId;
+  const admissionNumber = dues.admissionNumber;
+
+  let suggestedRouteId = '';
+  let suggestedRouteName = '';
+  let suggestedMonthlyAmount = 0;
+
+  if (studentId || admissionNumber) {
+    const enrollment = await prisma.transportStudentEnrollment.findFirst({
+      where: {
+        institutionId,
+        OR: [
+          ...(studentId ? [{ studentId }] : []),
+          ...(admissionNumber ? [{ admissionNumber }] : []),
+        ],
+      },
+      include: {
+        route: { select: { id: true, routeName: true } },
+        feeAssignments: {
+          where: { status: 'ACTIVE', academicYear },
+          orderBy: { updatedAt: 'desc' },
+          take: 1,
+          select: { netAmount: true, assignedAmount: true },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (enrollment) {
+      suggestedRouteId = enrollment.routeId || enrollment.route?.id || '';
+      suggestedRouteName = enrollment.route?.routeName || '';
+      const assignment = enrollment.feeAssignments[0];
+      if (assignment) {
+        suggestedMonthlyAmount = round2(assignment.netAmount || assignment.assignedAmount || 0);
+      }
+    }
+  }
+
+  return {
+    ...dues,
+    suggestedRouteId,
+    suggestedRouteName,
+    suggestedMonthlyAmount,
+    totalDueFees: dues.totalDueFees,
+  };
+}
+
 export async function listTransportVendors(institutionId: string) {
+  await syncTransportVendorCompliance(institutionId);
   const rows = await prisma.transportFeeVendor.findMany({
     where: { institutionId },
     orderBy: { vendorName: 'asc' },
@@ -1889,21 +3209,52 @@ export async function listTransportVendors(institutionId: string) {
   return rows.map(serializeTransportVendor);
 }
 
+export async function getTransportVendor(institutionId: string, id: string) {
+  const row = await prisma.transportFeeVendor.findFirst({ where: { id, institutionId } });
+  if (!row) throw new Error('Transport vendor not found');
+  return serializeTransportVendor(row);
+}
+
+type TransportVendorInput = {
+  vendorCode: string;
+  vendorName: string;
+  contactPerson?: string;
+  mobile?: string;
+  email?: string;
+  address?: string;
+  routesCovered?: string;
+  vehicleCount?: number;
+  bankDetails?: Record<string, unknown>;
+  ownerPan?: string;
+  ownerAadhaar?: string;
+  driver1Name?: string;
+  driver1Mobile?: string;
+  driver1DlNumber?: string;
+  driver1DlExpiry?: string | null;
+  driver1PoliceVerification?: string;
+  driver2Name?: string;
+  driver2Mobile?: string;
+  driver2DlNumber?: string;
+  driver2DlExpiry?: string | null;
+  driver2PoliceVerification?: string;
+  vehicleRegNo?: string;
+  vehicleChassisNo?: string;
+  vehicleType?: string;
+  pollutionCertDate?: string | null;
+  pollutionExpiryDate?: string | null;
+  insurancePolicyNo?: string;
+  insuranceExpiryDate?: string | null;
+  trackingGpsDeviceId?: string;
+  trackingPhoneAccess?: string;
+  documents?: TransportVendorDocument[];
+  remarks?: string;
+  sendForApproval?: boolean;
+};
+
 export async function createTransportVendor(
   institutionId: string,
-  data: {
-    vendorCode: string;
-    vendorName: string;
-    contactPerson?: string;
-    mobile?: string;
-    email?: string;
-    address?: string;
-    routesCovered?: string;
-    vehicleCount?: number;
-    bankDetails?: Record<string, unknown>;
-    status?: TransportVendorStatus;
-    remarks?: string;
-  },
+  data: TransportVendorInput,
+  requestedBy: string,
 ) {
   const vendorCode = data.vendorCode?.trim();
   const vendorName = data.vendorName?.trim();
@@ -1914,6 +3265,22 @@ export async function createTransportVendor(
     where: { institutionId, vendorCode },
   });
   if (existing) throw new Error(`Vendor with code "${vendorCode}" already exists`);
+
+  const sendForApproval = data.sendForApproval !== false;
+  const { resolveModuleApprover } = await import('./approvalHierarchy.js');
+  const approver = sendForApproval
+    ? await resolveModuleApprover(institutionId, 'FEE_TRANSPORT_VENDOR', 'PRINCIPAL')
+    : {
+        roleKey: '',
+        roleLabel: '',
+        assigneeName: '',
+        assigneeEmail: '',
+      };
+
+  const pollutionExpiryDate = parseDateOnly(data.pollutionExpiryDate);
+  const insuranceExpiryDate = parseDateOnly(data.insuranceExpiryDate);
+  const expired =
+    isExpiredDate(pollutionExpiryDate) || isExpiredDate(insuranceExpiryDate);
 
   const row = await prisma.transportFeeVendor.create({
     data: {
@@ -1927,31 +3294,68 @@ export async function createTransportVendor(
       routesCovered: data.routesCovered ?? '',
       vehicleCount: data.vehicleCount ?? 0,
       bankDetails: (data.bankDetails ?? {}) as Prisma.InputJsonValue,
-      status: data.status ?? TransportVendorStatus.EMPANELLED,
+      ownerPan: data.ownerPan ?? '',
+      ownerAadhaar: data.ownerAadhaar ?? '',
+      driver1Name: data.driver1Name ?? '',
+      driver1Mobile: data.driver1Mobile ?? '',
+      driver1DlNumber: data.driver1DlNumber ?? '',
+      driver1DlExpiry: parseDateOnly(data.driver1DlExpiry),
+      driver1PoliceVerification: data.driver1PoliceVerification ?? '',
+      driver2Name: data.driver2Name ?? '',
+      driver2Mobile: data.driver2Mobile ?? '',
+      driver2DlNumber: data.driver2DlNumber ?? '',
+      driver2DlExpiry: parseDateOnly(data.driver2DlExpiry),
+      driver2PoliceVerification: data.driver2PoliceVerification ?? '',
+      vehicleRegNo: data.vehicleRegNo ?? '',
+      vehicleChassisNo: data.vehicleChassisNo ?? '',
+      vehicleType: data.vehicleType ?? '',
+      pollutionCertDate: parseDateOnly(data.pollutionCertDate),
+      pollutionExpiryDate,
+      insurancePolicyNo: data.insurancePolicyNo ?? '',
+      insuranceExpiryDate,
+      trackingGpsDeviceId: data.trackingGpsDeviceId ?? '',
+      trackingPhoneAccess: data.trackingPhoneAccess ?? '',
+      documents: (data.documents ?? []) as unknown as Prisma.InputJsonValue,
+      complianceCategory: expired ? 'RED' : 'NORMAL',
+      pendingApproverRole: sendForApproval ? approver.roleLabel || approver.roleKey : '',
+      pendingApproverName: sendForApproval ? approver.assigneeName || '' : '',
+      pendingApproverEmail: sendForApproval ? approver.assigneeEmail || '' : '',
+      requestedBy,
+      status: sendForApproval
+        ? TransportVendorStatus.PENDING_APPROVAL
+        : TransportVendorStatus.EMPANELLED,
       remarks: data.remarks ?? '',
     },
   });
+
+  if (expired) {
+    await notifyPrincipalVendorCompliance(institutionId, row.id, row.vendorName, {
+      pollutionExpired: isExpiredDate(pollutionExpiryDate),
+      insuranceExpired: isExpiredDate(insuranceExpiryDate),
+    });
+  }
+
   return serializeTransportVendor(row);
 }
 
 export async function updateTransportVendor(
   institutionId: string,
   id: string,
-  data: Partial<{
-    vendorName: string;
-    contactPerson: string;
-    mobile: string;
-    email: string;
-    address: string;
-    routesCovered: string;
-    vehicleCount: number;
-    bankDetails: Record<string, unknown>;
-    status: TransportVendorStatus;
-    remarks: string;
-  }>,
+  data: Partial<TransportVendorInput> & { status?: TransportVendorStatus },
 ) {
   const existing = await prisma.transportFeeVendor.findFirst({ where: { id, institutionId } });
   if (!existing) throw new Error('Transport vendor not found');
+
+  const pollutionExpiryDate =
+    data.pollutionExpiryDate !== undefined
+      ? parseDateOnly(data.pollutionExpiryDate)
+      : existing.pollutionExpiryDate;
+  const insuranceExpiryDate =
+    data.insuranceExpiryDate !== undefined
+      ? parseDateOnly(data.insuranceExpiryDate)
+      : existing.insuranceExpiryDate;
+  const expired =
+    isExpiredDate(pollutionExpiryDate) || isExpiredDate(insuranceExpiryDate);
 
   const row = await prisma.transportFeeVendor.update({
     where: { id },
@@ -1966,11 +3370,273 @@ export async function updateTransportVendor(
       ...(data.bankDetails !== undefined
         ? { bankDetails: data.bankDetails as Prisma.InputJsonValue }
         : {}),
-      ...(data.status !== undefined ? { status: data.status } : {}),
+      ...(data.ownerPan !== undefined ? { ownerPan: data.ownerPan } : {}),
+      ...(data.ownerAadhaar !== undefined ? { ownerAadhaar: data.ownerAadhaar } : {}),
+      ...(data.driver1Name !== undefined ? { driver1Name: data.driver1Name } : {}),
+      ...(data.driver1Mobile !== undefined ? { driver1Mobile: data.driver1Mobile } : {}),
+      ...(data.driver1DlNumber !== undefined ? { driver1DlNumber: data.driver1DlNumber } : {}),
+      ...(data.driver1DlExpiry !== undefined
+        ? { driver1DlExpiry: parseDateOnly(data.driver1DlExpiry) }
+        : {}),
+      ...(data.driver1PoliceVerification !== undefined
+        ? { driver1PoliceVerification: data.driver1PoliceVerification }
+        : {}),
+      ...(data.driver2Name !== undefined ? { driver2Name: data.driver2Name } : {}),
+      ...(data.driver2Mobile !== undefined ? { driver2Mobile: data.driver2Mobile } : {}),
+      ...(data.driver2DlNumber !== undefined ? { driver2DlNumber: data.driver2DlNumber } : {}),
+      ...(data.driver2DlExpiry !== undefined
+        ? { driver2DlExpiry: parseDateOnly(data.driver2DlExpiry) }
+        : {}),
+      ...(data.driver2PoliceVerification !== undefined
+        ? { driver2PoliceVerification: data.driver2PoliceVerification }
+        : {}),
+      ...(data.vehicleRegNo !== undefined ? { vehicleRegNo: data.vehicleRegNo } : {}),
+      ...(data.vehicleChassisNo !== undefined ? { vehicleChassisNo: data.vehicleChassisNo } : {}),
+      ...(data.vehicleType !== undefined ? { vehicleType: data.vehicleType } : {}),
+      ...(data.pollutionCertDate !== undefined
+        ? { pollutionCertDate: parseDateOnly(data.pollutionCertDate) }
+        : {}),
+      ...(data.pollutionExpiryDate !== undefined ? { pollutionExpiryDate } : {}),
+      ...(data.insurancePolicyNo !== undefined ? { insurancePolicyNo: data.insurancePolicyNo } : {}),
+      ...(data.insuranceExpiryDate !== undefined ? { insuranceExpiryDate } : {}),
+      ...(data.trackingGpsDeviceId !== undefined
+        ? { trackingGpsDeviceId: data.trackingGpsDeviceId }
+        : {}),
+      ...(data.trackingPhoneAccess !== undefined
+        ? { trackingPhoneAccess: data.trackingPhoneAccess }
+        : {}),
+      ...(data.documents !== undefined
+        ? { documents: data.documents as unknown as Prisma.InputJsonValue }
+        : {}),
       ...(data.remarks !== undefined ? { remarks: data.remarks } : {}),
+      complianceCategory: expired ? 'RED' : 'NORMAL',
+      ...(data.status !== undefined
+        ? { status: data.status }
+        : expired &&
+            existing.status !== TransportVendorStatus.PENDING_APPROVAL &&
+            existing.status !== TransportVendorStatus.REJECTED
+          ? { status: TransportVendorStatus.RED_CATEGORY }
+          : {}),
+    },
+  });
+
+  if (expired && existing.complianceCategory !== 'RED') {
+    await notifyPrincipalVendorCompliance(institutionId, row.id, row.vendorName, {
+      pollutionExpired: isExpiredDate(pollutionExpiryDate),
+      insuranceExpired: isExpiredDate(insuranceExpiryDate),
+    });
+  }
+
+  return serializeTransportVendor(row);
+}
+
+export async function approveTransportVendor(
+  institutionId: string,
+  id: string,
+  approvedBy: string,
+) {
+  const existing = await prisma.transportFeeVendor.findFirst({ where: { id, institutionId } });
+  if (!existing) throw new Error('Transport vendor not found');
+  if (existing.status !== TransportVendorStatus.PENDING_APPROVAL) {
+    throw new Error('Only pending vendors can be approved');
+  }
+  const expired =
+    isExpiredDate(existing.pollutionExpiryDate) || isExpiredDate(existing.insuranceExpiryDate);
+  const row = await prisma.transportFeeVendor.update({
+    where: { id },
+    data: {
+      status: expired ? TransportVendorStatus.RED_CATEGORY : TransportVendorStatus.EMPANELLED,
+      complianceCategory: expired ? 'RED' : 'NORMAL',
+      approvedBy,
+      approvedAt: new Date(),
+      rejectionReason: '',
+      pendingApproverRole: '',
+      pendingApproverName: '',
+      pendingApproverEmail: '',
     },
   });
   return serializeTransportVendor(row);
+}
+
+export async function rejectTransportVendor(
+  institutionId: string,
+  id: string,
+  approvedBy: string,
+  reason: string,
+) {
+  const existing = await prisma.transportFeeVendor.findFirst({ where: { id, institutionId } });
+  if (!existing) throw new Error('Transport vendor not found');
+  if (existing.status !== TransportVendorStatus.PENDING_APPROVAL) {
+    throw new Error('Only pending vendors can be rejected');
+  }
+  const row = await prisma.transportFeeVendor.update({
+    where: { id },
+    data: {
+      status: TransportVendorStatus.REJECTED,
+      approvedBy,
+      approvedAt: new Date(),
+      rejectionReason: reason?.trim() || 'Rejected',
+      pendingApproverRole: '',
+      pendingApproverName: '',
+      pendingApproverEmail: '',
+    },
+  });
+  return serializeTransportVendor(row);
+}
+
+async function notifyPrincipalVendorCompliance(
+  institutionId: string,
+  vendorId: string,
+  vendorName: string,
+  flags: { pollutionExpired: boolean; insuranceExpired: boolean },
+) {
+  const { resolveModuleApprover } = await import('./approvalHierarchy.js');
+  const approver = await resolveModuleApprover(institutionId, 'FEE_TRANSPORT_VENDOR', 'PRINCIPAL');
+  const parts: string[] = [];
+  if (flags.pollutionExpired) parts.push('pollution certificate');
+  if (flags.insuranceExpired) parts.push('insurance');
+  const label = parts.join(' and ') || 'compliance documents';
+  const alertType = flags.pollutionExpired && flags.insuranceExpired
+    ? 'COMPLIANCE_EXPIRED'
+    : flags.pollutionExpired
+      ? 'POLLUTION_EXPIRED'
+      : 'INSURANCE_EXPIRED';
+
+  const existingOpen = await prisma.transportVendorComplianceAlert.findFirst({
+    where: { institutionId, vendorId, alertType, status: 'OPEN' },
+  });
+  if (existingOpen) return existingOpen;
+
+  return prisma.transportVendorComplianceAlert.create({
+    data: {
+      institutionId,
+      vendorId,
+      alertType,
+      title: `Transport vendor red category — ${vendorName}`,
+      message: `Vendor "${vendorName}" has expired ${label}. Vehicle placed in red category until documents are renewed.`,
+      recipientRole: approver.roleLabel || 'Principal',
+      recipientName: approver.assigneeName || '',
+      recipientEmail: approver.assigneeEmail || '',
+      status: 'OPEN',
+    },
+  });
+}
+
+export async function syncTransportVendorCompliance(institutionId: string) {
+  const vendors = await prisma.transportFeeVendor.findMany({
+    where: {
+      institutionId,
+      status: {
+        notIn: [TransportVendorStatus.REJECTED, TransportVendorStatus.PENDING_APPROVAL],
+      },
+    },
+  });
+  const today = startOfTodayUtc();
+  const reminderHorizonDays = 15;
+  let flagged = 0;
+  let reminders = 0;
+
+  for (const vendor of vendors) {
+    const pollutionExpired = isExpiredDate(vendor.pollutionExpiryDate, today);
+    const insuranceExpired = isExpiredDate(vendor.insuranceExpiryDate, today);
+    const expired = pollutionExpired || insuranceExpired;
+
+    if (expired) {
+      if (
+        vendor.complianceCategory !== 'RED' ||
+        vendor.status !== TransportVendorStatus.RED_CATEGORY
+      ) {
+        await prisma.transportFeeVendor.update({
+          where: { id: vendor.id },
+          data: {
+            complianceCategory: 'RED',
+            status: TransportVendorStatus.RED_CATEGORY,
+          },
+        });
+        flagged += 1;
+      }
+      await notifyPrincipalVendorCompliance(institutionId, vendor.id, vendor.vendorName, {
+        pollutionExpired,
+        insuranceExpired,
+      });
+      continue;
+    }
+
+    if (vendor.complianceCategory === 'RED' || vendor.status === TransportVendorStatus.RED_CATEGORY) {
+      await prisma.transportFeeVendor.update({
+        where: { id: vendor.id },
+        data: {
+          complianceCategory: 'NORMAL',
+          status:
+            vendor.status === TransportVendorStatus.RED_CATEGORY
+              ? TransportVendorStatus.EMPANELLED
+              : vendor.status,
+        },
+      });
+    }
+
+    for (const [alertType, expiry, label] of [
+      ['POLLUTION_RENEWAL_REMINDER', vendor.pollutionExpiryDate, 'pollution certificate'],
+      ['INSURANCE_RENEWAL_REMINDER', vendor.insuranceExpiryDate, 'insurance'],
+    ] as const) {
+      const days = daysUntil(expiry, today);
+      if (days == null || days < 0 || days > reminderHorizonDays) continue;
+      const existing = await prisma.transportVendorComplianceAlert.findFirst({
+        where: { institutionId, vendorId: vendor.id, alertType, status: 'OPEN' },
+      });
+      if (existing) continue;
+      const { resolveModuleApprover } = await import('./approvalHierarchy.js');
+      const approver = await resolveModuleApprover(institutionId, 'FEE_TRANSPORT_VENDOR', 'PRINCIPAL');
+      await prisma.transportVendorComplianceAlert.create({
+        data: {
+          institutionId,
+          vendorId: vendor.id,
+          alertType,
+          title: `Renew ${label} — ${vendor.vendorName}`,
+          message: `${label} for vendor "${vendor.vendorName}" expires in ${days} day(s). Please renew to avoid red category.`,
+          recipientRole: approver.roleLabel || 'Principal',
+          recipientName: approver.assigneeName || '',
+          recipientEmail: approver.assigneeEmail || '',
+          status: 'OPEN',
+        },
+      });
+      reminders += 1;
+    }
+  }
+
+  return { flagged, reminders };
+}
+
+export async function listTransportVendorComplianceAlerts(
+  institutionId: string,
+  opts: { status?: string } = {},
+) {
+  await syncTransportVendorCompliance(institutionId);
+  const rows = await prisma.transportVendorComplianceAlert.findMany({
+    where: {
+      institutionId,
+      ...(opts.status ? { status: opts.status } : {}),
+    },
+    include: { vendor: { select: { vendorCode: true, vendorName: true, status: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    vendorId: row.vendorId,
+    vendorCode: row.vendor?.vendorCode ?? '',
+    vendorName: row.vendor?.vendorName ?? '',
+    vendorStatus: row.vendor?.status ?? '',
+    alertType: row.alertType,
+    title: row.title,
+    message: row.message,
+    recipientRole: row.recipientRole,
+    recipientName: row.recipientName,
+    recipientEmail: row.recipientEmail,
+    status: row.status,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  }));
 }
 
 export async function listTransportFeeCollections(
@@ -2002,10 +3668,12 @@ export async function collectTransportFee(
     studentId?: string;
     admissionNumber?: string;
     className?: string;
+    sectionName?: string;
     routeName?: string;
     monthLabel?: string;
     paymentMode?: string;
     remarks?: string;
+    totalDueFees?: number;
   },
   collectedBy: string,
 ) {
@@ -2014,6 +3682,32 @@ export async function collectTransportFee(
   if (!data.academicYear?.trim()) throw new Error('Academic year is required');
   const amount = round2(data.amount);
   if (amount <= 0) throw new Error('Collection amount must be greater than zero');
+  if (!data.paymentMode?.trim()) throw new Error('Payment mode is required');
+
+  let totalDueFees = round2(data.totalDueFees ?? 0);
+  let sectionName = data.sectionName ?? '';
+  let admissionNumber = data.admissionNumber ?? '';
+  let className = data.className ?? '';
+  let studentId = data.studentId ?? '';
+  let routeName = data.routeName ?? '';
+
+  if (data.studentId || data.admissionNumber) {
+    try {
+      const ctx = await getStudentTransportCollectContext(institutionId, {
+        academicYear: data.academicYear,
+        studentId: data.studentId,
+        admissionNumber: data.admissionNumber,
+      });
+      totalDueFees = data.totalDueFees != null ? totalDueFees : ctx.totalDueFees;
+      sectionName = sectionName || ctx.sectionName || '';
+      admissionNumber = admissionNumber || ctx.admissionNumber || '';
+      className = className || ctx.className || '';
+      studentId = studentId || ctx.studentId || '';
+      routeName = routeName || ctx.suggestedRouteName || '';
+    } catch {
+      // keep provided values
+    }
+  }
 
   const receiptNumber = await generateTransportReceiptNumber(institutionId, data.academicYear);
 
@@ -2023,12 +3717,14 @@ export async function collectTransportFee(
       receiptNumber,
       academicYear: data.academicYear,
       monthLabel: data.monthLabel ?? '',
-      studentId: data.studentId ?? '',
+      studentId,
       studentName,
-      admissionNumber: data.admissionNumber ?? '',
-      className: data.className ?? '',
-      routeName: data.routeName ?? '',
+      admissionNumber,
+      className,
+      sectionName,
+      routeName,
       amount,
+      totalDueFees,
       paymentMode: data.paymentMode ?? 'CASH',
       collectedBy,
       remarks: data.remarks ?? '',
@@ -2515,6 +4211,10 @@ function serializeOtherChargeRequest(row: {
   admissionNumber: string;
   className: string;
   sectionName: string;
+  totalDueFees?: number;
+  pendingApproverRole?: string;
+  pendingApproverName?: string;
+  pendingApproverEmail?: string;
   status: FeeApprovalStatus;
   requestedBy: string;
   approvedBy: string;
@@ -2544,6 +4244,10 @@ function serializeOtherChargeRequest(row: {
     admissionNumber: row.admissionNumber,
     className: row.className,
     sectionName: row.sectionName,
+    totalDueFees: round2(row.totalDueFees ?? 0),
+    pendingApproverRole: row.pendingApproverRole || '',
+    pendingApproverName: row.pendingApproverName || '',
+    pendingApproverEmail: row.pendingApproverEmail || '',
     status: row.status,
     requestedBy: row.requestedBy,
     approvedBy: row.approvedBy,
@@ -2681,6 +4385,7 @@ export async function createOtherChargeRequest(
     admissionNumber?: string;
     className?: string;
     sectionName?: string;
+    totalDueFees?: number;
     remarks?: string;
   },
   requestedBy: string,
@@ -2696,6 +4401,33 @@ export async function createOtherChargeRequest(
   } else {
     const val = round2(data.value ?? 0);
     if (val <= 0) throw new Error('Discount value must be greater than zero');
+  }
+
+  let totalDueFees = round2(data.totalDueFees ?? 0);
+  let studentId = data.studentId ?? '';
+  let studentName = data.studentName ?? '';
+  let admissionNumber = data.admissionNumber ?? '';
+  let className = data.className ?? '';
+  let sectionName = data.sectionName ?? '';
+
+  if (
+    data.requestType === FeeOtherChargeRequestType.ACCOUNT_SETTLEMENT &&
+    (data.studentId || data.admissionNumber)
+  ) {
+    try {
+      const dues = await getStudentAllSessionDues(institutionId, {
+        studentId: data.studentId,
+        admissionNumber: data.admissionNumber,
+      });
+      totalDueFees = data.totalDueFees != null ? totalDueFees : dues.totalDueFees;
+      studentId = studentId || dues.studentId;
+      studentName = studentName || dues.studentName;
+      admissionNumber = admissionNumber || dues.admissionNumber;
+      className = className || dues.className;
+      sectionName = sectionName || dues.sectionName;
+    } catch {
+      // keep provided snapshot
+    }
   }
 
   const recordId = await generateOtherChargeRecordId(institutionId, data.academicYear);
@@ -2719,11 +4451,12 @@ export async function createOtherChargeRequest(
       settlementAmount: round2(data.settlementAmount ?? 0),
       chargeTypeId: data.chargeTypeId || null,
       chargeAmount: round2(data.chargeAmount ?? 0),
-      studentId: data.studentId ?? '',
-      studentName: data.studentName ?? '',
-      admissionNumber: data.admissionNumber ?? '',
-      className: data.className ?? '',
-      sectionName: data.sectionName ?? '',
+      studentId,
+      studentName,
+      admissionNumber,
+      className,
+      sectionName,
+      totalDueFees,
       requestedBy,
       status: FeeApprovalStatus.DRAFT,
       remarks: data.remarks ?? '',
@@ -2739,9 +4472,18 @@ export async function submitOtherChargeRequest(institutionId: string, id: string
   if (existing.status !== FeeApprovalStatus.DRAFT) {
     throw new Error('Only draft requests can be submitted to Principal / Center Head');
   }
+
+  const { resolveModuleApprover } = await import('./approvalHierarchy.js');
+  const approver = await resolveModuleApprover(institutionId, 'FEE_OTHER_CHARGE', 'PRINCIPAL');
+
   const row = await prisma.feeOtherChargeRequest.update({
     where: { id },
-    data: { status: FeeApprovalStatus.PENDING_APPROVAL },
+    data: {
+      status: FeeApprovalStatus.PENDING_APPROVAL,
+      pendingApproverRole: approver.roleLabel || approver.roleKey,
+      pendingApproverName: approver.assigneeName || '',
+      pendingApproverEmail: approver.assigneeEmail || '',
+    },
     include: { chargeType: { select: { name: true, code: true } } },
   });
   return serializeOtherChargeRequest(row);
@@ -2770,6 +4512,9 @@ export async function approveOtherChargeRequest(
       approvedBy,
       approvedAt: new Date(),
       rejectionReason: '',
+      pendingApproverRole: '',
+      pendingApproverName: '',
+      pendingApproverEmail: '',
     },
     include: { chargeType: { select: { name: true, code: true } } },
   });
@@ -2794,6 +4539,9 @@ export async function rejectOtherChargeRequest(
       approvedBy,
       approvedAt: new Date(),
       rejectionReason: reason?.trim() || 'Rejected by Principal / Center Head',
+      pendingApproverRole: '',
+      pendingApproverName: '',
+      pendingApproverEmail: '',
     },
     include: { chargeType: { select: { name: true, code: true } } },
   });

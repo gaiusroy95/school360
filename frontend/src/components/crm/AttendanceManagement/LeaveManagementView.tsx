@@ -22,7 +22,6 @@ import {
   fetchLeaveApplications,
   fetchLeaveManagementMeta,
   rejectLeaveApplication,
-  seedLeaveApplicationsDemo,
   type LeaveApplicationItem,
   type LeaveCategory,
   type LeaveStatusFilter,
@@ -61,7 +60,6 @@ export function LeaveManagementView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [seeding, setSeeding] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [rejectOpen, setRejectOpen] = useState(false);
@@ -196,19 +194,6 @@ export function LeaveManagementView() {
     }
   };
 
-  const handleSeed = async () => {
-    setSeeding(true);
-    try {
-      await seedLeaveApplicationsDemo(academicYear);
-      await refresh();
-      setSuccessMsg('Demo leave applications loaded');
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Seed failed');
-    } finally {
-      setSeeding(false);
-    }
-  };
-
   const applicantOptions = useMemo(() => {
     if (!meta) return [];
     if (createForm.category === 'student') return meta.students;
@@ -242,15 +227,6 @@ export function LeaveManagementView() {
           >
             <Plus size={16} />
             New Leave Request
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleSeed()}
-            disabled={seeding}
-            className="flex items-center gap-2 px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50"
-          >
-            {seeding ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-            Load Demo Data
           </button>
           <button
             type="button"

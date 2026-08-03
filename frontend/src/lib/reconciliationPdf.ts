@@ -45,7 +45,7 @@ function drawTable(
     }
     x = margin;
     row.forEach((cell, i) => {
-      pdf.text(cell, x + 1, y + 4);
+      pdf.text(String(cell).slice(0, 42), x + 1, y + 4);
       x += colWidths[i];
     });
     y += 5;
@@ -54,17 +54,22 @@ function drawTable(
   return y + 4;
 }
 
-export function downloadReconciliationPdf(
-  payload: {
-    institutionName: string;
-    reconciliation: PaymentReconciliationRecord;
-    generatedAt: string;
-  },
-) {
+export type ReconciliationPdfPayload = {
+  institutionName: string;
+  reconciliation: PaymentReconciliationRecord;
+  generatedAt: string;
+  printable?: boolean;
+  approved?: boolean;
+  approvedLabel?: string;
+};
+
+/** Download PDF; for approved day closings the report is stamped APPROVED. */
+export function downloadReconciliationPdf(payload: ReconciliationPdfPayload) {
   const { institutionName, reconciliation: rec } = payload;
   const report = rec.report;
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageW = pdf.internal.pageSize.getWidth();
+  const approved = Boolean(payload.approved);
 
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(14);
@@ -77,7 +82,16 @@ export function downloadReconciliationPdf(
     align: 'center',
   });
 
-  let y = 32;
+  if (approved) {
+    pdf.setTextColor(22, 101, 52);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(10);
+    pdf.text(payload.approvedLabel || 'APPROVED', pageW / 2, 31, { align: 'center' });
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFont('helvetica', 'normal');
+  }
+
+  let y = approved ? 36 : 32;
 
   y = drawTable(
     pdf,
@@ -142,6 +156,27 @@ export function downloadReconciliationPdf(
     [120, 60],
   );
 
+  if (report.syncSources) {
+    const s = report.syncSources;
+    y = drawTable(
+      pdf,
+      y,
+      'Synced Sources',
+      ['Source', 'Count / Amount'],
+      [
+        ['Fee receipts (collections)', String(s.feeReceipts)],
+        ['Invoice payments (no linked receipt)', String(s.invoicePayments)],
+        ['Transport collections', String(s.transportCollections)],
+        ['Hostel collections', String(s.hostelCollections)],
+        ['Paid fines', String(s.paidFines)],
+        ['Bank cash deposits', `${s.cashBankDeposits} / ${inr(s.systemCashDeposited)}`],
+        ['Cheque deposit slips', `${s.chequeBankDeposits} / ${inr(s.systemChequeDeposited)}`],
+        ['Online / UPI / POS gateway', inr(s.systemOnlineGateway)],
+      ],
+      [100, 80],
+    );
+  }
+
   if (rec.approvals.length) {
     if (y > pdf.internal.pageSize.getHeight() - 30) {
       pdf.addPage();
@@ -163,5 +198,19 @@ export function downloadReconciliationPdf(
     );
   }
 
-  pdf.save(`Payment_Reconciliation_${rec.reconciliationDate}.pdf`);
+  pdf.setFontSize(8);
+  pdf.setTextColor(100);
+  pdf.text(
+    `Generated ${new Date(payload.generatedAt).toLocaleString('en-IN')} — Accounts department printout`,
+    12,
+    pdf.internal.pageSize.getHeight() - 8,
+  );
+
+  const suffix = approved ? 'Approved' : 'Draft';
+  pdf.save(`Payment_Reconciliation_${rec.reconciliationDate}_${suffix}.pdf`);
+}
+
+/** Browser print dialog for approved reconciliation (accounts printout). */
+export function printReconciliationPdf(payload: ReconciliationPdfPayload) {
+  downloadReconciliationPdf(payload);
 }

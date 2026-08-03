@@ -266,6 +266,52 @@ export async function listEmployeeDirectory(
   return rows.map(buildDirectoryRow);
 }
 
+/** Teaching staff options for Academic Subject Management (HR-synced). */
+export async function listTeachingStaffForAcademic(institutionId: string) {
+  const rows = await prisma.payrollEmployee.findMany({
+    where: {
+      institutionId,
+      status: FeeMasterStatus.ACTIVE,
+      OR: [
+        { employmentType: PayrollEmploymentType.TEACHING },
+        { designation: { contains: 'Teacher', mode: 'insensitive' } },
+        { designation: { contains: 'PGT', mode: 'insensitive' } },
+        { designation: { contains: 'TGT', mode: 'insensitive' } },
+        { designation: { contains: 'PRT', mode: 'insensitive' } },
+      ],
+    },
+    orderBy: { fullName: 'asc' },
+    select: {
+      id: true,
+      employeeCode: true,
+      fullName: true,
+      email: true,
+      mobile: true,
+      department: true,
+      designation: true,
+      profileData: true,
+    },
+  });
+
+  return rows.map((r) => {
+    const profile = parseProfile(r.profileData);
+    const subject = String(profile.subject || '').trim();
+    return {
+      id: r.id,
+      employeeCode: r.employeeCode,
+      teacherName: r.fullName,
+      email: r.email || '',
+      mobile: r.mobile || '',
+      department: r.department || '',
+      designation: r.designation || '',
+      subjectSpecialization: subject,
+      label: subject
+        ? `${r.fullName} — ${subject}`
+        : `${r.fullName}${r.designation ? ` (${r.designation})` : ''}`,
+    };
+  });
+}
+
 export async function getEmployeeDirectoryDetail(institutionId: string, id: string) {
   const school = await institutionName(institutionId);
   const row = await loadEmployeeRow(institutionId, id);

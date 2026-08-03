@@ -39,7 +39,6 @@ export const FEE_COLLECTION_COLUMNS = FEE_COLLECTION_HEAD_KEYS.map((key) => ({
 
 export type FeeCollectionEntryStatus =
   | 'PAID'
-  | 'COMPLETED'
   | 'ACTIVE'
   | 'PENDING'
   | 'DUE'
@@ -69,12 +68,22 @@ function emptyAmounts(): FeeCollectionAmounts {
 
 function breakdownToAmounts(breakdown: unknown): FeeCollectionAmounts {
   const amounts = emptyAmounts();
-  if (!Array.isArray(breakdown)) return amounts;
-  for (const item of breakdown) {
-    const row = item as { key?: string; amount?: number };
-    const key = row.key as keyof FeeCollectionAmounts;
-    if (key && key in amounts) {
-      amounts[key] = round2((amounts[key] || 0) + (Number(row.amount) || 0));
+  if (Array.isArray(breakdown)) {
+    for (const item of breakdown) {
+      const row = item as { key?: string; amount?: number };
+      const key = row.key as keyof FeeCollectionAmounts;
+      if (key && key in amounts) {
+        amounts[key] = round2((amounts[key] || 0) + (Number(row.amount) || 0));
+      }
+    }
+    return amounts;
+  }
+  if (breakdown && typeof breakdown === 'object') {
+    for (const [rawKey, value] of Object.entries(breakdown as Record<string, unknown>)) {
+      const key = rawKey as keyof FeeCollectionAmounts;
+      if (key && key in amounts) {
+        amounts[key] = round2((amounts[key] || 0) + (Number(value) || 0));
+      }
     }
   }
   return amounts;
@@ -169,7 +178,7 @@ export async function listFeeCollectionEntries(
   filters?: {
     academicYear?: string;
     q?: string;
-    status?: FeeCollectionEntryStatus;
+    status?: FeeCollectionEntryStatus | 'COMPLETED';
     includeDues?: boolean;
   },
 ) {
@@ -264,7 +273,7 @@ export async function listFeeCollectionEntries(
       totalAmount: t.amount,
       collectedAt: t.collectedAt.toISOString(),
       displayDate: t.collectedAt.toISOString().slice(0, 10),
-      status: 'COMPLETED',
+      status: 'PAID',
       paymentMode: t.paymentMode,
       collectedBy: t.collectedBy,
       remarks: t.remarks,
@@ -288,7 +297,7 @@ export async function listFeeCollectionEntries(
       totalAmount: h.amount,
       collectedAt: h.collectedAt.toISOString(),
       displayDate: h.collectedAt.toISOString().slice(0, 10),
-      status: 'COMPLETED',
+      status: 'PAID',
       paymentMode: h.paymentMode,
       collectedBy: h.collectedBy,
       remarks: h.remarks,
@@ -326,7 +335,12 @@ export async function listFeeCollectionEntries(
 
   let filtered = entries;
   if (filters?.status) {
-    filtered = filtered.filter((e) => e.status === filters.status);
+    const status = String(filters.status);
+    if (status === 'PAID' || status === 'COMPLETED') {
+      filtered = filtered.filter((e) => e.status === 'PAID');
+    } else {
+      filtered = filtered.filter((e) => e.status === status);
+    }
   }
   if (filters?.q?.trim()) {
     const q = filters.q.trim().toLowerCase();

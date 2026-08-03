@@ -9,9 +9,12 @@ import type {
   NotificationsResponse,
   ProfileResponse,
   ReminderPreferences,
+  TestAttemptStart,
+  TestSubmitResult,
   TestsResponse,
   TimetableResponse,
   MobileUpload,
+  MobileRevaluationOverview,
 } from '../types/api';
 
 function resolveApiUrl(): string {
@@ -126,6 +129,68 @@ export const mobileApp = {
 
   tests: (params?: { studentId?: string; academicYear?: string }) =>
     api<TestsResponse>(`/api/mobile/tests${qs(params || {})}`),
+
+  startTest: (paperId: string, params?: { studentId?: string }) =>
+    api<TestAttemptStart>(`/api/mobile/tests/${paperId}/start${qs(params || {})}`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+
+  submitTest: (
+    paperId: string,
+    body: { attemptId: string; answers: Record<string, string>; studentId?: string },
+  ) =>
+    api<TestSubmitResult>(`/api/mobile/tests/${paperId}/submit${qs({ studentId: body.studentId })}`, {
+      method: 'POST',
+      body: JSON.stringify({ attemptId: body.attemptId, answers: body.answers }),
+    }),
+
+  revaluation: (params?: { studentId?: string; academicYear?: string }) =>
+    api<MobileRevaluationOverview>(`/api/mobile/revaluation${qs(params || {})}`),
+
+  createRevaluationRequest: (body: {
+    studentResultId: string;
+    subjectName: string;
+    requestType: 'REVALUATION' | 'RECHECK';
+    studentId?: string;
+    remarks?: string;
+  }) =>
+    api<{ request: { id: string }; message: string }>(
+      `/api/mobile/revaluation/requests${qs({ studentId: body.studentId })}`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          studentResultId: body.studentResultId,
+          subjectName: body.subjectName,
+          requestType: body.requestType,
+          remarks: body.remarks,
+        }),
+      },
+    ),
+
+  payRevaluationRequest: (requestId: string, params?: { studentId?: string }) =>
+    api<{ orderId: string; amount: number; stub?: boolean; paid?: boolean; message?: string }>(
+      `/api/mobile/revaluation/requests/${requestId}/pay${qs(params || {})}`,
+      { method: 'POST', body: JSON.stringify({}) },
+    ),
+
+  createBackPaper: (body: { studentResultId: string; subjectName: string; studentId?: string }) =>
+    api<{ exam: { id: string }; message: string }>(
+      `/api/mobile/revaluation/back-papers${qs({ studentId: body.studentId })}`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          studentResultId: body.studentResultId,
+          subjectName: body.subjectName,
+        }),
+      },
+    ),
+
+  payBackPaper: (examId: string, params?: { studentId?: string }) =>
+    api<{ orderId: string; amount: number; stub?: boolean; paid?: boolean; message?: string }>(
+      `/api/mobile/revaluation/back-papers/${examId}/pay${qs(params || {})}`,
+      { method: 'POST', body: JSON.stringify({}) },
+    ),
 
   lms: (params?: { studentId?: string; academicYear?: string; subjectName?: string }) =>
     api<LmsResponse>(`/api/mobile/lms${qs(params || {})}`),

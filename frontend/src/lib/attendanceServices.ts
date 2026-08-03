@@ -482,6 +482,26 @@ export async function syncStaffProfiles(academicYear?: string) {
   });
 }
 
+export async function pullStaffAttendanceFromMobile(params?: {
+  academicYear?: string;
+  year?: number;
+  month?: number;
+}) {
+  return api<{
+    profilesFromSetup: number;
+    profilesFromHr: number;
+    profilesCreated: number;
+    staffCount: number;
+    mobileRecordsInPeriod: number;
+    totalRecordsInPeriod: number;
+    period: { year: number; month: number };
+    message: string;
+  }>('/api/attendance/staff/pull-mobile', {
+    method: 'POST',
+    body: JSON.stringify(params || {}),
+  });
+}
+
 export async function seedStaffAttendanceDemo(academicYear?: string) {
   return api<{ staff: number; records: number }>('/api/attendance/staff/seed', {
     method: 'POST',

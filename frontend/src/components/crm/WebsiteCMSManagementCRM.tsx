@@ -1,17 +1,53 @@
+import { lazy, Suspense, type ReactNode } from 'react';
 import { SubModuleView } from './shared/SubModuleView';
-import { WebsiteDashboardView } from './website/WebsiteDashboardView';
-import { PagesManagementView } from './website/PagesManagementView';
-import { BlogManagementView } from './website/BlogManagementView';
-import { MediaLibraryView } from './website/MediaLibraryView';
-import { MenusNavigationView } from './website/MenusNavigationView';
-import { SlidersBannersView } from './website/SlidersBannersView';
-import { TestimonialsView } from './website/TestimonialsView';
-import { FormsManagementView } from './website/FormsManagementView';
-import { PopupsNoticesView } from './website/PopupsNoticesView';
-import { SeoManagementView } from './website/SeoManagementView';
-import { ThemeAppearanceView } from './website/ThemeAppearanceView';
-import { BackupRestoreView } from './website/BackupRestoreView';
-import { AnalyticsReportsView } from './website/AnalyticsReportsView';
+
+const WebsiteDashboardView = lazy(() =>
+  import('./website/WebsiteDashboardView').then((m) => ({ default: m.WebsiteDashboardView })),
+);
+const PagesManagementView = lazy(() =>
+  import('./website/PagesManagementView').then((m) => ({ default: m.PagesManagementView })),
+);
+const BlogManagementView = lazy(() =>
+  import('./website/BlogManagementView').then((m) => ({ default: m.BlogManagementView })),
+);
+const MediaLibraryView = lazy(() =>
+  import('./website/MediaLibraryView').then((m) => ({ default: m.MediaLibraryView })),
+);
+const MenusNavigationView = lazy(() =>
+  import('./website/MenusNavigationView').then((m) => ({ default: m.MenusNavigationView })),
+);
+const SlidersBannersView = lazy(() =>
+  import('./website/SlidersBannersView').then((m) => ({ default: m.SlidersBannersView })),
+);
+const TestimonialsView = lazy(() =>
+  import('./website/TestimonialsView').then((m) => ({ default: m.TestimonialsView })),
+);
+const FormsManagementView = lazy(() =>
+  import('./website/FormsManagementView').then((m) => ({ default: m.FormsManagementView })),
+);
+const PopupsNoticesView = lazy(() =>
+  import('./website/PopupsNoticesView').then((m) => ({ default: m.PopupsNoticesView })),
+);
+const SeoManagementView = lazy(() =>
+  import('./website/SeoManagementView').then((m) => ({ default: m.SeoManagementView })),
+);
+const ThemeAppearanceView = lazy(() =>
+  import('./website/ThemeAppearanceView').then((m) => ({ default: m.ThemeAppearanceView })),
+);
+const BackupRestoreView = lazy(() =>
+  import('./website/BackupRestoreView').then((m) => ({ default: m.BackupRestoreView })),
+);
+const AnalyticsReportsView = lazy(() =>
+  import('./website/AnalyticsReportsView').then((m) => ({ default: m.AnalyticsReportsView })),
+);
+
+function wrap(node: ReactNode) {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[30vh] text-sm text-slate-400">Loading page…</div>}>
+      {node}
+    </Suspense>
+  );
+}
 
 export function WebsiteCMSManagementCRM({
   currentView = 'Website Dashboard',
@@ -21,46 +57,46 @@ export function WebsiteCMSManagementCRM({
   onNavigate?: (view: string) => void;
 }) {
   if (currentView === 'Website Dashboard' || !currentView) {
-    return <WebsiteDashboardView onNavigate={onNavigate} />;
+    return wrap(<WebsiteDashboardView onNavigate={onNavigate} />);
   }
   if (currentView === 'Pages Management') {
-    return <PagesManagementView />;
+    return wrap(<PagesManagementView />);
   }
   if (currentView === 'Blog Management') {
-    return <BlogManagementView />;
+    return wrap(<BlogManagementView />);
   }
   if (currentView === 'Media Library') {
-    return <MediaLibraryView />;
+    return wrap(<MediaLibraryView />);
   }
   if (currentView === 'Menus & Navigation') {
-    return <MenusNavigationView />;
+    return wrap(<MenusNavigationView />);
   }
   if (currentView === 'Sliders & Banners') {
-    return <SlidersBannersView />;
+    return wrap(<SlidersBannersView />);
   }
   if (currentView === 'Testimonials') {
-    return <TestimonialsView />;
+    return wrap(<TestimonialsView />);
   }
   if (currentView === 'Forms Management') {
-    return <FormsManagementView />;
+    return wrap(<FormsManagementView />);
   }
   if (currentView === 'Popups & Notices') {
-    return <PopupsNoticesView />;
+    return wrap(<PopupsNoticesView />);
   }
   if (currentView === 'SEO Management') {
-    return <SeoManagementView />;
+    return wrap(<SeoManagementView />);
   }
   if (currentView === 'Theme & Appearance') {
-    return <ThemeAppearanceView />;
+    return wrap(<ThemeAppearanceView />);
   }
   if (currentView === 'Backup & Restore') {
-    return <BackupRestoreView />;
+    return wrap(<BackupRestoreView />);
   }
   if (currentView === 'Analytics & Reports') {
-    return <AnalyticsReportsView />;
+    return wrap(<AnalyticsReportsView />);
   }
   if (currentView) {
     return <SubModuleView module="Website & CMS Management" title={currentView} />;
   }
-  return <WebsiteDashboardView onNavigate={onNavigate} />;
+  return wrap(<WebsiteDashboardView onNavigate={onNavigate} />);
 }

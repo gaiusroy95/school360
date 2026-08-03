@@ -1,14 +1,14 @@
 import {
-  ExpenseEntryStatus,
-  FeeApprovalStatus,
   FeeDueStatus,
-  FeeFineLevyStatus,
-  PayrollSlipStatus,
+  PaymentReconciliationStatus,
 } from '@prisma/client';
 import { prisma } from './prisma.js';
-import { getBankCashBookSummary } from './bankCashBook.js';
 import { getInstitutionFilterMeta } from './students.js';
 import { loadFeeCollectionContext } from './feeConfig.js';
+import type {
+  ReconciliationLedgerPosting,
+  ReconciliationReport,
+} from './paymentReconciliation.js';
 
 export type LedgerLineItem = {
   code: string;
@@ -28,6 +28,12 @@ export type AccountsLedgerPayload = {
   financialYear: string;
   currency: string;
   asOf: string;
+  /** Day-closing posts that feed this ledger (collections/expenses/refunds never bypass). */
+  posting: {
+    source: 'payment_reconciliation';
+    closedDays: number;
+    message: string;
+  };
   ratios: {
     operatingMargin: number;
     currentRatio: number;
@@ -99,6 +105,17 @@ const ACADEMIC_MONTHS = [
   { key: 2, label: 'Mar' },
 ] as const;
 
+const REVENUE_LABELS: Record<string, { code: string; name: string }> = {
+  studentFee: { code: '4001', name: 'Tuition & Academic Fee Collection' },
+  admissionFee: { code: '4001a', name: 'Admission Fee Collection' },
+  examinationFee: { code: '4001b', name: 'Examination Fee Collection' },
+  libraryFee: { code: '4001c', name: 'Library Fee Collection' },
+  otherCollection: { code: '4001d', name: 'Other Fee Collection' },
+  transportFee: { code: '4002', name: 'Transport Fee Income' },
+  hostelFee: { code: '4003', name: 'Hostel Fee Income' },
+  fineCollection: { code: '4004', name: 'Fines & Penalties' },
+};
+
 function round2(n: number) {
   return Math.round(n * 100) / 100;
 }
@@ -106,21 +123,6 @@ function round2(n: number) {
 function pct(numerator: number, denominator: number): number {
   if (denominator <= 0) return 0;
   return round2((numerator / denominator) * 100);
-}
-
-function academicYearDateRange(academicYear: string): { start: Date; end: Date } {
-  const m = academicYear.match(/^(\d{4})/);
-  const startYear = m ? Number(m[1]) : new Date().getFullYear();
-  return {
-    start: new Date(Date.UTC(startYear, 3, 1)),
-    end: new Date(Date.UTC(startYear + 1, 2, 31, 23, 59, 59, 999)),
-  };
-}
-
-function monthIndexInAcademicYear(d: Date): number {
-  const month = d.getUTCMonth();
-  if (month >= 3) return month - 3;
-  return month + 9;
 }
 
 function sumItems(items: LedgerLineItem[]) {
@@ -131,180 +133,63 @@ function section(title: string, items: LedgerLineItem[]): LedgerSection {
   return { title, items, total: sumItems(items) };
 }
 
-async function loadRevenue(institutionId: string, academicYear: string) {
-  const range = academicYearDateRange(academicYear);
-  const [receipts, transport, hostel, fines] = await Promise.all([
-    prisma.feeReceipt.findMany({
-      where: { institutionId, academicYear, collectedAt: { gte: range.start, lte: range.end } },
-      select: { amountPaid: true, feeBreakdown: true },
-    }),
-    prisma.transportFeeCollection.findMany({
-      where: { institutionId, academicYear, collectedAt: { gte: range.start, lte: range.end } },
-      select: { amount: true },
-    }),
-    prisma.hostelFeeCollection.findMany({
-      where: { institutionId, academicYear, collectedAt: { gte: range.start, lte: range.end } },
-      select: { amount: true },
-    }),
-    prisma.feeFineLevy.findMany({
-      where: {
-        institutionId,
-        academicYear,
-        status: FeeFineLevyStatus.PAID,
-        collectedAt: { gte: range.start, lte: range.end },
-      },
-      select: { amount: true },
-    }),
-  ]);
-
-  const feeCollection = round2(receipts.reduce((s, r) => s + r.amountPaid, 0));
-  const transportFee = round2(transport.reduce((s, r) => s + r.amount, 0));
-  const hostelFee = round2(hostel.reduce((s, s2) => s + s2.amount, 0));
-  const finesPenalties = round2(fines.reduce((s, f) => s + f.amount, 0));
-
-  const items: LedgerLineItem[] = [
-    { code: '4001', name: 'Tuition & Academic Fee Collection', amount: feeCollection },
-    { code: '4002', name: 'Transport Fee Income', amount: transportFee },
-    { code: '4003', name: 'Hostel Fee Income', amount: hostelFee },
-    { code: '4004', name: 'Fines & Penalties', amount: finesPenalties },
-  ].filter((i) => i.amount > 0);
-
-  return { items, total: sumItems(items) };
+function monthIndexInAcademicYear(d: Date): number {
+  const month = d.getUTCMonth();
+  if (month >= 3) return month - 3;
+  return month + 9;
 }
 
-async function loadContraRevenue(institutionId: string, academicYear: string) {
-  const [discounts, awards] = await Promise.all([
-    prisma.feeDiscount.findMany({
-      where: {
-        institutionId,
-        academicYear,
-        status: { in: [FeeApprovalStatus.APPROVED, FeeApprovalStatus.ACTIVE] },
-      },
-      select: { settlementAmount: true, code: true },
-    }),
-    prisma.feeScholarshipAward.findMany({
-      where: { institutionId, academicYear, status: FeeApprovalStatus.APPROVED },
-      select: { amount: true },
-    }),
-  ]);
-
-  const discountTotal = round2(discounts.reduce((s, d) => s + d.settlementAmount, 0));
-  const scholarshipTotal = round2(awards.reduce((s, a) => s + a.amount, 0));
-
-  const items: LedgerLineItem[] = [];
-  if (discountTotal > 0) {
-    items.push({ code: '4101', name: 'Discounts & Concessions', amount: discountTotal });
-  }
-  if (scholarshipTotal > 0) {
-    items.push({ code: '4102', name: 'Scholarships Awarded', amount: scholarshipTotal });
-  }
-
-  return { items, total: sumItems(items) };
+function movementAmount(
+  rows: Array<{ label: string; amount: number }> | undefined,
+  includes: string,
+): number {
+  if (!rows?.length) return 0;
+  const hit = rows.find((r) => r.label.toLowerCase().includes(includes.toLowerCase()));
+  return round2(hit?.amount || 0);
 }
 
-async function loadOperatingExpenses(institutionId: string, academicYear: string) {
-  const range = academicYearDateRange(academicYear);
-  const entries = await prisma.expenseEntry.findMany({
-    where: {
-      institutionId,
-      academicYear,
-      status: { in: [ExpenseEntryStatus.APPROVED, ExpenseEntryStatus.PAID] },
-      expenseDate: { gte: range.start, lte: range.end },
-    },
-    include: { category: true },
-  });
+function postingFromSnapshot(snap: ReconciliationReport): ReconciliationLedgerPosting {
+  if (snap.ledgerPosting) return snap.ledgerPosting;
 
-  const byGroup = new Map<string, number>();
-  let capitalTotal = 0;
-
-  for (const e of entries) {
-    const amt = round2(e.amount + e.gstAmount);
-    if (e.assetType && e.assetType.trim()) {
-      capitalTotal += amt;
-      continue;
-    }
-    const label = e.category.groupName || e.category.name;
-    byGroup.set(label, (byGroup.get(label) || 0) + amt);
+  const revenueByCategory: Record<string, number> = {};
+  for (const row of snap.collectionSummary || []) {
+    revenueByCategory[row.category] = round2(row.total || 0);
   }
-
-  const items: LedgerLineItem[] = [...byGroup.entries()]
-    .map(([name, amount], idx) => ({
-      code: `500${idx + 1}`,
-      name,
-      amount: round2(amount),
-    }))
-    .sort((a, b) => b.amount - a.amount);
-
-  return { items, total: sumItems(items), capitalTotal: round2(capitalTotal), entries };
-}
-
-async function loadPayrollExpense(institutionId: string, academicYear: string) {
-  const range = academicYearDateRange(academicYear);
-  const startPeriod = `${range.start.getUTCFullYear()}-${String(range.start.getUTCMonth() + 1).padStart(2, '0')}`;
-  const endPeriod = `${range.end.getUTCFullYear()}-${String(range.end.getUTCMonth() + 1).padStart(2, '0')}`;
-
-  const slips = await prisma.payrollSlip.findMany({
-    where: {
-      institutionId,
-      status: { in: [PayrollSlipStatus.PAID, PayrollSlipStatus.GENERATED] },
-      payPeriod: { gte: startPeriod, lte: endPeriod },
-    },
-    select: { netPay: true, status: true, payPeriod: true },
-  });
-
-  const paid = round2(
-    slips.filter((s) => s.status === PayrollSlipStatus.PAID).reduce((sum, s) => sum + s.netPay, 0),
-  );
-  const accrued = round2(
-    slips.filter((s) => s.status === PayrollSlipStatus.GENERATED).reduce((sum, s) => sum + s.netPay, 0),
-  );
-
-  const items: LedgerLineItem[] = [];
-  if (paid > 0) items.push({ code: '5101', name: 'Salaries Paid', amount: paid });
-  if (accrued > 0) items.push({ code: '5102', name: 'Salaries Accrued (Unpaid)', amount: accrued });
 
   return {
-    items,
-    total: sumItems(items),
-    paid,
-    accrued,
-    slips,
+    revenueByCategory,
+    discounts: 0,
+    scholarships: 0,
+    operatingExpenses: 0,
+    capitalExpenses: 0,
+    payrollPaid: movementAmount(snap.bankMovement, 'Salary'),
+    vendorPayments: movementAmount(snap.bankMovement, 'Vendor'),
+    refunds: movementAmount(snap.bankMovement, 'Online Refund'),
+    bankCharges: movementAmount(snap.bankMovement, 'Bank Charges'),
+    cashExpensePayments: movementAmount(snap.cashMovement, 'Cash Payments'),
+    bankExpensePayments: movementAmount(snap.bankMovement, 'Expense Payments'),
   };
 }
 
-async function loadOtherExpenses(institutionId: string, academicYear: string) {
-  const range = academicYearDateRange(academicYear);
-  const [refunds, vendorPayments] = await Promise.all([
-    prisma.feeRefund.findMany({
-      where: {
-        institutionId,
-        academicYear,
-        status: FeeApprovalStatus.PROCESSED,
-        processedAt: { gte: range.start, lte: range.end },
+async function loadPostedReconciliations(institutionId: string, academicYear: string) {
+  return prisma.paymentReconciliation.findMany({
+    where: {
+      institutionId,
+      academicYear,
+      status: {
+        in: [
+          PaymentReconciliationStatus.DAY_CLOSING_COMPLETED,
+          PaymentReconciliationStatus.FROZEN,
+        ],
       },
-      select: { amount: true },
-    }),
-    prisma.transportVendorPayment.findMany({
-      where: {
-        institutionId,
-        paymentDate: { gte: range.start, lte: range.end },
-      },
-      select: { amount: true },
-    }),
-  ]);
-
-  const refundTotal = round2(refunds.reduce((s, r) => s + r.amount, 0));
-  const vendorTotal = round2(vendorPayments.reduce((s, v) => s + v.amount, 0));
-
-  const items: LedgerLineItem[] = [];
-  if (vendorTotal > 0) {
-    items.push({ code: '5201', name: 'Transport Vendor Payments', amount: vendorTotal });
-  }
-  if (refundTotal > 0) {
-    items.push({ code: '5202', name: 'Fee Refunds Processed', amount: refundTotal });
-  }
-
-  return { items, total: sumItems(items), refundTotal, vendorTotal };
+    },
+    orderBy: { reconciliationDate: 'asc' },
+    select: {
+      reconciliationDate: true,
+      status: true,
+      snapshot: true,
+    },
+  });
 }
 
 async function loadReceivables(institutionId: string, academicYear: string) {
@@ -320,108 +205,15 @@ async function loadReceivables(institutionId: string, academicYear: string) {
   const pending = round2(
     dues.filter((d) => d.status === FeeDueStatus.PENDING).reduce((s, d) => s + d.amount, 0),
   );
-  const overdue = round2(dues.filter((d) => d.status === FeeDueStatus.OVERDUE).reduce((s, d) => s + d.amount, 0));
+  const overdue = round2(
+    dues.filter((d) => d.status === FeeDueStatus.OVERDUE).reduce((s, d) => s + d.amount, 0),
+  );
 
   const items: LedgerLineItem[] = [];
   if (pending > 0) items.push({ code: '1101', name: 'Fee Receivable — Pending', amount: pending });
   if (overdue > 0) items.push({ code: '1102', name: 'Fee Receivable — Overdue', amount: overdue });
 
   return { items, total: sumItems(items) };
-}
-
-async function loadPayables(institutionId: string, academicYear: string) {
-  const range = academicYearDateRange(academicYear);
-  const startPeriod = `${range.start.getUTCFullYear()}-${String(range.start.getUTCMonth() + 1).padStart(2, '0')}`;
-  const endPeriod = `${range.end.getUTCFullYear()}-${String(range.end.getUTCMonth() + 1).padStart(2, '0')}`;
-
-  const [unpaidExpenses, unpaidPayroll, pendingRefunds] = await Promise.all([
-    prisma.expenseEntry.findMany({
-      where: {
-        institutionId,
-        academicYear,
-        status: ExpenseEntryStatus.APPROVED,
-      },
-      select: { amount: true, gstAmount: true },
-    }),
-    prisma.payrollSlip.findMany({
-      where: {
-        institutionId,
-        status: PayrollSlipStatus.GENERATED,
-        payPeriod: { gte: startPeriod, lte: endPeriod },
-      },
-      select: { netPay: true },
-    }),
-    prisma.feeRefund.findMany({
-      where: {
-        institutionId,
-        academicYear,
-        status: { in: [FeeApprovalStatus.APPROVED, FeeApprovalStatus.PENDING_APPROVAL] },
-      },
-      select: { amount: true },
-    }),
-  ]);
-
-  const expensePayable = round2(unpaidExpenses.reduce((s, e) => s + e.amount + e.gstAmount, 0));
-  const payrollPayable = round2(unpaidPayroll.reduce((s, p) => s + p.netPay, 0));
-  const refundPayable = round2(pendingRefunds.reduce((s, r) => s + r.amount, 0));
-
-  const items: LedgerLineItem[] = [];
-  if (expensePayable > 0) items.push({ code: '2101', name: 'Accounts Payable — Expenses', amount: expensePayable });
-  if (payrollPayable > 0) items.push({ code: '2102', name: 'Salaries Payable', amount: payrollPayable });
-  if (refundPayable > 0) items.push({ code: '2103', name: 'Refunds Payable', amount: refundPayable });
-
-  return { items, total: sumItems(items) };
-}
-
-async function loadCashPosition(institutionId: string, academicYear: string) {
-  const range = academicYearDateRange(academicYear);
-  const [receipts, transport, hostel, bankSummary, cashDeposits] = await Promise.all([
-    prisma.feeReceipt.findMany({
-      where: { institutionId, academicYear, collectedAt: { gte: range.start, lte: range.end } },
-      select: { amountPaid: true, paymentMode: true },
-    }),
-    prisma.transportFeeCollection.findMany({
-      where: { institutionId, academicYear, collectedAt: { gte: range.start, lte: range.end } },
-      select: { amount: true, paymentMode: true },
-    }),
-    prisma.hostelFeeCollection.findMany({
-      where: { institutionId, academicYear, collectedAt: { gte: range.start, lte: range.end } },
-      select: { amount: true, paymentMode: true },
-    }),
-    getBankCashBookSummary(institutionId, academicYear),
-    prisma.bankCashDeposit.findMany({
-      where: { institutionId, academicYear },
-      select: { depositAmount: true, status: true },
-    }),
-  ]);
-
-  const totalCollections = round2(
-    receipts.reduce((s, r) => s + r.amountPaid, 0) +
-      transport.reduce((s, r) => s + r.amount, 0) +
-      hostel.reduce((s, r) => s + r.amount, 0),
-  );
-
-  const cashCollected = round2(
-    receipts.filter((r) => r.paymentMode === 'CASH').reduce((s, r) => s + r.amountPaid, 0) +
-      transport.filter((r) => r.paymentMode === 'CASH').reduce((s, r) => s + r.amount, 0) +
-      hostel.filter((r) => r.paymentMode === 'CASH').reduce((s, r) => s + r.amount, 0),
-  );
-
-  const cashDeposited = round2(
-    cashDeposits
-      .filter((d) => d.status !== 'REJECTED')
-      .reduce((s, d) => s + d.depositAmount, 0),
-  );
-
-  const cashInHand = round2(Math.max(cashCollected - cashDeposited, 0));
-  const bankBalance = round2(bankSummary.totalCollectionDeposited);
-
-  return {
-    cashInHand,
-    bankBalance,
-    totalCollections,
-    bankSummary,
-  };
 }
 
 function buildIncomeRows(
@@ -434,7 +226,7 @@ function buildIncomeRows(
   other: LedgerSection,
   netProfit: number,
 ) {
-  const rows: Array<{ label: string; amount: number; level: number; bold?: boolean }> = [
+  return [
     { label: 'REVENUE', amount: revenue.total, level: 0, bold: true },
     ...revenue.items.map((i) => ({ label: i.name, amount: i.amount, level: 1 })),
     { label: 'Less: Discounts & Scholarships', amount: -contra.total, level: 0 },
@@ -449,7 +241,6 @@ function buildIncomeRows(
     ...other.items.map((i) => ({ label: i.name, amount: -i.amount, level: 1 })),
     { label: 'Net Profit / (Loss)', amount: netProfit, level: 0, bold: true },
   ];
-  return rows;
 }
 
 function buildBalanceRows(
@@ -481,17 +272,41 @@ function buildBalanceRows(
   ];
 }
 
-function buildCashFlowMonthly(
+/**
+ * Accounts & Ledger posts ONLY from Payment Reconciliation days that are
+ * DAY_CLOSING_COMPLETED or FROZEN. Live collections, expenses, payroll, and
+ * refunds never appear here until day closing is approved.
+ */
+export async function getAccountsLedger(
   institutionId: string,
-  academicYear: string,
-  operatingTotal: number,
-  investingTotal: number,
-  financingTotal: number,
-  receipts: Array<{ collectedAt: Date; amountPaid: number }>,
-  expenseDates: Array<{ date: Date; amount: number; type: 'opex' | 'payroll' | 'refund' | 'vendor' | 'capital' }>,
-) {
-  void institutionId;
-  void academicYear;
+  opts: { academicYear?: string; financialYear?: string } = {},
+): Promise<AccountsLedgerPayload> {
+  const filters = await getInstitutionFilterMeta(institutionId);
+  const ctx = await loadFeeCollectionContext(institutionId);
+  const academicYear = opts.academicYear || filters.defaultAcademicYear;
+  const financialYear = opts.financialYear || academicYear;
+
+  const [postedDays, receivables] = await Promise.all([
+    loadPostedReconciliations(institutionId, academicYear),
+    loadReceivables(institutionId, academicYear),
+  ]);
+
+  const revenueTotals = new Map<string, number>();
+  let discounts = 0;
+  let scholarships = 0;
+  let operatingExpenses = 0;
+  let capitalExpenses = 0;
+  let payrollPaid = 0;
+  let vendorPayments = 0;
+  let refunds = 0;
+  let bankCharges = 0;
+  let cashExpensePayments = 0;
+  let bankExpensePayments = 0;
+  let closingCashInHand = 0;
+  let closingBankBalance = 0;
+  let openingCashForYear = 0;
+  let openingBankForYear = 0;
+  let sawFirst = false;
 
   const byMonth = ACADEMIC_MONTHS.map((m) => ({
     month: m.label,
@@ -501,125 +316,132 @@ function buildCashFlowMonthly(
     net: 0,
   }));
 
-  for (const r of receipts) {
-    const idx = monthIndexInAcademicYear(r.collectedAt);
-    if (idx >= 0 && idx < 12) byMonth[idx].operating += r.amountPaid;
+  for (const day of postedDays) {
+    if (!day.snapshot || typeof day.snapshot !== 'object') continue;
+    const snap = day.snapshot as ReconciliationReport;
+    const post = postingFromSnapshot(snap);
+
+    for (const [cat, amount] of Object.entries(post.revenueByCategory || {})) {
+      revenueTotals.set(cat, round2((revenueTotals.get(cat) || 0) + amount));
+    }
+    discounts = round2(discounts + (post.discounts || 0));
+    scholarships = round2(scholarships + (post.scholarships || 0));
+    operatingExpenses = round2(operatingExpenses + (post.operatingExpenses || 0));
+    capitalExpenses = round2(capitalExpenses + (post.capitalExpenses || 0));
+    payrollPaid = round2(payrollPaid + (post.payrollPaid || 0));
+    vendorPayments = round2(vendorPayments + (post.vendorPayments || 0));
+    refunds = round2(refunds + (post.refunds || 0));
+    bankCharges = round2(bankCharges + (post.bankCharges || 0));
+    cashExpensePayments = round2(cashExpensePayments + (post.cashExpensePayments || 0));
+    bankExpensePayments = round2(bankExpensePayments + (post.bankExpensePayments || 0));
+
+    if (!sawFirst) {
+      openingCashForYear = round2(snap.openings?.find((o) => o.label.includes('Opening Cash'))?.amount || 0);
+      openingBankForYear = round2(
+        snap.openings?.find((o) => o.label.includes('Opening Bank'))?.amount || 0,
+      );
+      sawFirst = true;
+    }
+    closingCashInHand = round2(snap.totals?.closingCashInHand ?? closingCashInHand);
+    closingBankBalance = round2(snap.totals?.closingBankBalance ?? closingBankBalance);
+
+    const idx = monthIndexInAcademicYear(day.reconciliationDate);
+    if (idx >= 0 && idx < 12) {
+      const dayRevenue = round2(
+        Object.values(post.revenueByCategory || {}).reduce((s, n) => s + n, 0),
+      );
+      const expenseOut =
+        (post.operatingExpenses || 0) > 0
+          ? round2(
+              (post.operatingExpenses || 0) +
+                (post.payrollPaid || 0) +
+                (post.vendorPayments || 0) +
+                (post.bankCharges || 0),
+            )
+          : round2(
+              (post.payrollPaid || 0) +
+                (post.vendorPayments || 0) +
+                (post.bankCharges || 0) +
+                (post.cashExpensePayments || 0) +
+                (post.bankExpensePayments || 0),
+            );
+      byMonth[idx].operating += dayRevenue - expenseOut;
+      byMonth[idx].investing -= post.capitalExpenses || 0;
+      byMonth[idx].financing -= post.refunds || 0;
+    }
   }
 
-  for (const e of expenseDates) {
-    const idx = monthIndexInAcademicYear(e.date);
-    if (idx < 0 || idx >= 12) continue;
-    if (e.type === 'capital') byMonth[idx].investing -= e.amount;
-    else if (e.type === 'refund') byMonth[idx].financing -= e.amount;
-    else byMonth[idx].operating -= e.amount;
+  // If operatingExpenses were zero but cash/bank expense payments exist (legacy snapshots)
+  if (operatingExpenses <= 0 && (cashExpensePayments > 0 || bankExpensePayments > 0)) {
+    operatingExpenses = round2(cashExpensePayments + bankExpensePayments);
   }
 
-  return byMonth.map((m) => ({
-    month: m.month,
-    operating: round2(m.operating),
-    investing: round2(m.investing),
-    financing: round2(m.financing),
-    net: round2(m.operating + m.investing + m.financing),
-  }));
-}
+  const revenueItems: LedgerLineItem[] = [];
+  for (const [cat, amount] of revenueTotals.entries()) {
+    if (amount <= 0) continue;
+    const meta = REVENUE_LABELS[cat] || { code: '4099', name: cat };
+    revenueItems.push({ code: meta.code, name: meta.name, amount });
+  }
+  revenueItems.sort((a, b) => b.amount - a.amount);
 
-export async function getAccountsLedger(
-  institutionId: string,
-  opts: { academicYear?: string; financialYear?: string } = {},
-): Promise<AccountsLedgerPayload> {
-  const filters = await getInstitutionFilterMeta(institutionId);
-  const ctx = await loadFeeCollectionContext(institutionId);
-  const academicYear = opts.academicYear || filters.defaultAcademicYear;
-  const financialYear = opts.financialYear || academicYear;
-  const range = academicYearDateRange(academicYear);
+  const contraItems: LedgerLineItem[] = [];
+  if (discounts > 0) {
+    contraItems.push({ code: '4101', name: 'Discounts & Concessions', amount: discounts });
+  }
+  if (scholarships > 0) {
+    contraItems.push({ code: '4102', name: 'Scholarships Awarded', amount: scholarships });
+  }
 
-  const [
-    revenue,
-    contra,
-    opex,
-    payroll,
-    other,
-    receivables,
-    payables,
-    cashPos,
-    receiptsForFlow,
-    expenseEntries,
-    payrollSlips,
-    refundsProcessed,
-    vendorPayments,
-  ] = await Promise.all([
-    loadRevenue(institutionId, academicYear),
-    loadContraRevenue(institutionId, academicYear),
-    loadOperatingExpenses(institutionId, academicYear),
-    loadPayrollExpense(institutionId, academicYear),
-    loadOtherExpenses(institutionId, academicYear),
-    loadReceivables(institutionId, academicYear),
-    loadPayables(institutionId, academicYear),
-    loadCashPosition(institutionId, academicYear),
-    prisma.feeReceipt.findMany({
-      where: { institutionId, academicYear, collectedAt: { gte: range.start, lte: range.end } },
-      select: { collectedAt: true, amountPaid: true },
-    }),
-    prisma.expenseEntry.findMany({
-      where: {
-        institutionId,
-        academicYear,
-        status: { in: [ExpenseEntryStatus.APPROVED, ExpenseEntryStatus.PAID] },
-        expenseDate: { gte: range.start, lte: range.end },
-      },
-      select: { amount: true, gstAmount: true, expenseDate: true, paidAt: true, assetType: true },
-    }),
-    prisma.payrollSlip.findMany({
-      where: {
-        institutionId,
-        status: PayrollSlipStatus.PAID,
-        payPeriod: {
-          gte: `${range.start.getUTCFullYear()}-${String(range.start.getUTCMonth() + 1).padStart(2, '0')}`,
-          lte: `${range.end.getUTCFullYear()}-${String(range.end.getUTCMonth() + 1).padStart(2, '0')}`,
-        },
-      },
-      select: { netPay: true, paidAt: true, createdAt: true },
-    }),
-    prisma.feeRefund.findMany({
-      where: {
-        institutionId,
-        academicYear,
-        status: FeeApprovalStatus.PROCESSED,
-        processedAt: { gte: range.start, lte: range.end },
-      },
-      select: { amount: true, processedAt: true },
-    }),
-    prisma.transportVendorPayment.findMany({
-      where: { institutionId, paymentDate: { gte: range.start, lte: range.end } },
-      select: { amount: true, paymentDate: true },
-    }),
-  ]);
+  const opexItems: LedgerLineItem[] = [];
+  if (operatingExpenses > 0) {
+    opexItems.push({ code: '5001', name: 'Operating Expenses (posted)', amount: operatingExpenses });
+  }
+  if (bankCharges > 0) {
+    opexItems.push({ code: '5002', name: 'Bank Charges', amount: bankCharges });
+  }
 
-  const revenueSection = section('Revenue', revenue.items);
-  const contraSection = section('Discounts & Scholarships', contra.items);
+  const payrollItems: LedgerLineItem[] = [];
+  if (payrollPaid > 0) {
+    payrollItems.push({ code: '5101', name: 'Salaries Paid', amount: payrollPaid });
+  }
+
+  // Refunds appear ONLY via approved day-closing — never from live FeeRefund rows
+  const otherItems: LedgerLineItem[] = [];
+  if (vendorPayments > 0) {
+    otherItems.push({ code: '5201', name: 'Transport Vendor Payments', amount: vendorPayments });
+  }
+  if (refunds > 0) {
+    otherItems.push({ code: '5202', name: 'Fee Refunds (day-closing posted)', amount: refunds });
+  }
+
+  const revenueSection = section('Revenue', revenueItems);
+  const contraSection = section('Discounts & Scholarships', contraItems);
   const netRevenue = round2(revenueSection.total - contraSection.total);
-  const opexSection = section('Operating Expenses', opex.items);
-  const payrollSection = section('Payroll & Salaries', payroll.items);
-  const operatingIncome = round2(netRevenue - opexSection.total - payroll.paid);
-  const otherSection = section('Other Expenses', other.items);
+  const opexSection = section('Operating Expenses', opexItems);
+  const payrollSection = section('Payroll & Salaries', payrollItems);
+  const operatingIncome = round2(netRevenue - opexSection.total - payrollSection.total);
+  const otherSection = section('Other Expenses', otherItems);
   const netProfit = round2(operatingIncome - otherSection.total);
 
   const grossMargin = pct(netRevenue, revenueSection.total);
   const operatingMargin = pct(operatingIncome, netRevenue);
   const plRatio = pct(netProfit, netRevenue);
 
+  const cashInHand = closingCashInHand;
+  const bankBalance = Math.max(closingBankBalance, 0);
+
   const currentAssetItems: LedgerLineItem[] = [
-    { code: '1001', name: 'Cash in Hand', amount: cashPos.cashInHand },
-    { code: '1002', name: 'Bank Balance', amount: cashPos.bankBalance },
+    { code: '1001', name: 'Cash in Hand', amount: cashInHand },
+    { code: '1002', name: 'Bank Balance', amount: bankBalance },
     ...receivables.items,
   ].filter((i) => i.amount > 0);
 
   const nonCurrentAssetItems: LedgerLineItem[] = [];
-  if (opex.capitalTotal > 0) {
+  if (capitalExpenses > 0) {
     nonCurrentAssetItems.push({
       code: '1201',
       name: 'Fixed Assets (Capital Expenditure)',
-      amount: opex.capitalTotal,
+      amount: capitalExpenses,
     });
   }
 
@@ -627,85 +449,62 @@ export async function getAccountsLedger(
   const nonCurrentAssets = section('Non-Current Assets', nonCurrentAssetItems);
   const totalAssets = round2(currentAssets.total + nonCurrentAssets.total);
 
-  const currentLiabItems = payables.items;
-  const currentLiabilities = section('Current Liabilities', currentLiabItems);
+  // No direct refunds payable — refunds stay off the ledger until day closing posts them as expense
+  const currentLiabilities = section('Current Liabilities', []);
   const nonCurrentLiabilities = section('Non-Current Liabilities', []);
-  const totalLiabilities = round2(currentLiabilities.total + nonCurrentLiabilities.total);
+  const totalLiabilities = 0;
 
   const retainedEarnings = round2(totalAssets - totalLiabilities);
-  const equityItems: LedgerLineItem[] = [
+  const equitySection = section('Equity', [
     { code: '3001', name: 'Retained Earnings / Surplus', amount: retainedEarnings },
-  ];
-  const equitySection = section('Equity', equityItems);
+  ]);
   const totalLE = round2(totalLiabilities + equitySection.total);
   const balanced = Math.abs(totalAssets - totalLE) < 0.02;
 
   const transportHostelInflow = round2(
-    revenue.items.filter((i) => i.code === '4002' || i.code === '4003').reduce((s, i) => s + i.amount, 0),
+    (revenueTotals.get('transportFee') || 0) + (revenueTotals.get('hostelFee') || 0),
   );
-  const finesInflow = round2(revenue.items.find((i) => i.code === '4004')?.amount || 0);
+  const finesInflow = round2(revenueTotals.get('fineCollection') || 0);
   const feeInflow = round2(revenueSection.total - transportHostelInflow - finesInflow);
 
   const operatingItems: LedgerLineItem[] = [
     { code: 'CF01', name: 'Fee & Academic Collections', amount: feeInflow },
     { code: 'CF02', name: 'Transport & Hostel Collections', amount: transportHostelInflow },
     { code: 'CF03', name: 'Fines & Penalties Collected', amount: finesInflow },
-    { code: 'CF04', name: 'Operating Expenses Paid', amount: -opexSection.total },
-    { code: 'CF05', name: 'Salaries Paid', amount: -payroll.paid },
-    { code: 'CF06', name: 'Transport Vendor Payments', amount: -(other.vendorTotal || 0) },
+    { code: 'CF04', name: 'Operating Expenses Paid', amount: -operatingExpenses },
+    { code: 'CF05', name: 'Salaries Paid', amount: -payrollPaid },
+    { code: 'CF06', name: 'Transport Vendor Payments', amount: -vendorPayments },
+    { code: 'CF07', name: 'Bank Charges', amount: -bankCharges },
   ].filter((i) => i.amount !== 0);
 
   const investingItems: LedgerLineItem[] =
-    opex.capitalTotal > 0
-      ? [{ code: 'CF10', name: 'Purchase of Fixed Assets', amount: -opex.capitalTotal }]
+    capitalExpenses > 0
+      ? [{ code: 'CF10', name: 'Purchase of Fixed Assets', amount: -capitalExpenses }]
       : [];
 
   const financingItems: LedgerLineItem[] =
-    (other.refundTotal || 0) > 0
-      ? [{ code: 'CF20', name: 'Refunds to Students / Parents', amount: -(other.refundTotal || 0) }]
+    refunds > 0
+      ? [{ code: 'CF20', name: 'Refunds to Students / Parents', amount: -refunds }]
       : [];
 
   const operatingSection = section('Cash Flow from Operating Activities', operatingItems);
   const investingSection = section('Cash Flow from Investing Activities', investingItems);
   const financingSection = section('Cash Flow from Financing Activities', financingItems);
   const netChange = round2(operatingSection.total + investingSection.total + financingSection.total);
-  const closingBalance = round2(cashPos.cashInHand + cashPos.bankBalance);
-  const openingBalance = round2(closingBalance - netChange);
-
-  const expenseFlowRows: Array<{ date: Date; amount: number; type: 'opex' | 'payroll' | 'refund' | 'vendor' | 'capital' }> = [];
-  for (const e of expenseEntries) {
-    const amt = round2(e.amount + e.gstAmount);
-    expenseFlowRows.push({
-      date: e.paidAt || e.expenseDate,
-      amount: amt,
-      type: e.assetType?.trim() ? 'capital' : 'opex',
-    });
-  }
-  for (const p of payrollSlips) {
-    expenseFlowRows.push({
-      date: p.paidAt || p.createdAt,
-      amount: p.netPay,
-      type: 'payroll',
-    });
-  }
-  for (const r of refundsProcessed) {
-    if (r.processedAt) {
-      expenseFlowRows.push({ date: r.processedAt, amount: r.amount, type: 'refund' });
-    }
-  }
-  for (const v of vendorPayments) {
-    expenseFlowRows.push({ date: v.paymentDate, amount: v.amount, type: 'vendor' });
-  }
-
-  const monthly = buildCashFlowMonthly(
-    institutionId,
-    academicYear,
-    operatingSection.total,
-    investingSection.total,
-    financingSection.total,
-    receiptsForFlow,
-    expenseFlowRows,
+  const closingBalance = round2(cashInHand + bankBalance);
+  const openingBalance = round2(
+    postedDays.length > 0
+      ? openingCashForYear + openingBankForYear
+      : closingBalance - netChange,
   );
+
+  const monthly = byMonth.map((m) => ({
+    month: m.month,
+    operating: round2(m.operating),
+    investing: round2(m.investing),
+    financing: round2(m.financing),
+    net: round2(m.operating + m.investing + m.financing),
+  }));
 
   const cashFlowRows: Array<{ label: string; amount: number; level: number; bold?: boolean }> = [
     { label: 'OPERATING ACTIVITIES', amount: operatingSection.total, level: 0, bold: true },
@@ -720,23 +519,48 @@ export async function getAccountsLedger(
   ];
 
   const currentRatio =
-    currentLiabilities.total > 0 ? round2(currentAssets.total / currentLiabilities.total) : currentAssets.total > 0 ? 99.99 : 0;
+    currentLiabilities.total > 0
+      ? round2(currentAssets.total / currentLiabilities.total)
+      : currentAssets.total > 0
+        ? 99.99
+        : 0;
 
-  const highlights: string[] = [];
-  if (netProfit >= 0) highlights.push(`Net surplus of ${ctx.currency} ${netProfit.toLocaleString('en-IN')} for ${academicYear}`);
-  else highlights.push(`Net deficit of ${ctx.currency} ${Math.abs(netProfit).toLocaleString('en-IN')} for ${academicYear}`);
-  if (receivables.total > 0) {
-    highlights.push(`Outstanding fee receivables: ${ctx.currency} ${receivables.total.toLocaleString('en-IN')}`);
+  const closedDays = postedDays.length;
+  const postingMessage =
+    closedDays === 0
+      ? 'No day closings approved yet. Complete Payment Reconciliation → Send for Approval → final approval to post collections, expenses and refunds here.'
+      : `Posted from ${closedDays} approved Payment Reconciliation day closing(s). Refunds and expenses appear only after day-closing approval.`;
+
+  const highlights: string[] = [postingMessage];
+  if (closedDays === 0) {
+    highlights.push('Collections and expenses stay in module screens until reconciliation is approved.');
+  } else if (netProfit >= 0) {
+    highlights.push(`Net surplus of ${ctx.currency} ${netProfit.toLocaleString('en-IN')} for ${academicYear}`);
+  } else {
+    highlights.push(
+      `Net deficit of ${ctx.currency} ${Math.abs(netProfit).toLocaleString('en-IN')} for ${academicYear}`,
+    );
   }
-  if (operatingMargin >= 20) highlights.push('Healthy operating margin above 20%');
-  else if (operatingMargin < 0) highlights.push('Operating margin is negative — review expenses');
-  if (currentRatio < 1 && currentLiabilities.total > 0) highlights.push('Current ratio below 1 — liquidity attention needed');
+  if (receivables.total > 0) {
+    highlights.push(
+      `Outstanding fee receivables: ${ctx.currency} ${receivables.total.toLocaleString('en-IN')}`,
+    );
+  }
+  if (operatingMargin < 0) highlights.push('Operating margin is negative — review expenses');
+  if (currentRatio < 1 && currentLiabilities.total > 0) {
+    highlights.push('Current ratio below 1 — liquidity attention needed');
+  }
 
   return {
     academicYear,
     financialYear,
     currency: ctx.currency,
     asOf: new Date().toISOString(),
+    posting: {
+      source: 'payment_reconciliation',
+      closedDays,
+      message: postingMessage,
+    },
     ratios: {
       operatingMargin,
       currentRatio,
@@ -765,7 +589,11 @@ export async function getAccountsLedger(
     },
     balanceSheet: {
       assets: { current: currentAssets, nonCurrent: nonCurrentAssets, total: totalAssets },
-      liabilities: { current: currentLiabilities, nonCurrent: nonCurrentLiabilities, total: totalLiabilities },
+      liabilities: {
+        current: currentLiabilities,
+        nonCurrent: nonCurrentLiabilities,
+        total: totalLiabilities,
+      },
       equity: equitySection,
       totalLiabilitiesAndEquity: totalLE,
       balanced,
@@ -799,31 +627,55 @@ export async function getAccountsLedger(
         totalAssets,
         totalLiabilities,
         totalEquity: equitySection.total,
-        cashAndBank: round2(cashPos.cashInHand + cashPos.bankBalance),
+        cashAndBank: closingBalance,
         feeReceivable: receivables.total,
         operatingMarginPct: operatingMargin,
         currentRatio,
         plRatioPct: plRatio,
+        closedReconciliationDays: closedDays,
       },
       highlights,
       kpis: [
-        { label: 'Total Revenue', value: `${ctx.currency} ${revenueSection.total.toLocaleString('en-IN')}` },
-        { label: 'Net Profit / (Loss)', value: `${ctx.currency} ${netProfit.toLocaleString('en-IN')}`, sub: `${plRatio}% margin` },
-        { label: 'Cash & Bank', value: `${ctx.currency} ${round2(cashPos.cashInHand + cashPos.bankBalance).toLocaleString('en-IN')}` },
-        { label: 'Fee Receivable', value: `${ctx.currency} ${receivables.total.toLocaleString('en-IN')}` },
+        {
+          label: 'Total Revenue',
+          value: `${ctx.currency} ${revenueSection.total.toLocaleString('en-IN')}`,
+        },
+        {
+          label: 'Net Profit / (Loss)',
+          value: `${ctx.currency} ${netProfit.toLocaleString('en-IN')}`,
+          sub: `${plRatio}% margin`,
+        },
+        {
+          label: 'Cash & Bank',
+          value: `${ctx.currency} ${closingBalance.toLocaleString('en-IN')}`,
+        },
+        {
+          label: 'Fee Receivable',
+          value: `${ctx.currency} ${receivables.total.toLocaleString('en-IN')}`,
+        },
         { label: 'Operating Margin', value: `${operatingMargin}%` },
-        { label: 'Current Ratio', value: currentLiabilities.total > 0 ? `${currentRatio}x` : 'N/A' },
+        {
+          label: 'Closed Days Posted',
+          value: String(closedDays),
+          sub: 'via Payment Reconciliation',
+        },
       ],
     },
   };
 }
 
-export function accountsLedgerToCsv(payload: AccountsLedgerPayload, section: 'income' | 'balance' | 'cashflow' | 'full'): string {
+export function accountsLedgerToCsv(
+  payload: AccountsLedgerPayload,
+  sectionKey: 'income' | 'balance' | 'cashflow' | 'full',
+): string {
   const lines: string[] = [];
   const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
 
   lines.push(`Accounts & Ledger — ${payload.academicYear}`);
   lines.push(`Generated,${payload.asOf}`);
+  lines.push(`Posting source,${payload.posting.source}`);
+  lines.push(`Closed reconciliation days,${payload.posting.closedDays}`);
+  lines.push(`Note,${esc(payload.posting.message)}`);
   lines.push('');
 
   const addRows = (title: string, rows: Array<{ label: string; amount: number; level?: number }>) => {
@@ -836,13 +688,13 @@ export function accountsLedgerToCsv(payload: AccountsLedgerPayload, section: 'in
     lines.push('');
   };
 
-  if (section === 'income' || section === 'full') {
+  if (sectionKey === 'income' || sectionKey === 'full') {
     addRows('Income Statement (Profit & Loss)', payload.incomeStatement.rows);
   }
-  if (section === 'balance' || section === 'full') {
+  if (sectionKey === 'balance' || sectionKey === 'full') {
     addRows('Balance Sheet', payload.balanceSheet.rows);
   }
-  if (section === 'cashflow' || section === 'full') {
+  if (sectionKey === 'cashflow' || sectionKey === 'full') {
     addRows('Cash Flow Statement', payload.cashFlow.rows);
     lines.push('Monthly Cash Flow');
     lines.push('Month,Operating,Investing,Financing,Net');
@@ -851,7 +703,7 @@ export function accountsLedgerToCsv(payload: AccountsLedgerPayload, section: 'in
     }
     lines.push('');
   }
-  if (section === 'full') {
+  if (sectionKey === 'full') {
     lines.push('Financial Ratios');
     lines.push('Ratio,Value');
     lines.push(`Operating Margin,${payload.ratios.operatingMargin}%`);

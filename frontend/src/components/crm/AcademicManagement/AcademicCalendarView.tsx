@@ -72,25 +72,42 @@ export function AcademicCalendarView() {
 
   const publishedCount = records.filter((r) => r.isPublished).length;
   const boardUploads = uploads.filter((u) => u.boardName === boardName);
+  const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
   const handlePdfUpload = async (file: File) => {
     setScanning(true);
     setMessage('');
     try {
+      if (file.size > MAX_UPLOAD_BYTES) {
+        throw new Error('File is larger than 20 MB. Compress the PDF/circular or upload fewer pages.');
+      }
+      const allowed = /pdf|image\/(png|jpe?g|webp)/i.test(file.type) || /\.(pdf|png|jpe?g|webp)$/i.test(file.name);
+      if (!allowed) {
+        throw new Error('Unsupported file. Upload a PDF or image (JPG/PNG) of the board calendar / govt circular.');
+      }
       const fileData = await fileToBase64(file);
       const res = await uploadBoardCalendarOcr({
         boardName,
         academicYear,
         fileName: file.name,
         fileData,
-        mimeType: file.type || 'application/pdf',
+        mimeType: file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'),
       });
       setPreviewUpload(res.upload);
       setPreviewEvents(res.previewEvents);
       setShowOcrPreview(true);
-      setMessage(`OCR complete — ${res.previewEvents.length} events extracted from ${file.name}`);
+      setMessage(
+        `OCR proposed ${res.previewEvents.length} event(s) from “${file.name}”. Review dates/types, then import into the ${boardName} calendar.`,
+      );
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : 'OCR scan failed');
+      const msg = e instanceof Error ? e.message : 'OCR scan failed';
+      if (/entity too large|too large|413/i.test(msg)) {
+        setMessage('Upload failed: file is too large. Use a PDF/image under 20 MB.');
+      } else if (/internal server error/i.test(msg)) {
+        setMessage('OCR failed on the server. Check GEMINI_API_KEY / GEMINI_MODEL in backend/.env and restart the API, then retry.');
+      } else {
+        setMessage(msg);
+      }
     } finally {
       setScanning(false);
     }
@@ -126,25 +143,32 @@ export function AcademicCalendarView() {
       <AcademicPageHeader
         breadcrumb="Academic Management › Academic Calendar"
         title="Academic Calendar"
-        subtitle="Upload board calendars via PDF OCR — events sync to teacher, student & parent mobile apps"
+        subtitle="Upload board calendars or govt circular PDFs — OCR proposes dated events for review, then sync to teacher, student & parent mobile apps"
         actions={(
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => void publishToMobile()} className={am.btnDark}><Send size={14} /> Publish to Mobile</button>
             <button type="button" onClick={() => fileRef.current?.click()} disabled={scanning} className={am.btnSecondary}>
-              {scanning ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Upload Board PDF
+              {scanning ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} {scanning ? 'OCR Scanning…' : 'Upload Board PDF'}
             </button>
             <button type="button" onClick={() => setShowForm(true)} className={am.btnPrimary}><Plus size={14} /> Add Event</button>
           </div>
         )}
       />
-      <input ref={fileRef} type="file" accept=".pdf,image/*" className="hidden" onChange={(e) => {
+      <input ref={fileRef} type="file" accept=".pdf,image/png,image/jpeg,image/jpg,image/webp" className="hidden" onChange={(e) => {
         const f = e.target.files?.[0];
         if (f) void handlePdfUpload(f);
         e.target.value = '';
       }} />
 
       <div className={am.content}>
-        {message && <p className={am.message}>{message}</p>}
+        {message && (
+          <p className={`${am.message} ${/failed|error|too large|invalid/i.test(message) ? 'bg-red-50 text-red-700 border-red-100' : ''}`}>
+            {message}
+          </p>
+        )}
+        <p className="text-xs text-slate-500 -mt-2">
+          Tip: Upload a board academic calendar or government circular (PDF/JPG/PNG, max 20 MB). OCR will propose events by date — review and import, then Publish to Mobile.
+        </p>
 
         <div className={`${am.filterBar} flex-wrap`}>
           <select value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} className={am.select}>
@@ -247,10 +271,14 @@ export function AcademicCalendarView() {
       </div>
 
       {/* OCR Preview Modal */}
-      <AcademicModal open={showOcrPreview} onClose={() => setShowOcrPreview(false)} title={`OCR Preview — ${boardName} Calendar`} large>
-        <p className="text-xs text-slate-500 mb-3">Review extracted events before importing. Edit titles/dates if needed.</p>
-        <div className="max-h-64 overflow-y-auto space-y-2 mb-4">
-          {previewEvents.map((ev, i) => (
+      <AcademicModal open={showOcrPreview} onClose={() => setShowOcrPreview(false)} title={`Proposed Events — ${boardName}`} wide>
+        <p className="text-xs text-slate-500 mb-3">
+          OCR read the uploaded calendar/govt circular and proposed these dated events. Edit titles, dates, or types, remove extras, then import into the academic calendar.
+        </p>
+        <div className="max-h-72 overflow-y-auto space-y-2 mb-4">
+          {previewEvents.length === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-6">No events proposed. Re-upload a clearer PDF/circular.</p>
+          ) : previewEvents.map((ev, i) => (
             <div key={i} className="grid grid-cols-12 gap-2 text-xs items-center border border-slate-100 rounded-lg p-2">
               <input value={ev.eventDate} onChange={(e) => setPreviewEvents((list) => list.map((x, j) => j === i ? { ...x, eventDate: e.target.value } : x))} className={`${am.input} col-span-2`} type="date" />
               <input value={ev.title} onChange={(e) => setPreviewEvents((list) => list.map((x, j) => j === i ? { ...x, title: e.target.value } : x))} className={`${am.input} col-span-4`} />
@@ -263,10 +291,12 @@ export function AcademicCalendarView() {
           ))}
         </div>
         <div className="flex justify-between items-center">
-          <span className="text-xs text-slate-500">{previewEvents.length} event(s) ready to import</span>
+          <span className="text-xs text-slate-500">{previewEvents.length} proposed event(s)</span>
           <div className="flex gap-2">
             <button type="button" onClick={() => setShowOcrPreview(false)} className={am.btnSecondary}>Cancel</button>
-            <button type="button" onClick={() => void importOcrEvents()} className={am.btnPrimary}>Import Events</button>
+            <button type="button" disabled={!previewEvents.length} onClick={() => void importOcrEvents()} className={am.btnPrimary}>
+              Import Proposed Events
+            </button>
           </div>
         </div>
       </AcademicModal>

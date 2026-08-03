@@ -1,35 +1,61 @@
-import { ParentsListView } from './ParentManagement/ParentsListView';
-import { ParentProfilesView } from './ParentManagement/ParentProfilesView';
-import { ParentsEngagementView } from './ParentManagement/ParentsEngagementView';
-import { CommunicationLogView } from './ParentManagement/CommunicationLogView';
-import { ParentCategoriesView } from './ParentManagement/ParentCategoriesView';
-import { ParentFeedbackView } from './ParentManagement/ParentFeedbackView';
-import { ParentMeetingsView } from './ParentManagement/ParentMeetingsView';
-import { ConsentManagementView } from './ParentManagement/ConsentManagementView';
+import { lazy, Suspense, type ReactNode } from 'react';
+
+const ParentsListView = lazy(() =>
+  import('./ParentManagement/ParentsListView').then((m) => ({ default: m.ParentsListView })),
+);
+const ParentProfilesView = lazy(() =>
+  import('./ParentManagement/ParentProfilesView').then((m) => ({ default: m.ParentProfilesView })),
+);
+const ParentsEngagementView = lazy(() =>
+  import('./ParentManagement/ParentsEngagementView').then((m) => ({ default: m.ParentsEngagementView })),
+);
+const CommunicationLogView = lazy(() =>
+  import('./ParentManagement/CommunicationLogView').then((m) => ({ default: m.CommunicationLogView })),
+);
+const ParentCategoriesView = lazy(() =>
+  import('./ParentManagement/ParentCategoriesView').then((m) => ({ default: m.ParentCategoriesView })),
+);
+const ParentFeedbackView = lazy(() =>
+  import('./ParentManagement/ParentFeedbackView').then((m) => ({ default: m.ParentFeedbackView })),
+);
+const ParentMeetingsView = lazy(() =>
+  import('./ParentManagement/ParentMeetingsView').then((m) => ({ default: m.ParentMeetingsView })),
+);
+const ConsentManagementView = lazy(() =>
+  import('./ParentManagement/ConsentManagementView').then((m) => ({ default: m.ConsentManagementView })),
+);
 
 type Props = {
   currentView?: string;
   onNavigate?: (view: string) => void;
 };
 
+function wrap(node: ReactNode) {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[30vh] text-sm text-slate-400">Loading page…</div>}>
+      {node}
+    </Suspense>
+  );
+}
+
 export function ParentManagementCRM({ currentView = 'Parents List', onNavigate }: Props) {
   switch (currentView) {
     case 'Parent Profiles':
-      return <ParentProfilesView />;
+      return wrap(<ParentProfilesView />);
     case 'Parents Engagement':
-      return <ParentsEngagementView />;
+      return wrap(<ParentsEngagementView />);
     case 'Communication Log':
-      return <CommunicationLogView />;
+      return wrap(<CommunicationLogView />);
     case 'Parent Categories':
-      return <ParentCategoriesView onNavigate={onNavigate} />;
+      return wrap(<ParentCategoriesView onNavigate={onNavigate} />);
     case 'Parent Feedback':
-      return <ParentFeedbackView />;
+      return wrap(<ParentFeedbackView />);
     case 'Parent Meetings (PTM)':
-      return <ParentMeetingsView />;
+      return wrap(<ParentMeetingsView />);
     case 'Consent Management':
-      return <ConsentManagementView />;
+      return wrap(<ConsentManagementView />);
     case 'Parents List':
     default:
-      return <ParentsListView onNavigate={onNavigate} />;
+      return wrap(<ParentsListView onNavigate={onNavigate} />);
   }
 }

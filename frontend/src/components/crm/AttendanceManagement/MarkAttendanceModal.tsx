@@ -19,6 +19,8 @@ type Props = {
   mode?: 'CLASS' | 'SUBJECT' | 'ACTIVITY';
   subjectName?: string;
   activityName?: string;
+  /** When set, that student is highlighted / scrolled into view first. */
+  focusStudentId?: string;
 };
 
 const STATUS_OPTIONS: { value: Status; label: string; icon: ReactNode; color: string }[] = [
@@ -30,7 +32,7 @@ const STATUS_OPTIONS: { value: Status; label: string; icon: ReactNode; color: st
 
 export function MarkAttendanceModal({
   open, onClose, onSaved, academicYear, className, sectionName, sessionDate,
-  mode = 'CLASS', subjectName = '', activityName = '',
+  mode = 'CLASS', subjectName = '', activityName = '', focusStudentId = '',
 }: Props) {
   const [students, setStudents] = useState<AttendanceRosterStudent[]>([]);
   const [statusMap, setStatusMap] = useState<Record<string, Status>>({});
@@ -53,10 +55,15 @@ export function MarkAttendanceModal({
         subjectName,
         activityName,
       });
-      setStudents(roster.students);
+      let list = roster.students;
+      if (focusStudentId) {
+        const hit = list.find((s) => s.studentId === focusStudentId);
+        if (hit) list = [hit, ...list.filter((s) => s.studentId !== focusStudentId)];
+      }
+      setStudents(list);
       const sm: Record<string, Status> = {};
       const rm: Record<string, string> = {};
-      for (const s of roster.students) {
+      for (const s of list) {
         sm[s.studentId] = (s.status as Status) || 'PRESENT';
         rm[s.studentId] = s.absentReason || '';
       }
@@ -67,9 +74,15 @@ export function MarkAttendanceModal({
     } finally {
       setLoading(false);
     }
-  }, [open, academicYear, className, sectionName, sessionDate, mode, subjectName, activityName]);
+  }, [open, academicYear, className, sectionName, sessionDate, mode, subjectName, activityName, focusStudentId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (!open || !focusStudentId || loading) return;
+    const el = document.getElementById(`att-student-${focusStudentId}`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [open, focusStudentId, loading, students]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -129,7 +142,15 @@ export function MarkAttendanceModal({
           ) : (
             <div className="space-y-2">
               {students.map((s) => (
-                <div key={s.studentId} className="flex flex-wrap items-center gap-2 p-2 rounded-lg border border-slate-100 hover:bg-slate-50">
+                <div
+                  key={s.studentId}
+                  id={`att-student-${s.studentId}`}
+                  className={`flex flex-wrap items-center gap-2 p-2 rounded-lg border hover:bg-slate-50 ${
+                    focusStudentId && s.studentId === focusStudentId
+                      ? 'border-amber-400 bg-amber-50 ring-1 ring-amber-200'
+                      : 'border-slate-100'
+                  }`}
+                >
                   <div className="flex-1 min-w-[140px]">
                     <p className="text-sm font-semibold text-slate-800">{s.name}</p>
                     <p className="text-[10px] text-slate-400">{s.rollNumber || s.admissionNumber}</p>

@@ -4,7 +4,7 @@ import {
   StudentStatus,
 } from '@prisma/client';
 import { prisma } from './prisma.js';
-import { CO_SCHOLASTIC_CATEGORIES, PERFORMANCE_BAND_UI } from './coScholastic.js';
+import { CO_SCHOLASTIC_CATEGORIES, PERFORMANCE_BAND_UI, scoreToBand, scoreToGrade } from './coScholastic.js';
 import { getInstitutionFilterMeta } from './students.js';
 
 export const CERTIFICATE_CATEGORY_LABELS: Record<ExamCertificateCategory, string> = {
@@ -300,6 +300,9 @@ export async function recordCertificateFromMobile(
 
   const category = parseCategory(data.category);
   const academicYear = data.academicYear || student.academicYear;
+  const score = data.performanceScore ?? 0;
+  const grade = data.performanceGrade || (score > 0 ? scoreToGrade(score) : '');
+  const band = data.performanceBand || (score > 0 ? scoreToBand(score) : '');
 
   if (data.activityId) {
     const existing = await prisma.examCoScholasticCertificate.findFirst({
@@ -324,9 +327,9 @@ export async function recordCertificateFromMobile(
       subCategory: data.subCategory || '',
       activityTitle: data.activityTitle,
       activityId: data.activityId || null,
-      performanceScore: data.performanceScore ?? 0,
-      performanceGrade: data.performanceGrade || '',
-      performanceBand: data.performanceBand || '',
+      performanceScore: score,
+      performanceGrade: grade,
+      performanceBand: band,
       status: ExamCertificateStatus.RECORDED,
       recordedBy: data.teacherName,
       remarks: data.remarks?.trim() || '',
@@ -345,6 +348,127 @@ export async function recordCertificateFromMobile(
   });
 
   return { certificate: serializeCertificate(cert), message: 'Certificate recorded via teacher mobile app' };
+}
+
+export async function recordCertificateFromAdmin(
+  institutionId: string,
+  data: {
+    studentId: string;
+    category: string;
+    activityTitle: string;
+    activityId?: string;
+    subCategory?: string;
+    academicYear?: string;
+    term?: string;
+    performanceScore: number;
+    maxScore?: number;
+    performanceGrade?: string;
+    performanceBand?: string;
+    remarks?: string;
+    recordedBy?: string;
+    generate?: boolean;
+    issue?: boolean;
+  },
+  actor: string,
+) {
+  const student = await prisma.student.findFirst({
+    where: { institutionId, id: data.studentId, status: StudentStatus.ACTIVE },
+  });
+  if (!student) throw new Error('Student not found');
+
+  const activityTitle = data.activityTitle.trim();
+  if (!activityTitle) throw new Error('Activity title is required');
+
+  const score = Number(data.performanceScore);
+  if (Number.isNaN(score) || score < 0) throw new Error('Performance score is required');
+
+  const maxScore = data.maxScore && data.maxScore > 0 ? data.maxScore : 100;
+  if (score > maxScore) throw new Error(`Score cannot exceed max score (${maxScore})`);
+
+  const category = parseCategory(data.category);
+  const academicYear = data.academicYear || student.academicYear;
+  const grade = (data.performanceGrade || '').trim() || scoreToGrade(score, maxScore);
+  const band = (data.performanceBand || '').trim() || scoreToBand(score, maxScore);
+
+  if (data.activityId) {
+    const existing = await prisma.examCoScholasticCertificate.findFirst({
+      where: { institutionId, studentId: student.id, activityId: data.activityId, category },
+    });
+    if (existing) throw new Error('Certificate already exists for this student and activity');
+  } else {
+    const duplicate = await prisma.examCoScholasticCertificate.findFirst({
+      where: {
+        institutionId,
+        studentId: student.id,
+        academicYear,
+        category,
+        activityTitle: { equals: activityTitle, mode: 'insensitive' },
+        status: { not: ExamCertificateStatus.ISSUED },
+      },
+    });
+    if (duplicate) {
+      throw new Error('An active certificate already exists for this student, category, and activity');
+    }
+  }
+
+  await getOrCreateConfig(institutionId, academicYear);
+
+  const now = new Date();
+  const generate = Boolean(data.generate);
+  const issue = Boolean(data.issue) && generate;
+  const status = issue
+    ? ExamCertificateStatus.ISSUED
+    : generate
+      ? ExamCertificateStatus.GENERATED
+      : ExamCertificateStatus.RECORDED;
+
+  const recordId = await nextCertificateRecordId(institutionId);
+  const cert = await prisma.examCoScholasticCertificate.create({
+    data: {
+      institutionId,
+      recordId,
+      academicYear,
+      term: data.term?.trim() || 'Annual',
+      studentId: student.id,
+      studentName: [student.firstName, student.lastName].filter(Boolean).join(' '),
+      admissionNumber: student.admissionNumber,
+      className: student.className,
+      sectionName: student.sectionName,
+      category,
+      subCategory: data.subCategory?.trim() || '',
+      activityTitle,
+      activityId: data.activityId || null,
+      performanceScore: score,
+      performanceGrade: grade,
+      performanceBand: band,
+      status,
+      recordedBy: data.recordedBy?.trim() || actor,
+      recordedAt: now,
+      generatedAt: generate || issue ? now : null,
+      issuedAt: issue ? now : null,
+      remarks: data.remarks?.trim() || '',
+    },
+  });
+
+  await prisma.examResultAuditLog.create({
+    data: {
+      institutionId,
+      entityType: 'CERTIFICATE',
+      entityId: cert.id,
+      action: issue ? 'CREATED_ISSUED_ADMIN' : generate ? 'CREATED_GENERATED_ADMIN' : 'RECORDED_ADMIN',
+      actor,
+      details: `${activityTitle} — ${cert.studentName} · score ${score}/${maxScore} (${grade})`,
+    },
+  });
+
+  return {
+    certificate: serializeCertificate(cert),
+    message: issue
+      ? 'Certificate created, generated, and issued'
+      : generate
+        ? 'Certificate created and generated — ready to download PDF'
+        : 'Certificate recorded — generate when ready',
+  };
 }
 
 export async function getMobileCertificatesForTeacher(

@@ -50,7 +50,6 @@ const FEE_HEAD_COLUMNS = [
 
 const STATUS_OPTIONS: FeeCollectionEntryStatus[] = [
   'PAID',
-  'COMPLETED',
   'ACTIVE',
   'PENDING',
   'DUE',

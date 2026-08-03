@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import type { UserRole } from '@prisma/client';
 import { prisma } from './prisma.js';
+import { getAppCache, setAppCache } from './appCache.js';
 import { isIpAllowed, executeBackup, logActionHistory } from './securityAuditCompliance.js';
 import { updateMaintenanceConfig } from './coreSystemsSettings.js';
 import { buildOtpAuthUrl, generateTotpSecret, verifyTotp } from './totp.js';
@@ -23,9 +24,15 @@ export function validateCidr(cidr: string) {
 }
 
 export async function checkFirewallBlocked(institutionId: string, clientIp?: string) {
-  const rules = await prisma.firewallRule.findMany({
-    where: { institutionId, isDeployed: true, action: 'BLOCK' },
-  });
+  const cacheKey = `firewallBlockRules:${institutionId}`;
+  let rules = getAppCache<Array<{ cidr: string }>>(cacheKey);
+  if (!rules) {
+    rules = await prisma.firewallRule.findMany({
+      where: { institutionId, isDeployed: true, action: 'BLOCK' },
+      select: { cidr: true },
+    });
+    setAppCache(cacheKey, rules, 60);
+  }
   if (!rules.length) return { blocked: false };
 
   const ip = (clientIp || '').trim();

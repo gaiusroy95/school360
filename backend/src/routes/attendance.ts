@@ -32,6 +32,7 @@ import {
   getStaffAttendanceDayDetail,
   getStaffAttendanceMeta,
   getStaffAttendanceReport,
+  pullStaffAttendanceFromMobile,
   seedStaffAttendanceDemo,
   syncStaffProfilesFromInstitution,
   type StaffPeriod,
@@ -279,6 +280,17 @@ attendanceRouter.post(
     const institutionId = await getDefaultInstitutionId();
     const academicYear = typeof req.body?.academicYear === 'string' ? req.body.academicYear : '2025-26';
     return res.json(await syncStaffProfilesFromInstitution(institutionId, academicYear));
+  }),
+);
+
+attendanceRouter.post(
+  '/staff/pull-mobile',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const academicYear = typeof req.body?.academicYear === 'string' ? req.body.academicYear : '2025-26';
+    const year = req.body?.year ? Number(req.body.year) : undefined;
+    const month = req.body?.month ? Number(req.body.month) : undefined;
+    return res.json(await pullStaffAttendanceFromMobile(institutionId, { academicYear, year, month }));
   }),
 );
 

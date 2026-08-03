@@ -10,7 +10,7 @@ import {
 import { prisma } from './prisma.js';
 import { getInstitutionFilterMeta } from './students.js';
 import { extractTextFromPdfs, truncateSourceText } from './pdfText.js';
-import { generateQuestionsFromText } from './geminiQuestions.js';
+import { generateQuestionsFromText, generateQuestionsFromVision } from './aiQuestionProviders.js';
 import { scanTestPaperWithOcr } from './geminiOcr.js';
 import { gradeExam } from './examScoring.js';
 
@@ -177,6 +177,7 @@ export async function getQuestionBankMeta(institutionId: string) {
     select: { subjectName: true },
     orderBy: [{ subjectName: 'asc' }],
   });
+  const { listConfiguredAiProviders } = await import('./aiQuestionProviders.js');
   return {
     defaultAcademicYear: filters.defaultAcademicYear,
     academicYears: filters.academicYears,
@@ -187,6 +188,7 @@ export async function getQuestionBankMeta(institutionId: string) {
     difficulties: [...DIFFICULTIES],
     purposes: Object.entries(PURPOSE_LABELS).map(([id, label]) => ({ id, label })),
     sources: Object.entries(SOURCE_LABELS).map(([id, label]) => ({ id, label })),
+    aiProviders: listConfiguredAiProviders(),
   };
 }
 
@@ -259,19 +261,58 @@ export async function generatePaperFromPdf(
   files: { fileName: string; mimeType?: string; fileData: string }[],
   params: { numQuestions: number; questionType: string; difficulty: string; title?: string },
 ) {
-  const { combinedText, fileMeta } = await extractTextFromPdfs(files);
-  const sourceText = truncateSourceText(combinedText);
-  const questions = await generateQuestionsFromText({
-    sourceText,
-    numQuestions: params.numQuestions,
-    questionType: params.questionType,
-    difficulty: params.difficulty,
-    title: params.title,
-  });
+  let fileMeta: { fileName: string; pages?: number; charCount?: number; kind?: string }[] = [];
+  let usedVision = false;
+  let questions;
+
+  let sourceText = '';
+  let extractError: Error | null = null;
+  try {
+    const extracted = await extractTextFromPdfs(files);
+    fileMeta = extracted.fileMeta;
+    sourceText = truncateSourceText(extracted.combinedText);
+  } catch (err) {
+    extractError = err instanceof Error ? err : new Error(String(err));
+  }
+
+  if (sourceText.trim().length >= 40) {
+    questions = await generateQuestionsFromText({
+      sourceText,
+      numQuestions: params.numQuestions,
+      questionType: params.questionType,
+      difficulty: params.difficulty,
+      title: params.title,
+    });
+  } else {
+    // Scanned / image-only PDFs → multimodal vision generation (Gemini → OpenAI)
+    const first = files[0];
+    if (!first) {
+      throw extractError || new Error('No PDF files uploaded');
+    }
+    const mimeType = (first.mimeType || '').toLowerCase().includes('pdf') || first.fileName.toLowerCase().endsWith('.pdf')
+      ? 'application/pdf'
+      : (first.mimeType || 'image/jpeg');
+    questions = await generateQuestionsFromVision({
+      mimeType,
+      base64Data: first.fileData,
+      numQuestions: params.numQuestions,
+      questionType: params.questionType,
+      difficulty: params.difficulty,
+      title: params.title,
+    });
+    usedVision = true;
+    fileMeta = files.map((f) => ({
+      fileName: f.fileName,
+      kind: (f.mimeType || f.fileName).toLowerCase().includes('pdf') ? 'pdf' : 'image',
+      pages: 0,
+      charCount: 0,
+    }));
+  }
+
   const suggestedTitle =
     params.title?.trim() ||
     `Question Paper — ${fileMeta.map((f) => f.fileName.replace(/\.pdf$/i, '')).join(', ')}`.slice(0, 120);
-  return { suggestedTitle, fileMeta, questions };
+  return { suggestedTitle, fileMeta, questions, usedVision, providerPriority: 'gemini→openai→groq' };
 }
 
 export async function scanPaperWithOcr(
@@ -568,6 +609,13 @@ export async function submitDigitalExamAttempt(
       autoScored: true,
     },
   });
+
+  try {
+    const { autoCaptureAttemptToMarks } = await import('./examScheduleCreate.js');
+    await autoCaptureAttemptToMarks(institutionId, attempt.paperId, updated.id);
+  } catch {
+    // best-effort — marks capture must not block exam submit
+  }
 
   return {
     attemptId: updated.id,

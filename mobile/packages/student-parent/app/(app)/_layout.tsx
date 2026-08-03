@@ -72,6 +72,7 @@ export default function AppLayout() {
       <Tabs.Screen name="consents" options={{ href: null }} />
       <Tabs.Screen name="reminders" options={{ href: null }} />
       <Tabs.Screen name="website" options={{ href: null }} />
+      <Tabs.Screen name="revaluation" options={{ href: null }} />
     </Tabs>
   );
 }

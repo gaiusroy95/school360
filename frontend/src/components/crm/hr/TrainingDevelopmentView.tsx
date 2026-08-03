@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   BarChart3, BookOpen, Calendar, CheckCircle2,
-  RefreshCw, Smartphone, Users,
+  Smartphone, Users,
 } from 'lucide-react';
 import {
   approveTrainingAnnualPlan,
@@ -60,10 +60,10 @@ export function TrainingDevelopmentView() {
   const [message, setMessage] = useState('');
   const [academicYear, setAcademicYear] = useState('2025-26');
 
-  const load = useCallback(async (seed = false) => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const d = await fetchTrainingDashboard({ seed, academicYear });
+      const d = await fetchTrainingDashboard({ academicYear });
       setData(d);
       setAcademicYear(d.academicYear);
     } finally { setLoading(false); }
@@ -82,20 +82,15 @@ export function TrainingDevelopmentView() {
         title="Training & Development"
         subtitle="Enterprise LMS integrated with HRMS — courses, nominations, attendance, assessments, certificates & mobile sync"
         actions={(
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => void load(true)} disabled={busy} className={am.btnSecondary}>
-              <RefreshCw size={14} /> Load Demo
+          data?.annualPlan && !data.annualPlan.calendarPublished ? (
+            <button type="button" onClick={async () => {
+              setBusy(true);
+              try { setData(await approveTrainingAnnualPlan(academicYear)); setMessage('Annual plan approved & calendar published'); }
+              finally { setBusy(false); }
+            }} className={am.btnPrimary}>
+              <CheckCircle2 size={14} /> Approve Annual Plan
             </button>
-            {data?.annualPlan && !data.annualPlan.calendarPublished && (
-              <button type="button" onClick={async () => {
-                setBusy(true);
-                try { setData(await approveTrainingAnnualPlan(academicYear)); setMessage('Annual plan approved & calendar published'); }
-                finally { setBusy(false); }
-              }} className={am.btnPrimary}>
-                <CheckCircle2 size={14} /> Approve Annual Plan
-              </button>
-            )}
-          </div>
+          ) : undefined
         )}
       />
 
@@ -171,7 +166,7 @@ export function TrainingDevelopmentView() {
               </thead>
               <tbody>
                 {data.trainingNeeds.length === 0 ? (
-                  <tr><td colSpan={8} className={`${am.td} text-center text-slate-400 py-8`}>No training needs identified — load demo or add from appraisal</td></tr>
+                  <tr><td colSpan={8} className={`${am.td} text-center text-slate-400 py-8`}>No training needs identified yet</td></tr>
                 ) : data.trainingNeeds.map((n) => (
                   <tr key={String(n.id)}>
                     <td className={am.td}>{String(n.source).replace(/_/g, ' ')}</td>

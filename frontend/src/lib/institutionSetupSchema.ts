@@ -273,15 +273,21 @@ export const INSTITUTION_SETUP_TILES: SetupTileSchema[] = [
         id: 'subjectCode',
         title: 'Subject Code',
         fields: [
-          { key: 'codePrefix', label: 'Code Prefix', type: 'text', placeholder: 'SUB-' },
-          { key: 'codeRequired', label: 'Code Required', type: 'select', options: ['Yes', 'No'] },
+          { key: 'codePrefix', label: 'Code Prefix', type: 'text', placeholder: 'SUB-', defaultValue: 'SUB-' },
+          { key: 'codeRequired', label: 'Code Required', type: 'select', options: ['Yes', 'No'], defaultValue: 'No' },
         ],
       },
       {
         id: 'subjectType',
         title: 'Subject Type',
         fields: [
-          { key: 'allowedTypes', label: 'Allowed Types', type: 'text', placeholder: 'Core, Elective, Optional' },
+          {
+            key: 'allowedTypes',
+            label: 'Allowed Types',
+            type: 'text',
+            placeholder: 'Core, Language, Co-Scholastic, Skill / Vocational, Elective',
+            defaultValue: 'Core, Mandatory, Elective, Practical, Extra-Curricular, Language, Co-Scholastic, Skill / Vocational, Optional',
+          },
         ],
       },
       {

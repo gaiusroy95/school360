@@ -115,6 +115,17 @@ export function computeTemplateSummary(
   };
 }
 
+function templatePersistTotals(summary: ReturnType<typeof computeTemplateSummary>) {
+  // Never pass `preview` (UI-only) into Prisma create/update
+  return {
+    totalEarnings: summary.totalEarnings,
+    totalDeductions: summary.totalDeductions,
+    employerContribution: summary.employerContribution,
+    ctc: summary.ctc,
+    netSalary: summary.netSalary,
+  };
+}
+
 function serializeTemplate(row: {
   id: string;
   structureCode: string;
@@ -284,7 +295,7 @@ export async function createHrSalaryStructureTemplate(
       earnings: earnings as unknown as Prisma.InputJsonValue,
       deductions: deductions as unknown as Prisma.InputJsonValue,
       employerContributions: employerContributions as unknown as Prisma.InputJsonValue,
-      ...summary,
+      ...templatePersistTotals(summary),
     },
     include: { _count: { select: { assignments: true } } },
   });
@@ -350,7 +361,7 @@ export async function updateHrSalaryStructureTemplate(
       earnings: earnings as unknown as Prisma.InputJsonValue,
       deductions: deductions as unknown as Prisma.InputJsonValue,
       employerContributions: employerContributions as unknown as Prisma.InputJsonValue,
-      ...summary,
+      ...templatePersistTotals(summary),
     },
     include: { _count: { select: { assignments: true } } },
   });
@@ -629,7 +640,7 @@ export async function seedHrSalaryStructureDemo(institutionId: string) {
         earnings: def.earnings as unknown as Prisma.InputJsonValue,
         deductions: def.deductions as unknown as Prisma.InputJsonValue,
         employerContributions: def.employerContributions as unknown as Prisma.InputJsonValue,
-        ...summary,
+        ...templatePersistTotals(summary),
       },
       include: { _count: { select: { assignments: true } } },
     });

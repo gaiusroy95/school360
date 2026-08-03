@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  AlertTriangle, CheckCircle2, Clock, FileText, IndianRupee, Loader2,
-  Plus, RefreshCw, RotateCcw, Send, XCircle,
+  CheckCircle2, Clock, FileText, IndianRupee, Loader2,
+  Plus, RefreshCw, Send, Settings2, Smartphone, XCircle,
 } from 'lucide-react';
 import {
   BackPaperExam,
@@ -14,11 +14,12 @@ import {
   fetchFailedStudentsForBackPaper,
   fetchRevaluationMeta,
   fetchRevaluationRequests,
+  payBackPaperFee,
   payRevaluationFee,
   publishBackPaperResult,
   publishRevaluationResult,
-  seedRevaluation,
   startRevaluationReview,
+  updateRevaluationConfig,
   type RevaluationRequest,
   type RevaluationRequestType,
 } from '../../../lib/examinationServices';
@@ -54,6 +55,7 @@ export function RevaluationRecheckView() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const [feeModal, setFeeModal] = useState<RevaluationRequest | null>(null);
+  const [backFeeModal, setBackFeeModal] = useState<BackPaperExam | null>(null);
   const [feeReceipt, setFeeReceipt] = useState('');
   const [feeMode, setFeeMode] = useState('CASH');
   const [reviewModal, setReviewModal] = useState<RevaluationRequest | null>(null);
@@ -61,6 +63,12 @@ export function RevaluationRecheckView() {
   const [rejectReason, setRejectReason] = useState('');
   const [marksModal, setMarksModal] = useState<BackPaperExam | null>(null);
   const [newMarks, setNewMarks] = useState('');
+  const [configOpen, setConfigOpen] = useState(false);
+  const [cfgRevalFee, setCfgRevalFee] = useState('500');
+  const [cfgRecheckFee, setCfgRecheckFee] = useState('300');
+  const [cfgBackFee, setCfgBackFee] = useState('400');
+  const [cfgGrace, setCfgGrace] = useState('30');
+  const [cfgPass, setCfgPass] = useState('36');
 
   const load = useCallback(async (year?: string) => {
     setLoading(true);
@@ -83,6 +91,13 @@ export function RevaluationRecheckView() {
       setBackPapers(bpData.exams);
       setEligible(eligData.eligible);
       setFailedStudents(failData.failed);
+      if (m?.config) {
+        setCfgRevalFee(String(m.config.revaluationFee));
+        setCfgRecheckFee(String(m.config.recheckFee));
+        setCfgBackFee(String(m.config.backPaperFee ?? 400));
+        setCfgGrace(String(m.config.gracePeriodDays));
+        setCfgPass(String(m.config.passingPercent));
+      }
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to load');
     } finally {
@@ -121,6 +136,44 @@ export function RevaluationRecheckView() {
       await load(academicYear);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Payment failed');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handlePayBackFee = async () => {
+    if (!backFeeModal || !feeReceipt.trim()) return;
+    setActionLoading(true);
+    try {
+      const result = await payBackPaperFee(backFeeModal.id, { feeReceiptNumber: feeReceipt, feePaymentMode: feeMode });
+      setSuccessMsg(result.message);
+      setBackFeeModal(null);
+      setFeeReceipt('');
+      await load(academicYear);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Payment failed');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleSaveConfig = async () => {
+    setActionLoading(true);
+    try {
+      const result = await updateRevaluationConfig({
+        academicYear,
+        revaluationFee: Number(cfgRevalFee),
+        recheckFee: Number(cfgRecheckFee),
+        backPaperFee: Number(cfgBackFee),
+        gracePeriodDays: Number(cfgGrace),
+        passingPercent: Number(cfgPass),
+      });
+      setSuccessMsg(result.message);
+      setMeta((prev) => prev ? { ...prev, config: result.config } : prev);
+      setConfigOpen(false);
+      await load(academicYear);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Config update failed');
     } finally {
       setActionLoading(false);
     }
@@ -232,12 +285,15 @@ export function RevaluationRecheckView() {
       <AcademicPageHeader
         breadcrumb="Examination Management › Revaluation / Recheck"
         title="Revaluation / Recheck"
-        subtitle="30-day grace period from result date · additional fee required · revised results published from here only"
+        subtitle="30-day grace from result publication · fees via mobile app / counter · revised results published here only"
         actions={(
           <div className="flex items-center gap-2">
             <select value={academicYear} onChange={(e) => { setAcademicYear(e.target.value); void load(e.target.value); }} className={am.select}>
               {(meta?.academicYears || [academicYear]).map((y) => <option key={y} value={y}>{y}</option>)}
             </select>
+            <button type="button" onClick={() => setConfigOpen(true)} className={am.btnSecondary}>
+              <Settings2 size={14} /> Fees & Grace
+            </button>
             <button type="button" onClick={() => void load()} className={am.btnSecondary}>
               <RefreshCw size={14} /> Refresh
             </button>
@@ -277,9 +333,17 @@ export function RevaluationRecheckView() {
       <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-2 text-xs text-blue-800">
         <Clock size={14} />
         <span>
-          <strong>Grace Period:</strong> {meta?.config.gracePeriodDays ?? 30} days from result publication date
-          &nbsp;|&nbsp; Revaluation Fee: ₹{meta?.config.revaluationFee ?? 500}
-          &nbsp;|&nbsp; Recheck Fee: ₹{meta?.config.recheckFee ?? 300}
+          <strong>Grace Period:</strong> {meta?.config.gracePeriodDays ?? 30} days from result publication
+          &nbsp;|&nbsp; Revaluation: ₹{meta?.config.revaluationFee ?? 500}
+          &nbsp;|&nbsp; Recheck: ₹{meta?.config.recheckFee ?? 300}
+          &nbsp;|&nbsp; Back Paper: ₹{meta?.config.backPaperFee ?? 400}
+        </span>
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-2 text-xs text-indigo-900">
+        <Smartphone size={14} />
+        <span>
+          Synced with Student / Parent Mobile App (Revaluation section + Fees). Online payments create an Examination Fee due and mark the request paid when collected.
         </span>
       </div>
 
@@ -500,7 +564,7 @@ export function RevaluationRecheckView() {
                           <p className="text-[10px] text-orange-700">{f.obtained}/{f.max} (need {f.passingMarks}) · {f.className} {f.sectionName}</p>
                         </div>
                         <button type="button" onClick={() => void handleCreateBackPaper(f.studentResultId, f.subjectName)} disabled={actionLoading} className={am.btnSecondary}>
-                          <Plus size={12} /> Create Exam
+                          <Plus size={12} /> Create (₹{f.backPaperFee ?? meta?.config.backPaperFee ?? 400})
                         </button>
                       </div>
                     ))}
@@ -520,11 +584,23 @@ export function RevaluationRecheckView() {
                           <p className="text-xs font-medium">{bp.studentName} — {bp.subjectName}</p>
                           <p className="text-[10px] text-slate-500">
                             {bp.recordId} · Original: {bp.originalMarks}/{bp.originalMaxMarks}
+                            {bp.feeAmount > 0 && (
+                              <> · Fee: {bp.feePaid ? <span className="text-emerald-600">₹{bp.feeAmount} ✓</span> : <span className="text-amber-600">₹{bp.feeAmount} due</span>}</>
+                            )}
                             {bp.newMarks !== null && ` · New: ${bp.newMarks}/${bp.newMaxMarks} (${bp.newGrade})`}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className={`rounded px-2 py-0.5 text-[10px] font-medium ${STATUS_COLORS[bp.status]}`}>{bp.status}</span>
+                          {bp.canPayFee && (
+                            <button
+                              type="button"
+                              onClick={() => { setBackFeeModal(bp); setFeeReceipt(''); setFeeMode('CASH'); }}
+                              className="text-blue-600 hover:underline text-[10px] font-semibold"
+                            >
+                              <IndianRupee size={10} className="inline" /> Pay Fee
+                            </button>
+                          )}
                           {bp.canEnterMarks && bp.newMarks === null && (
                             <button type="button" onClick={() => { setMarksModal(bp); setNewMarks(''); }} className={am.btnSecondary}>
                               Enter Marks
@@ -550,6 +626,7 @@ export function RevaluationRecheckView() {
         {feeModal && (
           <div className="space-y-3 text-sm">
             <p>Fee: <strong>₹{feeModal.feeAmount}</strong> for {feeModal.requestType} — {feeModal.subjectName}</p>
+            <p className="text-xs text-slate-500">Parents can also pay this on the mobile app (creates Examination Fee due).</p>
             <div>
               <label className="mb-1 block text-xs text-slate-600">Receipt Number</label>
               <input type="text" value={feeReceipt} onChange={(e) => setFeeReceipt(e.target.value)} className={am.input} placeholder="RCP-001" />
@@ -568,6 +645,61 @@ export function RevaluationRecheckView() {
             </button>
           </div>
         )}
+      </AcademicModal>
+
+      <AcademicModal open={Boolean(backFeeModal)} onClose={() => setBackFeeModal(null)} title="Record Back Paper Fee">
+        {backFeeModal && (
+          <div className="space-y-3 text-sm">
+            <p>Fee: <strong>₹{backFeeModal.feeAmount}</strong> — {backFeeModal.subjectName}</p>
+            <div>
+              <label className="mb-1 block text-xs text-slate-600">Receipt Number</label>
+              <input type="text" value={feeReceipt} onChange={(e) => setFeeReceipt(e.target.value)} className={am.input} placeholder="RCP-BKP-001" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-600">Payment Mode</label>
+              <select value={feeMode} onChange={(e) => setFeeMode(e.target.value)} className={am.select}>
+                <option value="CASH">Cash</option>
+                <option value="UPI">UPI</option>
+                <option value="CARD">Card</option>
+                <option value="ONLINE">Online</option>
+              </select>
+            </div>
+            <button type="button" onClick={() => void handlePayBackFee()} disabled={actionLoading} className={am.btnPrimary}>
+              {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <IndianRupee size={14} />} Record Payment
+            </button>
+          </div>
+        )}
+      </AcademicModal>
+
+      <AcademicModal open={configOpen} onClose={() => setConfigOpen(false)} title="Fees & Grace Period">
+        <div className="space-y-3 text-sm">
+          <p className="text-xs text-slate-500">Applies to new requests for {academicYear}. Mobile app shows the same amounts.</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs text-slate-600">Revaluation Fee (₹)</label>
+              <input type="number" value={cfgRevalFee} onChange={(e) => setCfgRevalFee(e.target.value)} className={am.input} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-600">Recheck Fee (₹)</label>
+              <input type="number" value={cfgRecheckFee} onChange={(e) => setCfgRecheckFee(e.target.value)} className={am.input} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-600">Back Paper Fee (₹)</label>
+              <input type="number" value={cfgBackFee} onChange={(e) => setCfgBackFee(e.target.value)} className={am.input} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-600">Grace Period (days)</label>
+              <input type="number" value={cfgGrace} onChange={(e) => setCfgGrace(e.target.value)} className={am.input} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-600">Passing %</label>
+              <input type="number" value={cfgPass} onChange={(e) => setCfgPass(e.target.value)} className={am.input} />
+            </div>
+          </div>
+          <button type="button" onClick={() => void handleSaveConfig()} disabled={actionLoading} className={am.btnPrimary}>
+            {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <Settings2 size={14} />} Save Configuration
+          </button>
+        </div>
       </AcademicModal>
 
       <AcademicModal open={Boolean(reviewModal)} onClose={() => setReviewModal(null)} title="Complete Revaluation Review">

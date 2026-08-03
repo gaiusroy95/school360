@@ -217,8 +217,9 @@ export function ModuleConfigView({
         syncNote = ` Academic framework ${c.created ? 'created' : 'updated'} in curriculum.`;
       }
       if (sync?.subjects) {
-        const s = sync.subjects as { created?: number; updated?: number; skipped?: number };
+        const s = sync.subjects as { created?: number; updated?: number; skipped?: number; errors?: string[] };
         syncNote = ` ${s.created ?? 0} subject(s) created, ${s.updated ?? 0} updated${s.skipped ? `, ${s.skipped} skipped` : ''}.`;
+        if (s.errors?.length) syncNote += ` ${s.errors.slice(0, 2).join('; ')}`;
       }
       if (sync?.classSections) {
         const cs = sync.classSections as { created?: number; updated?: number; skipped?: number };

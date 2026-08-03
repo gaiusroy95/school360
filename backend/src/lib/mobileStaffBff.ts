@@ -8,6 +8,7 @@ import {
 } from './attendance.js';
 import { getDailySchedule } from './timetable.js';
 import { nextAcademicRecordId, serializeHomework } from './academicManagement.js';
+import { assertTeacherHomeworkAllocation } from './homework.js';
 import { getMobileTeacherTasks, updateMobileTeacherTask } from './teacherRoster.js';
 import {
   approveLeaveApplication,
@@ -180,11 +181,24 @@ export async function createStaffHomework(
     dueDate?: string;
     attachments?: unknown[];
     share?: boolean;
+    academicYear?: string;
   },
 ) {
   const ctx = await resolveStaffContext(user);
   const now = new Date();
+  const academicYear = input.academicYear || '2025-26';
   const recordId = await nextAcademicRecordId(user.institutionId, 'homework');
+
+  const allocationCheck = await assertTeacherHomeworkAllocation(user.institutionId, {
+    academicYear,
+    teacherName: ctx.teacherName,
+    className: input.className,
+    sectionName: input.sectionName,
+    subjectName: input.subjectName,
+  });
+  if (!allocationCheck.ok) {
+    throw new Error(allocationCheck.message);
+  }
 
   const studentCount = await prisma.student.count({
     where: {
@@ -199,7 +213,7 @@ export async function createStaffHomework(
     data: {
       institutionId: user.institutionId,
       recordId,
-      academicYear: '2025-26',
+      academicYear,
       term: 'Term 1',
       className: input.className,
       sectionName: input.sectionName,

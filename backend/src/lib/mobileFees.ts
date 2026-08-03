@@ -193,14 +193,31 @@ async function markFeeDuePaid(
         academicYear: due.academicYear,
         paymentMode: FeePaymentMode.UPI,
         amountPaid: due.amount,
-        feeBreakdown: { [due.feeHead]: due.amount },
-        remarks: `Online payment ${providerPaymentId}`,
+        feeBreakdown: [
+          {
+            key: due.feeHead,
+            label: FEE_HEAD_LABELS[due.feeHead] || due.feeHead,
+            amount: due.amount,
+          },
+        ],
+        remarks: `Online payment ${providerPaymentId} (mobile/app or payment link)`,
         collectedBy: 'Razorpay',
       },
     }),
   ]);
 
   await generateInvoiceFromReceipt(institutionId, receipt.id, { preparedBy: 'Razorpay' });
+
+  try {
+    const { applyExamFeeDuePayment } = await import('./examRevaluation.js');
+    await applyExamFeeDuePayment(institutionId, feeDueId, {
+      receiptNumber: receipt.receiptNumber,
+      paymentMode: 'ONLINE',
+      actor: 'Razorpay',
+    });
+  } catch {
+    // best-effort sync into revaluation / back paper
+  }
 
   return due;
 }

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 
 export const am = {
@@ -57,11 +57,82 @@ export function AcademicLoading({ label = 'Loading…' }: { label?: string }) {
 export function AcademicModal({
   open, onClose, title, children, large, wide,
 }: { open: boolean; onClose: () => void; title: string; children: ReactNode; large?: boolean; wide?: boolean }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const panel = panelRef.current;
+    if (!panel) return;
+
+    const focusableSelector = [
+      'a[href]',
+      'button:not([disabled])',
+      'textarea:not([disabled])',
+      'input:not([disabled])',
+      'select:not([disabled])',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(',');
+
+    const getFocusable = () =>
+      Array.from(panel.querySelectorAll<HTMLElement>(focusableSelector))
+        .filter((el) => !el.hasAttribute('disabled') && el.tabIndex !== -1 && el.offsetParent !== null);
+
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const first = getFocusable()[0];
+    first?.focus();
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+
+      const items = getFocusable();
+      if (items.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const firstEl = items[0];
+      const lastEl = items[items.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+
+      if (e.shiftKey) {
+        if (!active || active === firstEl || !panel.contains(active)) {
+          e.preventDefault();
+          lastEl.focus();
+        }
+      } else if (!active || active === lastEl || !panel.contains(active)) {
+        e.preventDefault();
+        firstEl.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      previouslyFocused?.focus?.();
+    };
+  }, [open, onClose]);
+
   if (!open) return null;
   const widthClass = wide ? 'max-w-3xl' : large ? 'max-w-lg' : 'max-w-md';
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/45 backdrop-blur-[3px]" onClick={onClose}>
-      <div className={`bg-white rounded-2xl border border-slate-200/90 shadow-2xl w-full ${widthClass} p-6 space-y-4 max-h-[85vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/45 backdrop-blur-[3px]"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className={`bg-white rounded-2xl border border-slate-200/90 shadow-2xl w-full ${widthClass} p-6 space-y-4 max-h-[85vh] overflow-y-auto`}
+        onClick={(e) => e.stopPropagation()}
+      >
         <h3 className="text-lg font-bold text-slate-900">{title}</h3>
         {children}
       </div>

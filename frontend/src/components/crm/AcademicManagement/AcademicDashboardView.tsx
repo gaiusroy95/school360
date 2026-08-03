@@ -8,7 +8,7 @@ import {
   Tooltip as RechartsTooltip, CartesianGrid, LineChart, Line, Legend,
 } from 'recharts';
 import {
-  fetchAcademicDashboard, fetchAcademicMeta, seedAcademicData, clearAcademicDemoData, type AcademicDashboard,
+  fetchAcademicDashboard, fetchAcademicMeta, clearAcademicDemoData, type AcademicDashboard,
 } from '../../../lib/academicServices';
 import {
   AcademicLoading, AcademicModal, AcademicPageHeader, AcademicPageShell, AcademicYearTermFilters, am,
@@ -56,12 +56,6 @@ export function AcademicDashboardView() {
 
   useEffect(() => { void load(); }, [load]);
 
-  const handleSeed = async () => {
-    const res = await seedAcademicData(academicYear);
-    setMessage(res.message);
-    void load();
-  };
-
   const handleClearDemo = async () => {
     setClearing(true);
     try {
@@ -95,7 +89,6 @@ export function AcademicDashboardView() {
         subtitle="Plan • Teach • Assess • Improve — share & track academic operations"
         actions={
           <>
-            <button type="button" onClick={() => void handleSeed()} className={am.btnSecondary}>Load Demo Data</button>
             <button type="button" onClick={() => setClearOpen(true)} className={am.btnSecondary}>Clear Demo Data</button>
             <button type="button" className={am.btnPrimary}><PlusCircle size={14} /> Plan New Activity</button>
           </>

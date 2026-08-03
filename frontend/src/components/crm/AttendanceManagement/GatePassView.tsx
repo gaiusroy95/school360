@@ -27,7 +27,6 @@ import {
   fetchGatePassStudents,
   issueGatePass,
   rejectGatePass,
-  seedGatePassDemo,
   sendGatePassOtp,
   submitGatePassToPrincipal,
   verifyGatePassOtp,
@@ -77,7 +76,6 @@ export function GatePassView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [seeding, setSeeding] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [rejectOpen, setRejectOpen] = useState(false);
@@ -434,19 +432,6 @@ export function GatePassView() {
     }
   };
 
-  const handleSeed = async () => {
-    setSeeding(true);
-    try {
-      await seedGatePassDemo(academicYear);
-      await refresh();
-      setSuccessMsg('Demo gate pass requests loaded');
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Seed failed');
-    } finally {
-      setSeeding(false);
-    }
-  };
-
   const handlePrint = () => {
     if (!selected?.isPrintable) return;
     setPrintOpen(true);
@@ -478,15 +463,6 @@ export function GatePassView() {
           >
             <Plus size={16} />
             New Gate Pass Request
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleSeed()}
-            disabled={seeding}
-            className="flex items-center gap-2 px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50"
-          >
-            {seeding ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-            Load Demo Data
           </button>
           <button
             type="button"

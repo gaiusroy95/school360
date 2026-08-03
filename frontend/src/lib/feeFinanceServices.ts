@@ -141,8 +141,14 @@ export type FeeRefundType = 'ADVANCE' | 'DEPOSIT' | 'OVERPAYMENT' | 'OTHER';
 export type FeeFineCategory =
   | 'LATE_FEE' | 'LATE_EXAM_FEE' | 'PROPERTY_DAMAGE' | 'LAB_EQUIPMENT'
   | 'LIBRARY_BOOK' | 'COMPUTER_LAB' | 'OTHER';
-export type FeeFineLevyStatus = 'PENDING' | 'PAID' | 'WAIVED' | 'CANCELLED';
-export type TransportVendorStatus = 'ACTIVE' | 'INACTIVE' | 'EMPANELLED';
+export type FeeFineLevyStatus = 'PENDING_APPROVAL' | 'PENDING' | 'PAID' | 'WAIVED' | 'CANCELLED';
+export type TransportVendorStatus =
+  | 'ACTIVE'
+  | 'INACTIVE'
+  | 'EMPANELLED'
+  | 'PENDING_APPROVAL'
+  | 'REJECTED'
+  | 'RED_CATEGORY';
 
 export type FeeMaster = {
   id: string;
@@ -247,6 +253,10 @@ export type FeeRefund = {
   status: FeeApprovalStatus;
   originalReceipt: string;
   paymentMode: string;
+  depositBreakdown?: Array<{ key: string; label: string; amount: number }>;
+  pendingApproverRole?: string;
+  pendingApproverName?: string;
+  pendingApproverEmail?: string;
   requestedBy: string;
   approvedBy: string;
   approvedAt: string | null;
@@ -281,11 +291,19 @@ export type FeeFineLevy = {
   studentName: string;
   admissionNumber: string;
   className: string;
+  sectionName?: string;
   amount: number;
   reason: string;
   status: FeeFineLevyStatus;
   dueDate: string | null;
   collectedAt: string | null;
+  pendingApproverRole?: string;
+  pendingApproverName?: string;
+  pendingApproverEmail?: string;
+  requestedBy?: string;
+  approvedBy?: string;
+  approvedAt?: string | null;
+  rejectionReason?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -321,13 +339,32 @@ export type FeeScholarshipAward = {
   studentName: string;
   admissionNumber: string;
   className: string;
+  sectionName?: string;
   amount: number;
+  reason?: string;
+  totalDueFees?: number;
+  entranceTestResult?: string;
+  lastClassPercent?: number;
+  lastClassTotal?: number;
+  lastClassObtain?: number;
   status: FeeApprovalStatus;
+  pendingApproverRole?: string;
+  pendingApproverName?: string;
+  pendingApproverEmail?: string;
   approvedBy: string;
   approvedAt: string | null;
   remarks: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type TransportVendorDocument = {
+  id: string;
+  name: string;
+  type: string;
+  mimeType: string;
+  fileData: string;
+  uploadedAt: string;
 };
 
 export type TransportVendor = {
@@ -341,6 +378,40 @@ export type TransportVendor = {
   routesCovered: string;
   vehicleCount: number;
   bankDetails: Record<string, unknown>;
+  ownerPan: string;
+  ownerAadhaar: string;
+  driver1Name: string;
+  driver1Mobile: string;
+  driver1DlNumber: string;
+  driver1DlExpiry: string | null;
+  driver1PoliceVerification: string;
+  driver2Name: string;
+  driver2Mobile: string;
+  driver2DlNumber: string;
+  driver2DlExpiry: string | null;
+  driver2PoliceVerification: string;
+  vehicleRegNo: string;
+  vehicleChassisNo: string;
+  vehicleType: string;
+  pollutionCertDate: string | null;
+  pollutionExpiryDate: string | null;
+  insurancePolicyNo: string;
+  insuranceExpiryDate: string | null;
+  trackingGpsDeviceId: string;
+  trackingPhoneAccess: string;
+  documents: TransportVendorDocument[];
+  complianceCategory: string;
+  pollutionExpired: boolean;
+  insuranceExpired: boolean;
+  pollutionDaysLeft: number | null;
+  insuranceDaysLeft: number | null;
+  pendingApproverRole: string;
+  pendingApproverName: string;
+  pendingApproverEmail: string;
+  requestedBy: string;
+  approvedBy: string;
+  approvedAt: string | null;
+  rejectionReason: string;
   status: TransportVendorStatus;
   remarks: string;
   createdAt: string;
@@ -356,12 +427,55 @@ export type TransportFeeCollection = {
   studentName: string;
   admissionNumber: string;
   className: string;
+  sectionName: string;
   routeName: string;
   amount: number;
+  totalDueFees: number;
   paymentMode: string;
   collectedBy: string;
   collectedAt: string;
   remarks: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TransportRouteOption = {
+  id: string;
+  routeCode: string;
+  routeName: string;
+  academicYear: string;
+};
+
+export type StudentTransportCollectContext = {
+  academicYear: string;
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  className: string;
+  sectionName: string;
+  totalDueFees: number;
+  dueFromLevies: number;
+  dueFromInvoices: number;
+  pendingDueCount: number;
+  openInvoiceCount: number;
+  suggestedRouteId: string;
+  suggestedRouteName: string;
+  suggestedMonthlyAmount: number;
+};
+
+export type TransportVendorComplianceAlert = {
+  id: string;
+  vendorId: string;
+  vendorCode: string;
+  vendorName: string;
+  vendorStatus: string;
+  alertType: string;
+  title: string;
+  message: string;
+  recipientRole: string;
+  recipientName: string;
+  recipientEmail: string;
+  status: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -430,12 +544,72 @@ export async function listFeeInvoices(params?: {
   return data.records;
 }
 
+export type InvoiceCreateMeta = {
+  defaultAcademicYear: string;
+  academicYears: string[];
+  classes: string[];
+  sectionsByClass: Record<string, string[]>;
+  periods: {
+    periodTypes: { id: string; label: string }[];
+    months: { id: string; label: string }[];
+    quarters: { id: string; label: string }[];
+    halfYears: { id: string; label: string }[];
+    yearOption: { id: string; label: string };
+    defaults: Record<string, string>;
+  };
+  student: {
+    id: string;
+    name: string;
+    admissionNumber: string;
+    className: string;
+    sectionName: string;
+    rollNumber: string;
+    parentName: string;
+    parentMobile: string;
+    academicYear: string;
+  } | null;
+  feeHeads: {
+    key: string;
+    label: string;
+    amount: number;
+    selectedByDefault: boolean;
+    fromStructure: boolean;
+  }[];
+  scheduleSource: string | null;
+  scheduleFrequency: string | null;
+};
+
+export async function fetchInvoiceCreateMeta(params?: {
+  academicYear?: string;
+  studentId?: string;
+  className?: string;
+  sectionName?: string;
+}) {
+  return api<InvoiceCreateMeta>(`/api/fee-finance/invoices/create-meta${qs(params)}`);
+}
+
 export async function getFeeInvoice(id: string) {
   const data = await api<{ record: FeeInvoice }>(`/api/fee-finance/invoices/${id}`);
   return data.record;
 }
 
-export async function createFeeInvoice(body: Record<string, unknown>) {
+export async function createFeeInvoice(body: {
+  studentId?: string;
+  studentName?: string;
+  academicYear?: string;
+  className?: string;
+  sectionName?: string;
+  periodType?: string;
+  periodValue?: string;
+  feePeriod?: string;
+  selectedHeads?: { key: string; amount?: number; label?: string }[];
+  lineItems?: { key: string; label?: string; amount: number }[];
+  concessionAmount?: number;
+  lateFee?: number;
+  previousDues?: number;
+  remarks?: string;
+  dueDate?: string;
+}) {
   const data = await api<{ record: FeeInvoice }>('/api/fee-finance/invoices', {
     method: 'POST',
     body: JSON.stringify(body),
@@ -449,6 +623,13 @@ export async function generateInvoicesFromReceipts(body?: { academicYear?: strin
     body: JSON.stringify(body ?? {}),
   });
   return data.records;
+}
+
+export async function syncInvoicesFromPayments(body?: { academicYear?: string }) {
+  return api<{ created: number; invoices: FeeInvoice[]; message: string }>(
+    '/api/fee-finance/invoices/sync-payments',
+    { method: 'POST', body: JSON.stringify(body ?? {}) },
+  );
 }
 
 export async function updateFeeInvoiceStatus(
@@ -487,6 +668,28 @@ export async function createFeeDiscount(body: Record<string, unknown>) {
   return data.record;
 }
 
+export type StudentSettlementDues = {
+  academicYear: string;
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  className: string;
+  sectionName: string;
+  totalDueFees: number;
+  dueFromLevies: number;
+  dueFromInvoices: number;
+  pendingDueCount: number;
+  openInvoiceCount: number;
+};
+
+export async function fetchStudentSettlementDues(params: {
+  academicYear?: string;
+  studentId?: string;
+  admissionNumber?: string;
+}) {
+  return api<StudentSettlementDues>(`/api/fee-finance/discounts/student-dues${qs(params)}`);
+}
+
 export async function submitFeeDiscount(id: string) {
   const data = await api<{ record: FeeDiscount }>(`/api/fee-finance/discounts/${id}/submit`, { method: 'POST' });
   return data.record;
@@ -510,6 +713,27 @@ export async function rejectFeeDiscount(id: string, reason: string) {
 export async function listFeeRefunds(params?: { academicYear?: string; status?: FeeApprovalStatus }) {
   const data = await api<{ records: FeeRefund[] }>(`/api/fee-finance/refunds${qs(params)}`);
   return data.records;
+}
+
+export type StudentDepositedFees = {
+  academicYear: string;
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  className: string;
+  sectionName: string;
+  heads: Array<{ key: string; label: string; amount: number }>;
+  totalDeposited: number;
+  receiptCount: number;
+  latestReceiptNumber: string;
+};
+
+export async function fetchStudentDepositedFees(params: {
+  academicYear?: string;
+  studentId?: string;
+  admissionNumber?: string;
+}) {
+  return api<StudentDepositedFees>(`/api/fee-finance/refunds/student-deposits${qs(params)}`);
 }
 
 export async function createFeeRefund(body: Record<string, unknown>) {
@@ -581,6 +805,21 @@ export async function levyFeeFine(body: Record<string, unknown>) {
   return data.record;
 }
 
+export async function approveFeeFineLevy(id: string) {
+  const data = await api<{ record: FeeFineLevy }>(`/api/fee-finance/fines/levies/${id}/approve`, {
+    method: 'POST',
+  });
+  return data.record;
+}
+
+export async function rejectFeeFineLevy(id: string, reason: string) {
+  const data = await api<{ record: FeeFineLevy }>(`/api/fee-finance/fines/levies/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+  return data.record;
+}
+
 export async function markFinePaid(id: string) {
   const data = await api<{ record: FeeFineLevy }>(`/api/fee-finance/fines/levies/${id}/pay`, { method: 'POST' });
   return data.record;
@@ -629,6 +868,35 @@ export async function listScholarshipAwards(params?: { academicYear?: string; sc
   return data.records;
 }
 
+export type StudentScholarshipContext = {
+  academicYear: string;
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  className: string;
+  sectionName: string;
+  totalDueFees: number;
+  dueFromLevies: number;
+  dueFromInvoices: number;
+  pendingDueCount: number;
+  openInvoiceCount: number;
+  entranceTestResult: string;
+  entranceTestScore: number | null;
+  entranceTestMax: number | null;
+  lastClassPercent: number;
+  lastClassTotal: number;
+  lastClassObtain: number;
+  lastClassSource: string;
+};
+
+export async function fetchStudentScholarshipContext(params: {
+  academicYear?: string;
+  studentId?: string;
+  admissionNumber?: string;
+}) {
+  return api<StudentScholarshipContext>(`/api/fee-finance/scholarships/student-context${qs(params)}`);
+}
+
 export async function awardScholarship(body: Record<string, unknown>) {
   const data = await api<{ record: FeeScholarshipAward }>('/api/fee-finance/scholarships/awards', {
     method: 'POST',
@@ -664,6 +932,11 @@ export async function listTransportVendors() {
   return data.records;
 }
 
+export async function getTransportVendor(id: string) {
+  const data = await api<{ record: TransportVendor }>(`/api/fee-finance/transport/vendors/${id}`);
+  return data.record;
+}
+
 export async function createTransportVendor(body: Record<string, unknown>) {
   const data = await api<{ record: TransportVendor }>('/api/fee-finance/transport/vendors', {
     method: 'POST',
@@ -678,6 +951,46 @@ export async function updateTransportVendor(id: string, body: Record<string, unk
     body: JSON.stringify(body),
   });
   return data.record;
+}
+
+export async function approveTransportVendor(id: string) {
+  const data = await api<{ record: TransportVendor }>(
+    `/api/fee-finance/transport/vendors/${id}/approve`,
+    { method: 'POST' },
+  );
+  return data.record;
+}
+
+export async function rejectTransportVendor(id: string, reason: string) {
+  const data = await api<{ record: TransportVendor }>(
+    `/api/fee-finance/transport/vendors/${id}/reject`,
+    { method: 'POST', body: JSON.stringify({ reason }) },
+  );
+  return data.record;
+}
+
+export async function listTransportVendorComplianceAlerts(params?: { status?: string }) {
+  const data = await api<{ records: TransportVendorComplianceAlert[] }>(
+    `/api/fee-finance/transport/vendors/compliance-alerts${qs(params)}`,
+  );
+  return data.records;
+}
+
+export async function listTransportRouteOptions(params?: { academicYear?: string }) {
+  const data = await api<{ records: TransportRouteOption[] }>(
+    `/api/fee-finance/transport/routes${qs(params)}`,
+  );
+  return data.records;
+}
+
+export async function fetchStudentTransportCollectContext(params: {
+  academicYear?: string;
+  studentId?: string;
+  admissionNumber?: string;
+}) {
+  return api<StudentTransportCollectContext>(
+    `/api/fee-finance/transport/student-context${qs(params)}`,
+  );
 }
 
 export async function listTransportFeeCollections(params?: { academicYear?: string }) {
@@ -842,6 +1155,10 @@ export type FeeOtherChargeRequest = {
   admissionNumber: string;
   className: string;
   sectionName: string;
+  totalDueFees?: number;
+  pendingApproverRole?: string;
+  pendingApproverName?: string;
+  pendingApproverEmail?: string;
   status: FeeApprovalStatus;
   requestedBy: string;
   approvedBy: string;
@@ -850,6 +1167,40 @@ export type FeeOtherChargeRequest = {
   remarks: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type AdmissionDiscountCandidate = {
+  key: string;
+  source: 'APPLICATION';
+  applicationId: string;
+  applicationDbId: string;
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  className: string;
+  sectionName: string;
+  academicYear: string;
+  status: string;
+  submittedAt: string;
+};
+
+export type StudentAllSessionDues = {
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  className: string;
+  sectionName: string;
+  currentAcademicYear: string;
+  totalDueFees: number;
+  sessionCount: number;
+  sessions: Array<{
+    academicYear: string;
+    dueFromLevies: number;
+    dueFromInvoices: number;
+    totalDueFees: number;
+  }>;
+  pendingDueCount: number;
+  openInvoiceCount: number;
 };
 
 export type OtherChargesSummary = {
@@ -862,6 +1213,22 @@ export type OtherChargesSummary = {
 
 export async function getOtherChargesSummary(academicYear?: string) {
   return api<OtherChargesSummary>(`/api/fee-finance/other-charges/summary${qs({ academicYear })}`);
+}
+
+export async function listAdmissionDiscountCandidates(params?: { academicYear?: string; q?: string }) {
+  const data = await api<{ records: AdmissionDiscountCandidate[] }>(
+    `/api/fee-finance/other-charges/admission-candidates${qs(params)}`,
+  );
+  return data.records;
+}
+
+export async function fetchStudentAllSessionDues(params: {
+  studentId?: string;
+  admissionNumber?: string;
+}) {
+  return api<StudentAllSessionDues>(
+    `/api/fee-finance/other-charges/student-all-session-dues${qs(params)}`,
+  );
 }
 
 export async function listOtherChargeTypes(params?: { ensure?: string }) {
@@ -1439,7 +1806,6 @@ export async function importFeeStructuresBatch(rows: Record<string, unknown>[], 
 
 export type FeeCollectionEntryStatus =
   | 'PAID'
-  | 'COMPLETED'
   | 'ACTIVE'
   | 'PENDING'
   | 'DUE'
@@ -1535,6 +1901,7 @@ export type OnlinePaymentsReport = {
   year: number;
   month: number;
   transactionCount: number;
+  totalCollected: number;
   matrix: OnlinePaymentMatrixRow[];
   columnTotals: {
     online: number;
@@ -1545,6 +1912,7 @@ export type OnlinePaymentsReport = {
   };
   fetchedAt: string;
   channelFilter: OnlinePaymentChannel | null;
+  lastFetchedChannel?: OnlinePaymentChannel | null;
 };
 
 export async function getOnlinePaymentsReport(params?: {
@@ -1610,6 +1978,22 @@ export type ReconciliationReport = {
   reconciliationSummary: Array<{ label: string; amount: number; highlight?: boolean }>;
   systemVerification: Array<{ label: string; amount: number; highlight?: boolean }>;
   totalAvailableFunds: number;
+  syncSources?: {
+    feeReceipts: number;
+    transportCollections: number;
+    hostelCollections: number;
+    invoicePayments: number;
+    paidFines: number;
+    onlinePaymentOrders?: number;
+    expensePayments?: number;
+    discountsApproved?: number;
+    scholarshipsApproved?: number;
+    cashBankDeposits: number;
+    chequeBankDeposits: number;
+    systemCashDeposited: number;
+    systemChequeDeposited: number;
+    systemOnlineGateway: number;
+  };
   totals: {
     cashCollection: number;
     onlineCollection: number;
@@ -1726,6 +2110,9 @@ export async function getReconciliationPdfPayload(id: string) {
     institutionName: string;
     reconciliation: PaymentReconciliationRecord;
     generatedAt: string;
+    printable: boolean;
+    approved: boolean;
+    approvedLabel: string;
   }>(`/api/fee-finance/reconciliation/${id}/pdf`);
 }
 
@@ -2252,6 +2639,11 @@ export type AccountsLedger = {
   financialYear: string;
   currency: string;
   asOf: string;
+  posting?: {
+    source: 'payment_reconciliation';
+    closedDays: number;
+    message: string;
+  };
   ratios: {
     operatingMargin: number;
     currentRatio: number;

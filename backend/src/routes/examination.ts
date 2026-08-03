@@ -8,6 +8,15 @@ import {
   getExamScheduleMeta,
   seedExamScheduleCalendarDemo,
 } from '../lib/examSchedule.js';
+import {
+  captureDigitalResultsToMarks,
+  createScheduledExam,
+  getExamByLinkToken,
+  getExamScheduleCreateMeta,
+  listScheduledExamSessions,
+  publishDueDigitalExams,
+  syncExamScheduleToAcademicCalendar,
+} from '../lib/examScheduleCreate.js';
 import { getExamDashboard, getExamDashboardMeta, seedExamDashboardDemo } from '../lib/examDashboard.js';
 import { ExamCalendarEventType, ExamPaperPurpose, ExamPaperSource, ExamPaperStatus, ExamSyllabusCategory, ExamTypeFilter } from '@prisma/client';
 import { z } from 'zod';
@@ -15,7 +24,9 @@ import {
   createExamSubjectSyllabus,
   getExamSyllabusMeta,
   getExamSyllabusOverview,
+  getExamSyllabusSystemSource,
   seedExamSyllabusDemo,
+  syncExamSyllabusFromSystem,
   updateExamSubjectSyllabus,
 } from '../lib/examSyllabus.js';
 import {
@@ -36,13 +47,20 @@ import {
   updateQuestionPaper,
 } from '../lib/examQuestionBank.js';
 import {
+  getPaperExamByToken,
   getPaperManagementDetail,
   getPaperManagementMeta,
   getMobilePublishedPapers,
+  getPaperPrintPayload,
+  listPaperLinkCredentials,
   listPapersForManagement,
+  loginPaperExamLink,
+  publishPaperAsLink,
   publishPaperToMobile,
   seedPaperManagementDemo,
+  submitPaperExamLink,
   unpublishPaperFromMobile,
+  unpublishPaperLink,
 } from '../lib/examPaperManagement.js';
 import {
   completeExam,
@@ -121,6 +139,8 @@ import {
 import {
   completeRevaluationReview,
   createBackPaperExam,
+  createBackPaperPaymentOrder,
+  createRevaluationPaymentOrder,
   createRevaluationRequest,
   enterBackPaperMarks,
   getEligibleStudentsForRevaluation,
@@ -130,6 +150,7 @@ import {
   listRevaluationRequests,
   publishBackPaperResult,
   publishRevaluationResult,
+  recordBackPaperFeePayment,
   recordRevaluationFeePayment,
   seedRevaluationDemo,
   startRevaluationReview,
@@ -152,6 +173,7 @@ import {
   issueCertificates,
   listCertificates,
   recordCertificateFromMobile,
+  recordCertificateFromAdmin,
   seedCertificatesDemo,
 } from '../lib/examCertificates.js';
 import {
@@ -162,6 +184,11 @@ import {
 import { getEvaluationEngine, syncEvaluationEngineFromSetup } from '../lib/examEvaluationEngine.js';
 import { ExamMarksColumnKey } from '@prisma/client';
 import { PublicationVisibility } from '@prisma/client';
+
+function formatZodError(err: z.ZodError) {
+  const parts = err.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`);
+  return parts.slice(0, 6).join('; ') || 'Invalid request';
+}
 
 const fileSchema = z.object({
   fileName: z.string().min(1),
@@ -179,6 +206,81 @@ const questionInputSchema = z.object({
 });
 
 export const examinationRouter = Router();
+
+/** Public digital exam taking — gated by exam link token (no CRM session required). */
+examinationRouter.get(
+  '/schedule/exam-link/:token',
+  asyncHandler(async (req, res) => {
+    return res.json(await getExamByLinkToken(req.params.token));
+  }),
+);
+
+examinationRouter.post(
+  '/schedule/exam-link/:token/start',
+  asyncHandler(async (req, res) => {
+    const info = await getExamByLinkToken(req.params.token);
+    if (!info.live || !('paperId' in info) || !info.paperId) {
+      return res.status(403).json({ error: info.message || 'Exam is not live yet' });
+    }
+    const institutionId = await getDefaultInstitutionId();
+    const body = req.body ?? {};
+    const result = await startDigitalExamAttempt(institutionId, info.paperId, {
+      candidateName: typeof body.candidateName === 'string' ? body.candidateName : 'Candidate',
+      candidateRef: typeof body.candidateRef === 'string' ? body.candidateRef : undefined,
+      studentId: typeof body.studentId === 'string' ? body.studentId : undefined,
+    });
+    return res.status(201).json(result);
+  }),
+);
+
+examinationRouter.post(
+  '/schedule/exam-link/:token/submit',
+  asyncHandler(async (req, res) => {
+    await getExamByLinkToken(req.params.token); // validates token exists
+    const institutionId = await getDefaultInstitutionId();
+    const body = req.body ?? {};
+    if (!body.attemptId || typeof body.attemptId !== 'string') {
+      return res.status(400).json({ error: 'attemptId is required' });
+    }
+    const answers = body.answers && typeof body.answers === 'object' ? body.answers as Record<string, string> : {};
+    return res.json(await submitDigitalExamAttempt(institutionId, body.attemptId, answers));
+  }),
+);
+
+/** Public paper-management digital exam (userid + password per student). */
+examinationRouter.get(
+  '/paper-management/exam-link/:token',
+  asyncHandler(async (req, res) => {
+    return res.json(await getPaperExamByToken(req.params.token));
+  }),
+);
+
+examinationRouter.post(
+  '/paper-management/exam-link/:token/login',
+  asyncHandler(async (req, res) => {
+    const body = req.body ?? {};
+    if (!body.userId || !body.password) {
+      return res.status(400).json({ error: 'userId and password are required' });
+    }
+    return res.json(await loginPaperExamLink(req.params.token, {
+      userId: String(body.userId),
+      password: String(body.password),
+    }));
+  }),
+);
+
+examinationRouter.post(
+  '/paper-management/exam-link/:token/submit',
+  asyncHandler(async (req, res) => {
+    const body = req.body ?? {};
+    if (!body.attemptId || typeof body.attemptId !== 'string') {
+      return res.status(400).json({ error: 'attemptId is required' });
+    }
+    const answers = body.answers && typeof body.answers === 'object' ? body.answers as Record<string, string> : {};
+    return res.json(await submitPaperExamLink(req.params.token, { attemptId: body.attemptId, answers }));
+  }),
+);
+
 examinationRouter.use(requireAuth);
 
 examinationRouter.get(
@@ -284,6 +386,100 @@ examinationRouter.post(
 );
 
 examinationRouter.get(
+  '/schedule/create-meta',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const academicYear = typeof req.query.academicYear === 'string' ? req.query.academicYear : undefined;
+    return res.json(await getExamScheduleCreateMeta(institutionId, academicYear));
+  }),
+);
+
+examinationRouter.get(
+  '/schedule/sessions',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    return res.json(
+      await listScheduledExamSessions(institutionId, {
+        academicYear: typeof req.query.academicYear === 'string' ? req.query.academicYear : undefined,
+        className: typeof req.query.className === 'string' ? req.query.className : undefined,
+        sectionName: typeof req.query.sectionName === 'string' ? req.query.sectionName : undefined,
+      }),
+    );
+  }),
+);
+
+examinationRouter.post(
+  '/schedule/create-exam',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const body = req.body ?? {};
+    if (!body.academicYear || !body.seriesName || !body.className || !body.sectionName || !body.subjectName || !body.examDate) {
+      return res.status(400).json({ error: 'academicYear, seriesName, className, sectionName, subjectName, and examDate are required' });
+    }
+    const examType = Object.values(ExamTypeFilter).includes(body.examType)
+      ? (body.examType as ExamTypeFilter)
+      : ExamTypeFilter.UNIT_TEST;
+    const result = await createScheduledExam(institutionId, {
+      academicYear: body.academicYear,
+      examMode: body.examMode === 'DIGITAL' ? 'DIGITAL' : 'MANUAL',
+      examType,
+      seriesName: body.seriesName,
+      className: body.className,
+      sectionName: body.sectionName,
+      subjectName: body.subjectName,
+      examDate: body.examDate,
+      startTime: body.startTime,
+      endTime: body.endTime,
+      scheduleId: typeof body.scheduleId === 'string' ? body.scheduleId : undefined,
+      maxMarks: typeof body.maxMarks === 'number' ? body.maxMarks : undefined,
+      notes: typeof body.notes === 'string' ? body.notes : undefined,
+      syncToAcademicCalendar: body.syncToAcademicCalendar !== false,
+      publishAt: typeof body.publishAt === 'string' ? body.publishAt : undefined,
+      paperSource: body.paperSource,
+      questionPaperId: typeof body.questionPaperId === 'string' ? body.questionPaperId : undefined,
+      uploadedPaperMeta: Array.isArray(body.uploadedPaperMeta) ? body.uploadedPaperMeta : undefined,
+      newPaperQuestions: Array.isArray(body.newPaperQuestions) ? body.newPaperQuestions : undefined,
+      newPaperTitle: typeof body.newPaperTitle === 'string' ? body.newPaperTitle : undefined,
+      teacherName: typeof body.teacherName === 'string' ? body.teacherName : undefined,
+      createMarksAssignment: body.createMarksAssignment !== false,
+    });
+    return res.status(201).json(result);
+  }),
+);
+
+examinationRouter.post(
+  '/schedule/sync-calendar',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const body = req.body ?? {};
+    const academicYear = typeof body.academicYear === 'string' ? body.academicYear : '2025-26';
+    return res.json(
+      await syncExamScheduleToAcademicCalendar(institutionId, {
+        academicYear,
+        year: typeof body.year === 'number' ? body.year : undefined,
+        month: typeof body.month === 'number' ? body.month : undefined,
+      }),
+    );
+  }),
+);
+
+examinationRouter.post(
+  '/schedule/sessions/:id/capture-results',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    return res.json(await captureDigitalResultsToMarks(institutionId, req.params.id));
+  }),
+);
+
+examinationRouter.post(
+  '/schedule/publish-due',
+  asyncHandler(async (_req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    return res.json(await publishDueDigitalExams(institutionId));
+  }),
+);
+
+examinationRouter.get(
   '/syllabus/meta',
   asyncHandler(async (_req, res) => {
     const institutionId = await getDefaultInstitutionId();
@@ -318,6 +514,24 @@ examinationRouter.post(
     const institutionId = await getDefaultInstitutionId();
     const academicYear = typeof req.body?.academicYear === 'string' ? req.body.academicYear : '2025-26';
     return res.json(await seedExamSyllabusDemo(institutionId, academicYear));
+  }),
+);
+
+examinationRouter.get(
+  '/syllabus/system-source',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const academicYear = typeof req.query.academicYear === 'string' ? req.query.academicYear : '2025-26';
+    return res.json(await getExamSyllabusSystemSource(institutionId, academicYear));
+  }),
+);
+
+examinationRouter.post(
+  '/syllabus/sync-from-system',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const academicYear = typeof req.body?.academicYear === 'string' ? req.body.academicYear : '2025-26';
+    return res.json(await syncExamSyllabusFromSystem(institutionId, academicYear));
   }),
 );
 
@@ -425,7 +639,7 @@ examinationRouter.post(
       difficulty: z.enum(DIFFICULTIES),
     });
     const parsed = schema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    if (!parsed.success) return res.status(400).json({ error: formatZodError(parsed.error) });
     return res.json(await generatePaperFromPdf(parsed.data.files, parsed.data));
   }),
 );
@@ -440,7 +654,7 @@ examinationRouter.post(
       difficulty: z.enum(DIFFICULTIES).optional().default('Medium'),
     });
     const parsed = schema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    if (!parsed.success) return res.status(400).json({ error: formatZodError(parsed.error) });
     return res.json(await scanPaperWithOcr(parsed.data.files, parsed.data));
   }),
 );
@@ -461,7 +675,7 @@ examinationRouter.post(
       title: z.string().optional(),
     });
     const parsed = schema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    if (!parsed.success) return res.status(400).json({ error: formatZodError(parsed.error) });
     return res.json(await generatePaperFromSyllabus(institutionId, parsed.data));
   }),
 );
@@ -488,7 +702,7 @@ examinationRouter.post(
       questions: z.array(questionInputSchema).min(1),
     });
     const parsed = schema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    if (!parsed.success) return res.status(400).json({ error: formatZodError(parsed.error) });
     const paper = await createQuestionPaper(institutionId, {
       ...parsed.data,
       source: parsed.data.source || ExamPaperSource.MANUAL,
@@ -611,9 +825,9 @@ examinationRouter.post(
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
     const body = req.body ?? {};
-    const visibleOn = body.visibleOn === 'APP'
-      ? PublicationVisibility.APP
-      : PublicationVisibility.BOTH;
+    const visibleOn = body.visibleOn === 'BOTH'
+      ? PublicationVisibility.BOTH
+      : PublicationVisibility.APP;
     return res.json(
       await publishPaperToMobile(institutionId, req.params.id, {
         visibleOn,
@@ -628,6 +842,42 @@ examinationRouter.post(
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
     return res.json(await unpublishPaperFromMobile(institutionId, req.params.id));
+  }),
+);
+
+examinationRouter.get(
+  '/paper-management/papers/:id/print',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    return res.json(await getPaperPrintPayload(institutionId, req.params.id));
+  }),
+);
+
+examinationRouter.post(
+  '/paper-management/papers/:id/publish-link',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    return res.status(201).json(
+      await publishPaperAsLink(institutionId, req.params.id, {
+        publishedBy: req.user?.email || 'Admin',
+      }),
+    );
+  }),
+);
+
+examinationRouter.get(
+  '/paper-management/papers/:id/credentials',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    return res.json(await listPaperLinkCredentials(institutionId, req.params.id));
+  }),
+);
+
+examinationRouter.post(
+  '/paper-management/papers/:id/unpublish-link',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    return res.json(await unpublishPaperLink(institutionId, req.params.id));
   }),
 );
 
@@ -1410,6 +1660,26 @@ examinationRouter.post(
 );
 
 examinationRouter.post(
+  '/revaluation/requests/:id/create-payment',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    return res.json(await createRevaluationPaymentOrder(institutionId, req.params.id, {
+      accountId: req.user?.id || '',
+    }));
+  }),
+);
+
+examinationRouter.post(
+  '/revaluation/back-papers/:id/create-payment',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    return res.json(await createBackPaperPaymentOrder(institutionId, req.params.id, {
+      accountId: req.user?.id || '',
+    }));
+  }),
+);
+
+examinationRouter.post(
   '/revaluation/requests/:id/start-review',
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
@@ -1453,6 +1723,7 @@ examinationRouter.put(
     return res.json(await updateRevaluationConfig(institutionId, academicYear, {
       revaluationFee: req.body?.revaluationFee !== undefined ? Number(req.body.revaluationFee) : undefined,
       recheckFee: req.body?.recheckFee !== undefined ? Number(req.body.recheckFee) : undefined,
+      backPaperFee: req.body?.backPaperFee !== undefined ? Number(req.body.backPaperFee) : undefined,
       gracePeriodDays: req.body?.gracePeriodDays !== undefined ? Number(req.body.gracePeriodDays) : undefined,
       passingPercent: req.body?.passingPercent !== undefined ? Number(req.body.passingPercent) : undefined,
     }));
@@ -1497,6 +1768,19 @@ examinationRouter.post(
       institutionId,
       { studentResultId, subjectName, examDate: req.body?.examDate, remarks: req.body?.remarks },
       req.user?.email || 'Admin',
+    ));
+  }),
+);
+
+examinationRouter.post(
+  '/revaluation/back-papers/:id/pay-fee',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const feeReceiptNumber = typeof req.body?.feeReceiptNumber === 'string' ? req.body.feeReceiptNumber : '';
+    const feePaymentMode = typeof req.body?.feePaymentMode === 'string' ? req.body.feePaymentMode : 'CASH';
+    if (!feeReceiptNumber.trim()) return res.status(400).json({ error: 'feeReceiptNumber is required' });
+    return res.json(await recordBackPaperFeePayment(
+      institutionId, req.params.id, { feeReceiptNumber, feePaymentMode }, req.user?.email || 'Admin',
     ));
   }),
 );
@@ -1655,6 +1939,45 @@ examinationRouter.post(
     const institutionId = await getDefaultInstitutionId();
     const certificateIds = Array.isArray(req.body?.certificateIds) ? req.body.certificateIds as string[] : [];
     return res.json(await issueCertificates(institutionId, certificateIds, req.user?.email || 'Admin'));
+  }),
+);
+
+examinationRouter.post(
+  '/certificates/record',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const body = req.body ?? {};
+    const studentId = typeof body.studentId === 'string' ? body.studentId : '';
+    const category = typeof body.category === 'string' ? body.category : '';
+    const activityTitle = typeof body.activityTitle === 'string' ? body.activityTitle : '';
+    const performanceScore = Number(body.performanceScore);
+    if (!studentId || !category || !activityTitle) {
+      return res.status(400).json({ error: 'studentId, category, and activityTitle are required' });
+    }
+    if (Number.isNaN(performanceScore)) {
+      return res.status(400).json({ error: 'performanceScore is required' });
+    }
+    return res.status(201).json(await recordCertificateFromAdmin(
+      institutionId,
+      {
+        studentId,
+        category,
+        activityTitle,
+        activityId: typeof body.activityId === 'string' ? body.activityId : undefined,
+        subCategory: typeof body.subCategory === 'string' ? body.subCategory : undefined,
+        academicYear: typeof body.academicYear === 'string' ? body.academicYear : undefined,
+        term: typeof body.term === 'string' ? body.term : undefined,
+        performanceScore,
+        maxScore: body.maxScore !== undefined ? Number(body.maxScore) : undefined,
+        performanceGrade: typeof body.performanceGrade === 'string' ? body.performanceGrade : undefined,
+        performanceBand: typeof body.performanceBand === 'string' ? body.performanceBand : undefined,
+        remarks: typeof body.remarks === 'string' ? body.remarks : undefined,
+        recordedBy: typeof body.recordedBy === 'string' ? body.recordedBy : undefined,
+        generate: body.generate !== false,
+        issue: body.issue === true,
+      },
+      req.user?.email || 'Admin',
+    ));
   }),
 );
 

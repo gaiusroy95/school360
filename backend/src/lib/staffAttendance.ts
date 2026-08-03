@@ -1,4 +1,4 @@
-import { StaffAttendanceStatus } from '@prisma/client';
+import { FeeMasterStatus, PayrollEmploymentType, StaffAttendanceStatus } from '@prisma/client';
 import { prisma } from './prisma.js';
 import { getInstitutionFilterMeta } from './students.js';
 
@@ -232,6 +232,104 @@ export async function syncStaffProfilesFromInstitution(institutionId: string, ac
     created += 1;
   }
   return { synced: map.size, created };
+}
+
+/** Refresh staff profiles and summarize mobile-app attendance for the selected period. */
+export async function pullStaffAttendanceFromMobile(
+  institutionId: string,
+  opts: { academicYear?: string; year?: number; month?: number } = {},
+) {
+  const academicYear = opts.academicYear || '2025-26';
+  const now = new Date();
+  const year = opts.year || now.getFullYear();
+  const month = opts.month || now.getMonth() + 1;
+
+  const sync = await syncStaffProfilesFromInstitution(institutionId, academicYear);
+
+  // Also ensure HR non-teaching employees exist as staff attendance profiles
+  const hrStaff = await prisma.payrollEmployee.findMany({
+    where: {
+      institutionId,
+      status: FeeMasterStatus.ACTIVE,
+      OR: [
+        { employmentType: PayrollEmploymentType.NON_TEACHING },
+        { designation: { contains: 'Admin', mode: 'insensitive' } },
+        { designation: { contains: 'Clerk', mode: 'insensitive' } },
+        { designation: { contains: 'Accountant', mode: 'insensitive' } },
+        { designation: { contains: 'Librarian', mode: 'insensitive' } },
+        { designation: { contains: 'Peon', mode: 'insensitive' } },
+        { designation: { contains: 'Driver', mode: 'insensitive' } },
+      ],
+    },
+    select: {
+      fullName: true,
+      email: true,
+      mobile: true,
+      department: true,
+      designation: true,
+    },
+  });
+
+  let hrCreated = 0;
+  for (const emp of hrStaff) {
+    const staffName = emp.fullName.trim();
+    if (!staffName) continue;
+    const existing = await prisma.staffAttendanceProfile.findFirst({
+      where: { institutionId, academicYear, staffName },
+    });
+    if (existing) continue;
+    await prisma.staffAttendanceProfile.create({
+      data: {
+        institutionId,
+        recordId: await nextStaffRecordId(institutionId),
+        academicYear,
+        staffName,
+        department: emp.department || 'General',
+        email: emp.email || '',
+        mobile: emp.mobile || '',
+        designation: emp.designation || 'Staff',
+      },
+    });
+    hrCreated += 1;
+  }
+
+  const rangeStart = new Date(Date.UTC(year, month - 1, 1));
+  const rangeEnd = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+
+  const [mobileRecords, totalRecords, staffCount] = await Promise.all([
+    prisma.staffAttendanceDailyRecord.count({
+      where: {
+        institutionId,
+        academicYear,
+        source: 'MOBILE',
+        recordDate: { gte: rangeStart, lte: rangeEnd },
+      },
+    }),
+    prisma.staffAttendanceDailyRecord.count({
+      where: {
+        institutionId,
+        academicYear,
+        recordDate: { gte: rangeStart, lte: rangeEnd },
+      },
+    }),
+    prisma.staffAttendanceProfile.count({
+      where: { institutionId, academicYear, isActive: true },
+    }),
+  ]);
+
+  return {
+    profilesFromSetup: sync.created,
+    profilesFromHr: hrCreated,
+    profilesCreated: sync.created + hrCreated,
+    staffCount,
+    mobileRecordsInPeriod: mobileRecords,
+    totalRecordsInPeriod: totalRecords,
+    period: { year, month },
+    message:
+      `Pulled from mobile: ${mobileRecords} mobile attendance record(s) in ${year}-${String(month).padStart(2, '0')}`
+      + (sync.created + hrCreated > 0 ? `; ${sync.created + hrCreated} staff profile(s) added` : '')
+      + '.',
+  };
 }
 
 export async function getStaffAttendanceMeta(institutionId: string) {

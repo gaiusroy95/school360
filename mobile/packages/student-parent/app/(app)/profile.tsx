@@ -55,6 +55,9 @@ export default function ProfileScreen() {
         <Text style={styles.meta}>Role: {user?.role}</Text>
       </Card>
 
+      <Text style={styles.section}>Exams</Text>
+      <MenuLink label="Revaluation / Recheck / Back paper" onPress={() => router.push('/(app)/revaluation')} />
+
       {isParent ? (
         <>
           <Text style={styles.section}>Parent services</Text>

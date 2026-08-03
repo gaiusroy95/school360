@@ -7,7 +7,7 @@ import {
   createQuestionPaper, deleteQuestionPaper, fetchDigitalExamAttempts,
   fetchQuestionBankMeta, fetchQuestionPapers, fileToBase64,
   generateQuestionPaperFromPdf, generateQuestionPaperFromSyllabus,
-  scanQuestionPaperOcr, seedQuestionBank, startDigitalExam, submitDigitalExam,
+  scanQuestionPaperOcr, startDigitalExam, submitDigitalExam,
   type Difficulty, type ExamPaperPurpose, type ExamPaperSource,
   type QuestionInput, type QuestionPaperSummary, type QuestionType,
 } from '../../../lib/examinationServices';
@@ -114,6 +114,7 @@ export function QuestionBankView() {
     if (!pendingFiles.length) { setErrorMsg('Upload scan files'); return; }
     setCreating(true);
     setErrorMsg(null);
+    setSuccessMsg(null);
     try {
       const files = await Promise.all(pendingFiles.map((f) => fileToBase64(f.file)));
       const res = await scanQuestionPaperOcr({ title: paperTitle || undefined, files, questionType, difficulty });
@@ -127,10 +128,15 @@ export function QuestionBankView() {
     if (!className || !subjectName) { setErrorMsg('Select class and subject first'); return; }
     if (!pendingFiles.length) { setErrorMsg('Upload PDF textbook files'); return; }
     setCreating(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
     try {
       const files = await Promise.all(pendingFiles.map((f) => fileToBase64(f.file)));
       const res = await generateQuestionPaperFromPdf({ title: paperTitle || undefined, files, numQuestions, questionType, difficulty });
       setReview({ title: res.suggestedTitle, source: 'AI_PDF', questions: res.questions, fileMeta: res.fileMeta });
+      if (res.usedVision) {
+        setSuccessMsg('Generated via free AI vision (scanned PDF). Review questions before publishing.');
+      }
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'AI generation failed');
     } finally { setCreating(false); }
@@ -139,6 +145,8 @@ export function QuestionBankView() {
   const runSyllabus = async () => {
     if (!className || !subjectName) { setErrorMsg('Select class and subject first'); return; }
     setCreating(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
     try {
       const res = await generateQuestionPaperFromSyllabus({
         academicYear, className, sectionName: sectionName || undefined, subjectName,
@@ -299,6 +307,14 @@ export function QuestionBankView() {
 
           <div className={`${am.card} ${am.cardPad} space-y-4`}>
             <h3 className="text-sm font-bold text-slate-800">Create Question Paper</h3>
+            <p className="text-[10px] text-slate-500 leading-relaxed">
+              Free AI priority: <strong>Gemini Flash</strong>{meta?.aiProviders?.gemini ? ' ✓' : ' (key missing)'}
+              {' → '}
+              <strong>ChatGPT (gpt-4o-mini)</strong>{meta?.aiProviders?.openai ? ' ✓' : ''}
+              {' → '}
+              <strong>Groq Llama</strong>{meta?.aiProviders?.groq ? ' ✓' : ''}.
+              Select class &amp; subject above, then generate and publish.
+            </p>
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase">Paper Type</label>

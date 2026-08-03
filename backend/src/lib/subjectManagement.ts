@@ -4,6 +4,7 @@ import { formatClassSection } from './students.js';
 import { nextAcademicRecordId, serializeSubject } from './academicManagement.js';
 import { serializeSyllabusChapter } from './curriculumHub.js';
 import { validateSubjectPayload, validateTeacherWorkload } from './academicSetupSync.js';
+import { listTeachingStaffForAcademic } from './employeeDirectory.js';
 
 export type TeacherAssignmentInput = {
   teacherName: string;
@@ -191,6 +192,24 @@ export async function getSubjectManagementDashboard(institutionId: string, acade
   };
 }
 
+async function enrichTeachersFromHr(
+  institutionId: string,
+  teachers: TeacherAssignmentInput[],
+): Promise<TeacherAssignmentInput[]> {
+  if (!teachers.length) return teachers;
+  const staff = await listTeachingStaffForAcademic(institutionId);
+  const byName = new Map(staff.map((t) => [t.teacherName.trim().toLowerCase(), t]));
+  return teachers.map((t) => {
+    const hr = byName.get(t.teacherName.trim().toLowerCase());
+    if (!hr) return t;
+    return {
+      ...t,
+      teacherEmail: t.teacherEmail?.trim() || hr.email || '',
+      teacherPhone: t.teacherPhone?.trim() || hr.mobile || '',
+    };
+  });
+}
+
 export async function createSubjectWithTeachers(
   institutionId: string,
   data: {
@@ -209,6 +228,8 @@ export async function createSubjectWithTeachers(
   }
 
   const academicYear = data.academicYear || '2025-26';
+  const subjectType = data.subjectType || 'Core';
+  const isElective = data.isElective ?? /elective/i.test(subjectType);
   const recordId = await nextAcademicRecordId(institutionId, 'subject');
   const subject = await prisma.academicSubject.create({
     data: {
@@ -216,14 +237,15 @@ export async function createSubjectWithTeachers(
       recordId,
       subjectName: data.subjectName,
       subjectCode: data.subjectCode || '',
-      subjectType: data.subjectType || 'Core',
+      subjectType,
       subjectGroup: data.subjectGroup || 'General',
-      isElective: data.isElective ?? false,
+      isElective,
     },
   });
 
+  const teachers = await enrichTeachersFromHr(institutionId, data.teachers || []);
   const createdOfferings = [];
-  for (const t of data.teachers || []) {
+  for (const t of teachers) {
     const existing = await prisma.academicSubjectAllocation.findFirst({
       where: {
         institutionId,
@@ -258,6 +280,145 @@ export async function createSubjectWithTeachers(
   return {
     subject: serializeSubject(subject),
     offeringsCreated: createdOfferings.length,
+  };
+}
+
+export type SubjectTeacherBulkRow = {
+  subjectName: string;
+  subjectCode?: string;
+  subjectType?: string;
+  subjectGroup?: string;
+  teacherName: string;
+  teacherEmail?: string;
+  teacherPhone?: string;
+  className: string;
+  sectionName: string;
+  courseStartDate?: string;
+  courseCompletionDeadline?: string;
+  revisionDeadline?: string;
+};
+
+/** Excel bulk upsert: teacher–subject mapping rows (find/create subject, upsert class allocation). */
+export async function bulkUpsertSubjectTeacherMappings(
+  institutionId: string,
+  academicYear: string,
+  rows: SubjectTeacherBulkRow[],
+) {
+  const staff = await listTeachingStaffForAcademic(institutionId);
+  const byName = new Map(staff.map((t) => [t.teacherName.trim().toLowerCase(), t]));
+
+  let subjectsCreated = 0;
+  let allocationsCreated = 0;
+  let allocationsUpdated = 0;
+  const errors: string[] = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const excelRow = i + 2;
+    try {
+      const subjectName = row.subjectName?.trim();
+      const teacherName = row.teacherName?.trim();
+      const className = row.className?.trim();
+      const sectionName = row.sectionName?.trim();
+      if (!subjectName || !teacherName || !className || !sectionName) {
+        throw new Error('subjectName, teacherName, className and sectionName are required');
+      }
+
+      const hr = byName.get(teacherName.toLowerCase());
+      const teacherEmail = row.teacherEmail?.trim() || hr?.email || '';
+      const teacherPhone = row.teacherPhone?.trim() || hr?.mobile || '';
+      const subjectType = row.subjectType?.trim() || 'Core';
+      const subjectGroup = row.subjectGroup?.trim() || 'General';
+      const subjectCode = row.subjectCode?.trim() || '';
+
+      let subject =
+        (subjectCode
+          ? await prisma.academicSubject.findFirst({ where: { institutionId, subjectCode } })
+          : null)
+        || (await prisma.academicSubject.findFirst({
+          where: { institutionId, subjectName: { equals: subjectName, mode: 'insensitive' } },
+        }));
+
+      if (!subject) {
+        const validation = await validateSubjectPayload(institutionId, {
+          subjectName,
+          subjectCode: subjectCode || undefined,
+          subjectType,
+        });
+        if (!validation.valid) throw new Error(validation.errors.join('; '));
+
+        subject = await prisma.academicSubject.create({
+          data: {
+            institutionId,
+            recordId: await nextAcademicRecordId(institutionId, 'subject'),
+            subjectName,
+            subjectCode,
+            subjectType,
+            subjectGroup,
+            isElective: /elective/i.test(subjectType),
+            isActive: true,
+          },
+        });
+        subjectsCreated += 1;
+      }
+
+      const existing = await prisma.academicSubjectAllocation.findFirst({
+        where: {
+          institutionId,
+          academicYear,
+          subjectId: subject.id,
+          className,
+          sectionName,
+        },
+      });
+
+      if (existing) {
+        await prisma.academicSubjectAllocation.update({
+          where: { id: existing.id },
+          data: {
+            teacherName,
+            teacherEmail,
+            teacherPhone,
+            ...(row.courseStartDate ? { courseStartDate: new Date(row.courseStartDate) } : {}),
+            ...(row.courseCompletionDeadline
+              ? { courseCompletionDeadline: new Date(row.courseCompletionDeadline) }
+              : {}),
+            ...(row.revisionDeadline ? { revisionDeadline: new Date(row.revisionDeadline) } : {}),
+          },
+        });
+        allocationsUpdated += 1;
+      } else {
+        await prisma.academicSubjectAllocation.create({
+          data: {
+            institutionId,
+            recordId: await nextAcademicRecordId(institutionId, 'allocation'),
+            subjectId: subject.id,
+            academicYear,
+            className,
+            sectionName,
+            teacherName,
+            teacherEmail,
+            teacherPhone,
+            courseStartDate: row.courseStartDate ? new Date(row.courseStartDate) : null,
+            courseCompletionDeadline: row.courseCompletionDeadline
+              ? new Date(row.courseCompletionDeadline)
+              : null,
+            revisionDeadline: row.revisionDeadline ? new Date(row.revisionDeadline) : null,
+          },
+        });
+        allocationsCreated += 1;
+      }
+    } catch (err) {
+      errors.push(`Row ${excelRow}: ${err instanceof Error ? err.message : 'Failed'}`);
+    }
+  }
+
+  return {
+    subjectsCreated,
+    allocationsCreated,
+    allocationsUpdated,
+    errors,
+    totalRows: rows.length,
   };
 }
 

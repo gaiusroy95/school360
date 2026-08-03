@@ -87,7 +87,15 @@ async function runGeminiVisionJsonRequest(
 ): Promise<string> {
   const genAI = new GoogleGenerativeAI(getGeminiApiKey());
   const preferred = process.env.GEMINI_MODEL?.trim();
-  const models = [...new Set([preferred, 'gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-flash'].filter((m): m is string => Boolean(m)))];
+  const models = [...new Set([
+    preferred,
+    'gemini-2.0-flash',
+    'gemini-2.5-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-flash-latest',
+    'gemini-1.5-flash-latest',
+    'gemini-1.5-flash',
+  ].filter((m): m is string => Boolean(m)))];
   let lastError: Error | null = null;
 
   for (const modelName of models) {
@@ -117,34 +125,49 @@ async function runGeminiVisionJsonRequest(
   throw lastError || new Error('No compatible Gemini vision model available');
 }
 
-async function ocrWithVision(
+async function ocrWithOpenAIVision(
   mimeType: string,
   base64Data: string,
   questionType: string,
   difficulty: string,
 ): Promise<{ title: string; rawText: string; questions: GeneratedQuestion[] }> {
-  const responseText = await runGeminiVisionJsonRequest(
-    mimeType,
-    base64Data,
-    OCR_JSON_PROMPT(questionType, difficulty),
-  );
-
-  let parsed: {
+  const key = process.env.OPENAI_API_KEY?.trim();
+  if (!key) throw new Error('OPENAI_API_KEY not configured');
+  const model = process.env.OPENAI_VISION_MODEL?.trim() || process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini';
+  const raw = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.1,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: OCR_JSON_PROMPT(questionType, difficulty) },
+            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${raw}` } },
+          ],
+        },
+      ],
+    }),
+  });
+  const data = await res.json().catch(() => ({})) as {
+    error?: { message?: string };
+    choices?: { message?: { content?: string } }[];
+  };
+  if (!res.ok) throw new Error(data.error?.message || `OpenAI OCR failed (${res.status})`);
+  const parsed = parseJsonFromModel(data.choices?.[0]?.message?.content || '') as {
     title?: string;
     rawText?: string;
     questions?: GeneratedQuestion[];
   };
-  try {
-    parsed = parseJsonFromModel(responseText) as typeof parsed;
-  } catch {
-    throw new Error('OCR returned invalid JSON. Try a clearer scan or photo.');
-  }
-
   const questions = normalizeQuestions(parsed.questions || [], questionType, difficulty);
-  if (questions.length === 0) {
-    throw new Error('No questions could be extracted. Ensure the scan is clear and text is readable.');
-  }
-
+  if (!questions.length) throw new Error('No questions extracted via OpenAI vision');
   return {
     title: String(parsed.title || '').trim(),
     rawText: String(parsed.rawText || '').trim(),
@@ -152,33 +175,123 @@ async function ocrWithVision(
   };
 }
 
+async function ocrWithVision(
+  mimeType: string,
+  base64Data: string,
+  questionType: string,
+  difficulty: string,
+): Promise<{ title: string; rawText: string; questions: GeneratedQuestion[] }> {
+  const errors: string[] = [];
+  try {
+    const responseText = await runGeminiVisionJsonRequest(
+      mimeType,
+      base64Data,
+      OCR_JSON_PROMPT(questionType, difficulty),
+    );
+    let parsed: {
+      title?: string;
+      rawText?: string;
+      questions?: GeneratedQuestion[];
+    };
+    try {
+      parsed = parseJsonFromModel(responseText) as typeof parsed;
+    } catch {
+      throw new Error('OCR returned invalid JSON. Try a clearer scan or photo.');
+    }
+    const questions = normalizeQuestions(parsed.questions || [], questionType, difficulty);
+    if (questions.length === 0) {
+      throw new Error('No questions could be extracted. Ensure the scan is clear and text is readable.');
+    }
+    return {
+      title: String(parsed.title || '').trim(),
+      rawText: String(parsed.rawText || '').trim(),
+      questions,
+    };
+  } catch (err) {
+    errors.push(`Gemini: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  try {
+    return await ocrWithOpenAIVision(mimeType, base64Data, questionType, difficulty);
+  } catch (err) {
+    errors.push(`OpenAI: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  throw new Error(`OCR failed with free AI providers.\n${errors.join('\n')}`);
+}
+
 async function ocrFromPlainText(
   text: string,
   questionType: string,
   difficulty: string,
 ): Promise<{ title: string; rawText: string; questions: GeneratedQuestion[] }> {
-  const responseText = await runGeminiJsonRequest(0.1, async (model) => {
-    const result = await model.generateContent(
-      `${OCR_JSON_PROMPT(questionType, difficulty)}\n\nEXTRACTED TEXT FROM PDF:\n${text.slice(0, 100_000)}`,
-    );
-    return result.response.text();
-  });
+  const prompt = `${OCR_JSON_PROMPT(questionType, difficulty)}\n\nEXTRACTED TEXT FROM PDF:\n${text.slice(0, 100_000)}`;
+  const errors: string[] = [];
 
-  const parsed = parseJsonFromModel(responseText) as {
-    title?: string;
-    rawText?: string;
-    questions?: GeneratedQuestion[];
-  };
-  const questions = normalizeQuestions(parsed.questions || [], questionType, difficulty);
-  if (questions.length === 0) {
-    throw new Error('No questions could be extracted from PDF text.');
+  try {
+    const responseText = await runGeminiJsonRequest(0.1, async (model) => {
+      const result = await model.generateContent(prompt);
+      return result.response.text();
+    });
+    const parsed = parseJsonFromModel(responseText) as {
+      title?: string;
+      rawText?: string;
+      questions?: GeneratedQuestion[];
+    };
+    const questions = normalizeQuestions(parsed.questions || [], questionType, difficulty);
+    if (questions.length === 0) throw new Error('No questions could be extracted from PDF text.');
+    return {
+      title: String(parsed.title || '').trim(),
+      rawText: String(parsed.rawText || text).trim(),
+      questions,
+    };
+  } catch (err) {
+    errors.push(`Gemini: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  return {
-    title: String(parsed.title || '').trim(),
-    rawText: String(parsed.rawText || text).trim(),
-    questions,
-  };
+  const openAiKey = process.env.OPENAI_API_KEY?.trim();
+  if (openAiKey) {
+    try {
+      const model = process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini';
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${openAiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.1,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: 'Extract exam questions from text. Reply with valid JSON only.' },
+            { role: 'user', content: prompt },
+          ],
+        }),
+      });
+      const data = await res.json().catch(() => ({})) as {
+        error?: { message?: string };
+        choices?: { message?: { content?: string } }[];
+      };
+      if (!res.ok) throw new Error(data.error?.message || `OpenAI failed (${res.status})`);
+      const parsed = parseJsonFromModel(data.choices?.[0]?.message?.content || '') as {
+        title?: string;
+        rawText?: string;
+        questions?: GeneratedQuestion[];
+      };
+      const questions = normalizeQuestions(parsed.questions || [], questionType, difficulty);
+      if (!questions.length) throw new Error('No questions extracted');
+      return {
+        title: String(parsed.title || '').trim(),
+        rawText: String(parsed.rawText || text).trim(),
+        questions,
+      };
+    } catch (err) {
+      errors.push(`OpenAI: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  throw new Error(`OCR text parsing failed.\n${errors.join('\n')}`);
 }
 
 export type OcrFileInput = {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   User, Users, BookOpen, HeartPulse, Bus, Home, FileText, IndianRupee, UserPlus,
   CheckCircle, Loader2, Download, ChevronLeft,
@@ -6,6 +6,8 @@ import {
 import { createStudent, fetchNextSoftId, fetchStudentsMeta } from '../../../lib/studentServices';
 import { fetchInstitutionSetup } from '../../../lib/institutionApi';
 import { toViewKey } from '../../../lib/navigation';
+import { fetchTransportMaster } from '../../../lib/transportServices';
+import { fetchMessManagement, fetchRoomsAllotment } from '../../../lib/hostelServices';
 import {
   ADMISSION_DOCUMENT_FIELDS,
   DRAFT_STORAGE_KEY,
@@ -17,6 +19,34 @@ import {
 import { AdmissionFormPage1, AdmissionFormPage2 } from './StudentAdmissionFormPreview';
 import { downloadAdmissionFormPdf } from './studentAdmissionPdf';
 import { isIndiaMobileEmpty, isValidIndiaMobile, normalizeIndiaMobile } from '../../../lib/enquiryFormUtils';
+
+type TransportRouteOption = {
+  id: string;
+  routeCode: string;
+  routeName: string;
+  label: string;
+  stops: { id: string; stopName: string; stopType: string; label: string }[];
+};
+
+type TransportVehicleOption = {
+  id: string;
+  routeCode: string;
+  routeName: string;
+  vehicleNumber: string;
+  vehicleType: string;
+  label: string;
+};
+
+const ROOM_TYPE_LABELS: Record<string, string> = {
+  AC: 'AC',
+  NON_AC: 'Non-AC',
+};
+
+const MESS_PREF_LABELS: Record<string, string> = {
+  VEG: 'Vegetarian',
+  NON_VEG: 'Non-Vegetarian',
+  EGGETARIAN: 'Eggetarian',
+};
 
 type Props = {
   onNavigate?: (view: string) => void;
@@ -34,6 +64,12 @@ export function AddNewStudentView({ onNavigate, onCreated }: Props) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [draftSaved, setDraftSaved] = useState(false);
+  const [transportRoutes, setTransportRoutes] = useState<TransportRouteOption[]>([]);
+  const [transportVehicles, setTransportVehicles] = useState<TransportVehicleOption[]>([]);
+  const [vehicleTypes, setVehicleTypes] = useState<string[]>([]);
+  const [roomTypeOptions, setRoomTypeOptions] = useState<string[]>(['AC', 'NON_AC']);
+  const [messPrefOptions, setMessPrefOptions] = useState<string[]>(['VEG', 'NON_VEG', 'EGGETARIAN']);
+  const [mastersLoading, setMastersLoading] = useState(false);
 
   const steps = [
     { id: 1, name: 'Basic Info', icon: <User size={14} /> },
@@ -82,10 +118,159 @@ export function AddNewStudentView({ onNavigate, onCreated }: Props) {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    setMastersLoading(true);
+    void (async () => {
+      try {
+        const [transport, rooms, mess] = await Promise.all([
+          fetchTransportMaster(false, form.academicYear || undefined).catch(() => null),
+          fetchRoomsAllotment(false, form.academicYear || undefined).catch(() => null),
+          fetchMessManagement(false, form.academicYear || undefined).catch(() => null),
+        ]);
+        if (cancelled) return;
+
+        if (transport) {
+          const routes: TransportRouteOption[] = (transport.routes || [])
+            .filter((r) => String(r.status ?? 'ACTIVE') === 'ACTIVE' && !r.isArchived)
+            .map((r) => {
+              const routeCode = String(r.routeCode ?? '');
+              const routeName = String(r.routeName ?? '');
+              const stopsRaw = Array.isArray(r.stops) ? r.stops : [];
+              return {
+                id: String(r.id ?? ''),
+                routeCode,
+                routeName,
+                label: routeCode ? `${routeCode} — ${routeName}` : routeName,
+                stops: stopsRaw.map((s) => {
+                  const stop = s as Record<string, unknown>;
+                  const stopName = String(stop.stopName ?? '');
+                  const stopType = String(stop.stopType ?? '');
+                  return {
+                    id: String(stop.id ?? stopName),
+                    stopName,
+                    stopType,
+                    label: stopType ? `${stopName} (${stopType})` : stopName,
+                  };
+                }).filter((s) => s.stopName),
+              };
+            })
+            .filter((r) => r.label.trim());
+
+          const vehicles: TransportVehicleOption[] = (transport.vehicles || [])
+            .filter((v) => v.isActive !== false && !v.isArchived)
+            .map((v) => {
+              const vehicleNumber = String(v.vehicleNumber ?? '');
+              const vehicleType = String(v.vehicleType ?? '');
+              const routeCode = String(v.routeCode ?? '');
+              const routeName = String(v.routeName ?? '');
+              return {
+                id: String(v.id ?? ''),
+                routeCode,
+                routeName,
+                vehicleNumber,
+                vehicleType,
+                label: vehicleType
+                  ? `${vehicleType} — ${vehicleNumber}`
+                  : vehicleNumber,
+              };
+            })
+            .filter((v) => v.vehicleNumber);
+
+          setTransportRoutes(routes);
+          setTransportVehicles(vehicles);
+          setVehicleTypes((transport.vehicleTypes || []).map(String).filter(Boolean));
+        }
+
+        if (rooms?.roomTypes?.length) {
+          setRoomTypeOptions(rooms.roomTypes.filter((t) => t && t !== 'ALL'));
+        }
+        if (mess?.mealPreferences?.length) {
+          setMessPrefOptions(mess.mealPreferences);
+        } else if (mess?.preferenceChart?.length) {
+          const fromChart = mess.preferenceChart.map((p) => {
+            const name = p.name.toUpperCase().replace(/[\s-]+/g, '_');
+            if (name.includes('EGG')) return 'EGGETARIAN';
+            if (name.includes('NON')) return 'NON_VEG';
+            if (name.includes('VEG')) return 'VEG';
+            return name;
+          });
+          if (fromChart.length) setMessPrefOptions(Array.from(new Set(fromChart)));
+        }
+      } finally {
+        if (!cancelled) setMastersLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [form.academicYear]);
+
+  useEffect(() => {
     void fetchStudentsMeta().then((m) => {
       setSections(form.className ? m.filters.sectionsByClass[form.className] || [] : []);
     });
   }, [form.className]);
+
+  const selectedRoute = useMemo(
+    () => transportRoutes.find((r) => r.label === form.transportRoute || r.routeCode === form.transportRoute || r.routeName === form.transportRoute),
+    [transportRoutes, form.transportRoute],
+  );
+
+  const stopOptions = useMemo(() => {
+    if (!selectedRoute) return [] as { value: string; label: string }[];
+    return selectedRoute.stops.map((s) => ({ value: s.stopName, label: s.label }));
+  }, [selectedRoute]);
+
+  const vehicleOptions = useMemo(() => {
+    if (!selectedRoute) return [] as { value: string; label: string }[];
+    const forRoute = transportVehicles.filter(
+      (v) =>
+        (selectedRoute.routeCode && v.routeCode === selectedRoute.routeCode)
+        || (selectedRoute.routeName && v.routeName === selectedRoute.routeName),
+    );
+    if (forRoute.length > 0) {
+      return forRoute.map((v) => ({ value: v.label, label: v.label }));
+    }
+    return vehicleTypes.map((t) => ({ value: t, label: t }));
+  }, [selectedRoute, transportVehicles, vehicleTypes]);
+
+  const roomSelectOptions = useMemo(
+    () => roomTypeOptions.map((v) => ({ value: v, label: ROOM_TYPE_LABELS[v] || v })),
+    [roomTypeOptions],
+  );
+
+  const messSelectOptions = useMemo(
+    () => messPrefOptions.map((v) => ({ value: v, label: MESS_PREF_LABELS[v] || v })),
+    [messPrefOptions],
+  );
+
+  const setTransportRequired = (value: string) => {
+    setForm((f) => ({
+      ...f,
+      transportRequired: value,
+      ...(value !== 'Yes'
+        ? { transportRoute: '', transportStop: '', vehiclePreference: '' }
+        : {}),
+    }));
+    setDraftSaved(false);
+  };
+
+  const setTransportRoute = (value: string) => {
+    setForm((f) => ({
+      ...f,
+      transportRoute: value,
+      transportStop: '',
+      vehiclePreference: '',
+    }));
+    setDraftSaved(false);
+  };
+
+  const setHostelRequired = (value: string) => {
+    setForm((f) => ({
+      ...f,
+      hostelRequired: value,
+      ...(value !== 'Yes' ? { hostelRoomType: '', messPreference: '' } : {}),
+    }));
+    setDraftSaved(false);
+  };
 
   const saveDraft = () => {
     localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({ form, step: currentStep, savedAt: new Date().toISOString() }));
@@ -292,20 +477,102 @@ export function AddNewStudentView({ onNavigate, onCreated }: Props) {
         return (
           <StepForm title="Transport">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Select label="Transport Required?" value={form.transportRequired} onChange={(v) => set('transportRequired', v)} options={['No', 'Yes']} />
-              <Field label="Preferred Route" value={form.transportRoute} onChange={(v) => set('transportRoute', v)} />
-              <Field label="Pickup / Drop Stop" value={form.transportStop} onChange={(v) => set('transportStop', v)} />
-              <Field label="Vehicle Preference" value={form.vehiclePreference} onChange={(v) => set('vehiclePreference', v)} />
+              <Select
+                label="Transport Required?"
+                value={form.transportRequired}
+                onChange={setTransportRequired}
+                options={['No', 'Yes']}
+              />
+              {form.transportRequired === 'Yes' && (
+                <>
+                  <Select
+                    label="Preferred Route"
+                    value={form.transportRoute}
+                    onChange={setTransportRoute}
+                    options={[
+                      { value: '', label: mastersLoading ? 'Loading routes…' : 'Select route…' },
+                      ...transportRoutes.map((r) => ({ value: r.label, label: r.label })),
+                    ]}
+                    disabled={mastersLoading}
+                  />
+                  <Select
+                    label="Pickup / Drop Stop"
+                    value={form.transportStop}
+                    onChange={(v) => set('transportStop', v)}
+                    options={[
+                      {
+                        value: '',
+                        label: !form.transportRoute
+                          ? 'Select a route first…'
+                          : stopOptions.length
+                            ? 'Select stop…'
+                            : 'No stops on this route',
+                      },
+                      ...stopOptions,
+                    ]}
+                    disabled={!form.transportRoute || mastersLoading}
+                  />
+                  <Select
+                    label="Vehicle Preference"
+                    value={form.vehiclePreference}
+                    onChange={(v) => set('vehiclePreference', v)}
+                    options={[
+                      {
+                        value: '',
+                        label: !form.transportRoute
+                          ? 'Select a route first…'
+                          : vehicleOptions.length
+                            ? 'Select vehicle / type…'
+                            : 'No vehicles mapped — choose type if listed',
+                      },
+                      ...vehicleOptions,
+                    ]}
+                    disabled={!form.transportRoute || mastersLoading}
+                  />
+                </>
+              )}
             </div>
+            {form.transportRequired === 'Yes' && !mastersLoading && transportRoutes.length === 0 && (
+              <p className="text-xs text-amber-700 mt-3">
+                No active routes found in Transport master. Add routes, stops, and vehicles under Transport → Route & Vehicle Master.
+              </p>
+            )}
           </StepForm>
         );
       case 6:
         return (
           <StepForm title="Hostel">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Select label="Hostel Required?" value={form.hostelRequired} onChange={(v) => set('hostelRequired', v)} options={['No', 'Yes']} />
-              <Field label="Room Type Preference" value={form.hostelRoomType} onChange={(v) => set('hostelRoomType', v)} />
-              <Field label="Mess Preference" value={form.messPreference} onChange={(v) => set('messPreference', v)} />
+              <Select
+                label="Hostel Required?"
+                value={form.hostelRequired}
+                onChange={setHostelRequired}
+                options={['No', 'Yes']}
+              />
+              {form.hostelRequired === 'Yes' && (
+                <>
+                  <Select
+                    label="Room Type Preference"
+                    value={form.hostelRoomType}
+                    onChange={(v) => set('hostelRoomType', v)}
+                    options={[
+                      { value: '', label: mastersLoading ? 'Loading…' : 'Select room type…' },
+                      ...roomSelectOptions,
+                    ]}
+                    disabled={mastersLoading}
+                  />
+                  <Select
+                    label="Mess Preference"
+                    value={form.messPreference}
+                    onChange={(v) => set('messPreference', v)}
+                    options={[
+                      { value: '', label: mastersLoading ? 'Loading…' : 'Select mess preference…' },
+                      ...messSelectOptions,
+                    ]}
+                    disabled={mastersLoading}
+                  />
+                </>
+              )}
             </div>
           </StepForm>
         );
@@ -352,7 +619,7 @@ export function AddNewStudentView({ onNavigate, onCreated }: Props) {
               </p>
               <label className="flex items-center justify-center gap-2 text-sm text-slate-700">
                 <input type="checkbox" checked={form.declarationAccepted} onChange={(e) => set('declarationAccepted', e.target.checked)} />
-                I confirm all details are correct and accept the declaration
+                I confirm all details are correct and accept the terms, conditions & declaration
               </label>
               <div className="flex flex-wrap justify-center gap-2">
                 <button type="button" disabled={generatingPdf} onClick={() => void handleDownloadPdf()} className="px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-slate-50 disabled:opacity-50">
@@ -525,12 +792,32 @@ function MobileField({
   );
 }
 
-function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) {
+function Select({
+  label,
+  value,
+  onChange,
+  options,
+  disabled = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: Array<string | { value: string; label: string }>;
+  disabled?: boolean;
+}) {
+  const normalized = options.map((o) => (typeof o === 'string' ? { value: o, label: o || 'Select...' } : o));
   return (
     <div>
       <label className="block text-xs font-bold text-slate-700 mb-1">{label}</label>
-      <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-500">
-        {options.map((o) => <option key={o || 'blank'} value={o}>{o || 'Select...'}</option>)}
+      <select
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-50 disabled:text-slate-400"
+      >
+        {normalized.map((o) => (
+          <option key={`${o.value}::${o.label}`} value={o.value}>{o.label}</option>
+        ))}
       </select>
     </div>
   );

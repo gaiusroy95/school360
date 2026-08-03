@@ -1,12 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Plus, Share2, ClipboardCheck, BarChart3, Pencil, Eye,
+  Plus, Share2, ClipboardCheck, BarChart3, Pencil, Eye, Download, Upload,
 } from 'lucide-react';
 import {
-  BLOOMS_LABELS, BLOOMS_LEVELS, createClassTestForLessonPlan, createLessonPlan,
-  fetchLessonPlanDetail, fetchLessonPlans, submitClassTestScores, updateLessonPlan, type LessonPlan,
+  BLOOMS_LABELS, BLOOMS_LEVELS, bulkUploadLessonPlans, createClassTestForLessonPlan, createLessonPlan,
+  fetchAcademicMeta, fetchLessonPlanDetail, fetchLessonPlans, submitClassTestScores, updateLessonPlan, type LessonPlan,
 } from '../../../lib/academicServices';
 import { fetchStudents } from '../../../lib/studentServices';
+import {
+  downloadClassTestMarksTemplate,
+  downloadLessonPlanTemplate,
+  parseClassTestMarksUploadFile,
+  parseLessonPlanUploadFile,
+} from '../../../lib/lessonPlanExcel';
 import {
   AcademicLoading, AcademicModal, AcademicPageHeader, AcademicPageShell,
   AcademicYearTermFilters, am,
@@ -40,12 +46,28 @@ export function LessonPlanningView() {
   const [showScores, setShowScores] = useState(false);
   const [scoreRows, setScoreRows] = useState<{ studentId: string; fullName: string; marks: string }[]>([]);
   const [activeTestId, setActiveTestId] = useState<string | null>(null);
+  const [uploadingPlans, setUploadingPlans] = useState(false);
+  const [uploadingMarks, setUploadingMarks] = useState(false);
+  const planFileRef = useRef<HTMLInputElement>(null);
+  const marksFileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetchLessonPlans(academicYear, { className: className || undefined, sectionName: sectionName || undefined });
+      const [res, academicMeta] = await Promise.all([
+        fetchLessonPlans(academicYear, { className: className || undefined, sectionName: sectionName || undefined }),
+        fetchAcademicMeta().catch(() => null),
+      ]);
       setRecords(res.records);
+      if (academicMeta) {
+        setMeta({
+          academicYears: academicMeta.academicYears || [academicYear],
+          classes: academicMeta.classes || [],
+          sectionsByClass: academicMeta.sectionsByClass || {},
+          terms: academicMeta.terms || ['Term 1', 'Term 2'],
+        });
+        if (!academicYear && academicMeta.academicYears?.[0]) setAcademicYear(academicMeta.academicYears[0]);
+      }
     } finally { setLoading(false); }
   }, [academicYear, className, sectionName]);
 
@@ -119,6 +141,81 @@ export function LessonPlanningView() {
     void load();
   };
 
+  const handlePlanBulkUpload = async (file: File) => {
+    setUploadingPlans(true);
+    try {
+      const rows = await parseLessonPlanUploadFile(file);
+      if (!rows.length) {
+        setMessage('No valid lesson plan rows found in Excel. Check required fields: title, className, sectionName, subjectName.');
+        return;
+      }
+      const res = await bulkUploadLessonPlans({
+        academicYear,
+        share: true,
+        plans: rows.map((r) => ({
+          ...r,
+          academicYear,
+          term: r.term || 'Term 1',
+          share: true,
+        })),
+      });
+      setMessage(
+        `Bulk upload complete: ${res.created} lesson plan(s) created`
+        + (res.classTestsCreated ? `, ${res.classTestsCreated} class test(s) auto-created` : '')
+        + (res.failed ? `, ${res.failed} failed` : '')
+        + (res.errors?.length ? `. ${res.errors.slice(0, 2).join('; ')}` : ''),
+      );
+      void load();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Failed to upload lesson plans');
+    } finally {
+      setUploadingPlans(false);
+    }
+  };
+
+  const handleMarksTemplateDownload = () => {
+    downloadClassTestMarksTemplate(
+      scoreRows.map((r) => ({
+        studentId: r.studentId,
+        studentName: r.fullName,
+        marksObtained: r.marks || '',
+      })),
+      'Class_Test_Marks_Template.xlsx',
+    );
+  };
+
+  const handleMarksBulkUpload = async (file: File) => {
+    setUploadingMarks(true);
+    try {
+      const rows = await parseClassTestMarksUploadFile(file);
+      if (!rows.length) {
+        setMessage('No valid marks rows found. Use columns: studentId, studentName, marksObtained.');
+        return;
+      }
+
+      const byId = new Map(rows.map((r) => [r.studentId, r]));
+      const byName = new Map(
+        rows
+          .filter((r) => r.studentName)
+          .map((r) => [r.studentName!.toLowerCase(), r]),
+      );
+
+      let matched = 0;
+      const nextRows = scoreRows.map((row) => {
+        const hit = byId.get(row.studentId) || byName.get(row.fullName.toLowerCase());
+        if (!hit) return row;
+        matched += 1;
+        return { ...row, marks: String(hit.marksObtained) };
+      });
+      setScoreRows(nextRows);
+      setMessage(`Marks loaded from Excel for ${matched} student(s). Review, then Save & Publish to Mobile.`);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Failed to upload marks');
+    } finally {
+      setUploadingMarks(false);
+    }
+  };
+
   if (loading && !records.length) return <AcademicLoading label="Loading lesson plans…" />;
 
   return (
@@ -127,13 +224,41 @@ export function LessonPlanningView() {
         breadcrumb="Academic Management › Lesson Planning"
         title="Lesson Planning"
         subtitle="Plan lessons with objectives, Bloom's taxonomy, teaching methods — link class tests and track result buckets"
-        actions={<button type="button" onClick={openCreate} className={am.btnPrimary}><Plus size={14} /> New Lesson Plan</button>}
+        actions={(
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => downloadLessonPlanTemplate()} className={am.btnSecondary}>
+              <Download size={14} /> Excel Template
+            </button>
+            <button
+              type="button"
+              disabled={uploadingPlans}
+              onClick={() => planFileRef.current?.click()}
+              className={am.btnSecondary}
+            >
+              <Upload size={14} /> {uploadingPlans ? 'Uploading…' : 'Bulk Upload'}
+            </button>
+            <input
+              ref={planFileRef}
+              type="file"
+              accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handlePlanBulkUpload(file);
+                e.target.value = '';
+              }}
+            />
+            <button type="button" onClick={openCreate} className={am.btnPrimary}>
+              <Plus size={14} /> New Lesson Plan
+            </button>
+          </div>
+        )}
       />
       <div className={am.content}>
         {message && <p className={am.message}>{message}</p>}
 
         <AcademicYearTermFilters
-          academicYear={academicYear} term="Term 1" years={meta?.academicYears || [academicYear]} terms={['Term 1', 'Term 2']}
+          academicYear={academicYear} term="Term 1" years={meta?.academicYears || [academicYear]} terms={meta?.terms || ['Term 1', 'Term 2']}
           onYear={setAcademicYear} onTerm={() => {}} className={className} sectionName={sectionName}
           classes={meta?.classes} sections={className ? meta?.sectionsByClass[className] : []}
           onClass={(v) => { setClassName(v); setSectionName(''); }} onSection={setSectionName}
@@ -147,7 +272,13 @@ export function LessonPlanningView() {
               <th className={am.th}>Results</th><th className={am.th}>Status</th><th className={am.th} />
             </tr></thead>
             <tbody>
-              {records.map((r) => (
+              {records.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className={`${am.td} text-center text-slate-400 py-8`}>
+                    No lesson plans yet. Use Excel Template + Bulk Upload, or create one with New Lesson Plan.
+                  </td>
+                </tr>
+              ) : records.map((r) => (
                 <tr key={r.id}>
                   <td className={am.td}><span className="font-semibold">{r.title}</span></td>
                   <td className={am.td}>{r.classGroup}</td>
@@ -250,17 +381,74 @@ export function LessonPlanningView() {
 
       <AcademicModal open={showScores} onClose={() => setShowScores(false)} title="Enter Class Test Scores" large>
         <p className="text-xs text-slate-500 mb-2">Scores auto-bucket into 80–100%, 60–79.99%, 36–59.99%, and below 36%. Results sync to mobile analytics.</p>
+
+        <div className="flex flex-wrap gap-2 mb-3">
+          <button type="button" onClick={handleMarksTemplateDownload} className={am.btnSecondary}>
+            <Download size={14} /> Excel Template
+          </button>
+          <button
+            type="button"
+            disabled={uploadingMarks}
+            onClick={() => marksFileRef.current?.click()}
+            className={am.btnSecondary}
+          >
+            <Upload size={14} /> {uploadingMarks ? 'Uploading…' : 'Upload Marks'}
+          </button>
+          <input
+            ref={marksFileRef}
+            type="file"
+            accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleMarksBulkUpload(file);
+              e.target.value = '';
+            }}
+          />
+        </div>
+
         <div className="max-h-64 overflow-y-auto space-y-1">
-          {scoreRows.map((r) => (
+          {scoreRows.length === 0 ? (
+            <p className="text-sm text-slate-400 py-4 text-center">No students found for this class/section.</p>
+          ) : scoreRows.map((r, idx) => (
             <div key={r.studentId} className="flex items-center gap-2 text-sm">
               <span className="flex-1">{r.fullName}</span>
-              <input type="number" min={0} max={100} value={r.marks} onChange={(e) => setScoreRows((rows) => rows.map((x) => x.studentId === r.studentId ? { ...x, marks: e.target.value } : x))} className={`${am.input} w-20`} placeholder="Marks" />
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={r.marks}
+                onChange={(e) => setScoreRows((rows) => rows.map((x) => x.studentId === r.studentId ? { ...x, marks: e.target.value } : x))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const next = scoreRows[idx + 1];
+                    if (next) {
+                      const el = document.querySelector<HTMLInputElement>(`input[data-score-id="${next.studentId}"]`);
+                      el?.focus();
+                      el?.select();
+                    } else {
+                      document.getElementById('class-test-save-publish')?.focus();
+                    }
+                  }
+                }}
+                data-score-id={r.studentId}
+                className={`${am.input} w-20`}
+                placeholder="Marks"
+              />
             </div>
           ))}
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={() => setShowScores(false)} className={am.btnSecondary}>Cancel</button>
-          <button type="button" onClick={() => void saveScores()} className={am.btnPrimary}>Save & Publish to Mobile</button>
+          <button
+            id="class-test-save-publish"
+            type="button"
+            onClick={() => void saveScores()}
+            className={am.btnPrimary}
+          >
+            Save & Publish to Mobile
+          </button>
         </div>
       </AcademicModal>
     </AcademicPageShell>

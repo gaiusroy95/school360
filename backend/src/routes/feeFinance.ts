@@ -123,9 +123,12 @@ import {
   collectTransportFee,
   collectHostelFee,
   approveOtherChargeRequest,
+  approveTransportVendor,
   createOtherChargeRequest,
   ensureOtherChargeTypes,
   getOtherChargesSummary,
+  getStudentAllSessionDues,
+  listAdmissionDiscountCandidates,
   listOtherChargeRequests,
   listOtherChargeTypes,
   rejectOtherChargeRequest,
@@ -137,18 +140,26 @@ import {
   createFeeMaster,
   createFeeRefund,
   createFeeScholarship,
+  getStudentDepositedFees,
+  getStudentSettlementDues,
+  getStudentScholarshipContext,
+  getStudentTransportCollectContext,
   createHostelFeeCategory,
   createTransportVendor,
   ensureHostelFeeCategories,
   generateInvoiceFromReceipt,
   generateInvoicesFromReceipts,
   getFeeInvoice,
+  getInvoiceCreateMeta,
   getHostelFeeSummary,
   getTransportFeeSummary,
+  getTransportVendor,
   levyFeeFine,
   listFeeDiscounts,
   listFeeFineLevies,
   listFeeFineTypes,
+  approveFeeFineLevy,
+  rejectFeeFineLevy,
   listFeeInvoices,
   listFeeMasters,
   listFeeRefunds,
@@ -157,6 +168,9 @@ import {
   listHostelFeeCollections,
   listScholarshipAwards,
   listTransportFeeCollections,
+  listTransportRouteOptions,
+  listTransportVendorComplianceAlerts,
+  syncInvoicesFromPayments,
   listTransportVendorPayments,
   listTransportVendors,
   markFinePaid,
@@ -166,11 +180,13 @@ import {
   rejectFeeRefund,
   rejectFeeScholarship,
   rejectScholarshipAward,
+  rejectTransportVendor,
   seedFeeFineTypes,
   seedFeeMasters,
   seedHostelFeeCategories,
   submitDiscountForApproval,
   submitScholarshipForApproval,
+  syncTransportVendorCompliance,
   updateFeeFineType,
   updateFeeMaster,
   updateHostelFeeCategory,
@@ -227,7 +243,7 @@ const createMasterSchema = z.object({
 const updateMasterSchema = createMasterSchema.partial();
 
 const createInvoiceSchema = z.object({
-  studentName: z.string().min(1),
+  studentName: z.string().optional().default(''),
   academicYear: z.string().optional(),
   studentId: z.string().optional(),
   admissionNumber: z.string().optional(),
@@ -239,14 +255,23 @@ const createInvoiceSchema = z.object({
   parentEmail: z.string().optional(),
   photoUrl: z.string().optional(),
   feePeriod: z.string().optional(),
+  periodType: z.enum(['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY']).optional(),
+  periodValue: z.string().optional(),
   invoiceDate: z.string().optional(),
   dueDate: z.string().optional(),
   lineItems: z.array(z.record(z.unknown())).optional(),
+  selectedHeads: z.array(z.object({
+    key: z.string(),
+    amount: z.number().optional(),
+    label: z.string().optional(),
+  })).optional(),
   totalFee: z.number().optional(),
   concessionAmount: z.number().optional(),
   lateFee: z.number().optional(),
   previousDues: z.number().optional(),
   remarks: z.string().optional(),
+}).refine((d) => Boolean(d.studentId || d.studentName?.trim()), {
+  message: 'studentId or studentName is required',
 });
 
 const fromReceiptsSchema = z.object({
@@ -264,7 +289,7 @@ const invoiceStatusUpdateSchema = z.object({
 
 const createDiscountSchema = z.object({
   code: z.string().optional(),
-  name: z.string().min(1),
+  name: z.string().optional(),
   description: z.string().optional(),
   discountType: z.string().optional(),
   value: z.number().optional(),
@@ -274,8 +299,12 @@ const createDiscountSchema = z.object({
   studentId: z.string().optional(),
   studentName: z.string().optional(),
   admissionNumber: z.string().optional(),
+  className: z.string().optional(),
+  sectionName: z.string().optional(),
   settlementAmount: z.number().optional(),
+  totalDueFees: z.number().optional(),
   remarks: z.string().optional(),
+  submitForApproval: z.boolean().optional(),
 });
 
 const rejectSchema = z.object({
@@ -295,6 +324,15 @@ const createRefundSchema = z.object({
   originalReceipt: z.string().optional(),
   paymentMode: z.string().optional(),
   remarks: z.string().optional(),
+  depositBreakdown: z
+    .array(
+      z.object({
+        key: z.string(),
+        label: z.string(),
+        amount: z.number(),
+      }),
+    )
+    .optional(),
 });
 
 const processRefundSchema = z.object({
@@ -314,15 +352,18 @@ const createFineTypeSchema = z.object({
 const updateFineTypeSchema = createFineTypeSchema.partial();
 
 const levyFineSchema = z.object({
-  fineTypeId: z.string().min(1),
+  fineTypeId: z.string().optional(),
+  category: fineCategorySchema.optional(),
   academicYear: z.string().optional(),
   studentId: z.string().optional(),
   studentName: z.string().min(1),
   admissionNumber: z.string().optional(),
   className: z.string().optional(),
+  sectionName: z.string().optional(),
   amount: z.number().positive(),
-  reason: z.string().optional(),
+  reason: z.string().min(1),
   dueDate: z.string().optional(),
+  submitForApproval: z.boolean().optional(),
 });
 
 const createScholarshipSchema = z.object({
@@ -344,8 +385,24 @@ const awardScholarshipSchema = z.object({
   studentName: z.string().min(1),
   admissionNumber: z.string().optional(),
   className: z.string().optional(),
+  sectionName: z.string().optional(),
   amount: z.number().optional(),
+  reason: z.string().optional(),
   remarks: z.string().optional(),
+  totalDueFees: z.number().optional(),
+  entranceTestResult: z.string().optional(),
+  lastClassPercent: z.number().optional(),
+  lastClassTotal: z.number().optional(),
+  lastClassObtain: z.number().optional(),
+});
+
+const vendorDocumentSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  type: z.string().optional().default('OTHER'),
+  mimeType: z.string().optional().default('application/octet-stream'),
+  fileData: z.string().min(1),
+  uploadedAt: z.string().optional(),
 });
 
 const createTransportVendorSchema = z.object({
@@ -358,11 +415,35 @@ const createTransportVendorSchema = z.object({
   routesCovered: z.string().optional(),
   vehicleCount: z.number().int().optional(),
   bankDetails: z.record(z.unknown()).optional(),
-  status: transportVendorStatusSchema.optional(),
+  ownerPan: z.string().optional(),
+  ownerAadhaar: z.string().optional(),
+  driver1Name: z.string().optional(),
+  driver1Mobile: z.string().optional(),
+  driver1DlNumber: z.string().optional(),
+  driver1DlExpiry: z.string().nullable().optional(),
+  driver1PoliceVerification: z.string().optional(),
+  driver2Name: z.string().optional(),
+  driver2Mobile: z.string().optional(),
+  driver2DlNumber: z.string().optional(),
+  driver2DlExpiry: z.string().nullable().optional(),
+  driver2PoliceVerification: z.string().optional(),
+  vehicleRegNo: z.string().optional(),
+  vehicleChassisNo: z.string().optional(),
+  vehicleType: z.string().optional(),
+  pollutionCertDate: z.string().nullable().optional(),
+  pollutionExpiryDate: z.string().nullable().optional(),
+  insurancePolicyNo: z.string().optional(),
+  insuranceExpiryDate: z.string().nullable().optional(),
+  trackingGpsDeviceId: z.string().optional(),
+  trackingPhoneAccess: z.string().optional(),
+  documents: z.array(vendorDocumentSchema).optional(),
   remarks: z.string().optional(),
+  sendForApproval: z.boolean().optional(),
 });
 
-const updateTransportVendorSchema = createTransportVendorSchema.partial();
+const updateTransportVendorSchema = createTransportVendorSchema.partial().extend({
+  status: transportVendorStatusSchema.optional(),
+});
 
 const collectTransportSchema = z.object({
   academicYear: z.string().optional(),
@@ -371,9 +452,11 @@ const collectTransportSchema = z.object({
   studentName: z.string().min(1),
   admissionNumber: z.string().optional(),
   className: z.string().optional(),
+  sectionName: z.string().optional(),
   routeName: z.string().optional(),
   amount: z.number().positive(),
-  paymentMode: z.string().optional(),
+  totalDueFees: z.number().optional(),
+  paymentMode: z.string().min(1),
   remarks: z.string().optional(),
 });
 
@@ -477,6 +560,19 @@ feeFinanceRouter.patch(
 // ─── Invoices ─────────────────────────────────────────────────────────────────
 
 feeFinanceRouter.get(
+  '/invoices/create-meta',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    return res.json(await getInvoiceCreateMeta(institutionId, {
+      academicYear: typeof req.query.academicYear === 'string' ? req.query.academicYear : undefined,
+      studentId: typeof req.query.studentId === 'string' ? req.query.studentId : undefined,
+      className: typeof req.query.className === 'string' ? req.query.className : undefined,
+      sectionName: typeof req.query.sectionName === 'string' ? req.query.sectionName : undefined,
+    }));
+  }),
+);
+
+feeFinanceRouter.get(
   '/invoices',
   asyncHandler(async (req, res) => {
     const querySchema = z.object({
@@ -490,6 +586,19 @@ feeFinanceRouter.get(
     const institutionId = await getDefaultInstitutionId();
     const records = await listFeeInvoices(institutionId, parsed.data);
     return res.json({ records });
+  }),
+);
+
+feeFinanceRouter.post(
+  '/invoices/sync-payments',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const academicYear = typeof req.body?.academicYear === 'string' ? req.body.academicYear : undefined;
+    const result = await syncInvoicesFromPayments(institutionId, {
+      academicYear,
+      preparedBy: actor(req),
+    });
+    return res.json(result);
   }),
 );
 
@@ -551,11 +660,15 @@ feeFinanceRouter.post(
       const record = await createFeeInvoice(institutionId, {
         ...parsed.data,
         academicYear: parsed.data.academicYear || '2025-26',
+        studentName: parsed.data.studentName || '',
         lineItems: parsed.data.lineItems?.map((i) => ({
           key: String((i as { key?: unknown }).key || ''),
           label: String((i as { label?: unknown }).label || ''),
           amount: Number((i as { amount?: unknown }).amount) || 0,
         })),
+        selectedHeads: parsed.data.selectedHeads,
+        periodType: parsed.data.periodType,
+        periodValue: parsed.data.periodValue,
         preparedBy: actor(req),
       });
       return res.status(201).json({ record });
@@ -617,6 +730,27 @@ feeFinanceRouter.get(
     const institutionId = await getDefaultInstitutionId();
     const records = await listFeeDiscounts(institutionId, parsed.data);
     return res.json({ records });
+  }),
+);
+
+feeFinanceRouter.get(
+  '/discounts/student-dues',
+  asyncHandler(async (req, res) => {
+    const querySchema = z.object({
+      academicYear: z.string().optional(),
+      studentId: z.string().optional(),
+      admissionNumber: z.string().optional(),
+    });
+    const parsed = querySchema.safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const institutionId = await getDefaultInstitutionId();
+    try {
+      const data = await getStudentSettlementDues(institutionId, parsed.data);
+      return res.json(data);
+    } catch (err) {
+      return handleModuleError(err, res, 'Discount');
+    }
   }),
 );
 
@@ -707,6 +841,27 @@ feeFinanceRouter.get(
     const institutionId = await getDefaultInstitutionId();
     const records = await listFeeRefunds(institutionId, parsed.data);
     return res.json({ records });
+  }),
+);
+
+feeFinanceRouter.get(
+  '/refunds/student-deposits',
+  asyncHandler(async (req, res) => {
+    const querySchema = z.object({
+      academicYear: z.string().optional(),
+      studentId: z.string().optional(),
+      admissionNumber: z.string().optional(),
+    });
+    const parsed = querySchema.safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const institutionId = await getDefaultInstitutionId();
+    try {
+      const data = await getStudentDepositedFees(institutionId, parsed.data);
+      return res.json(data);
+    } catch (err) {
+      return handleModuleError(err, res, 'Refund');
+    }
   }),
 );
 
@@ -869,8 +1024,48 @@ feeFinanceRouter.post(
       const record = await levyFeeFine(institutionId, {
         ...parsed.data,
         academicYear: parsed.data.academicYear || '2025-26',
+        submitForApproval: parsed.data.submitForApproval ?? true,
+        requestedBy: actor(req),
       });
       return res.status(201).json({ record });
+    } catch (err) {
+      return handleModuleError(err, res, 'Fine levy');
+    }
+  }),
+);
+
+feeFinanceRouter.post(
+  '/fines/levies/:id/approve',
+  requireApprover,
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    try {
+      const record = await approveFeeFineLevy(institutionId, req.params.id, actor(req));
+      if (!record) return res.status(404).json({ error: 'Fine levy not found' });
+      return res.json({ record });
+    } catch (err) {
+      return handleModuleError(err, res, 'Fine levy');
+    }
+  }),
+);
+
+feeFinanceRouter.post(
+  '/fines/levies/:id/reject',
+  requireApprover,
+  asyncHandler(async (req, res) => {
+    const parsed = rejectSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const institutionId = await getDefaultInstitutionId();
+    try {
+      const record = await rejectFeeFineLevy(
+        institutionId,
+        req.params.id,
+        actor(req),
+        parsed.data.reason,
+      );
+      if (!record) return res.status(404).json({ error: 'Fine levy not found' });
+      return res.json({ record });
     } catch (err) {
       return handleModuleError(err, res, 'Fine levy');
     }
@@ -908,6 +1103,27 @@ feeFinanceRouter.post(
 // ─── Scholarships ─────────────────────────────────────────────────────────────
 
 feeFinanceRouter.get(
+  '/scholarships/student-context',
+  asyncHandler(async (req, res) => {
+    const querySchema = z.object({
+      academicYear: z.string().optional(),
+      studentId: z.string().optional(),
+      admissionNumber: z.string().optional(),
+    });
+    const parsed = querySchema.safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const institutionId = await getDefaultInstitutionId();
+    try {
+      const data = await getStudentScholarshipContext(institutionId, parsed.data);
+      return res.json(data);
+    } catch (err) {
+      return handleModuleError(err, res, 'Scholarship');
+    }
+  }),
+);
+
+feeFinanceRouter.get(
   '/scholarships/awards',
   asyncHandler(async (req, res) => {
     const querySchema = z.object({
@@ -934,7 +1150,6 @@ feeFinanceRouter.post(
       const record = await awardScholarship(institutionId, {
         ...parsed.data,
         academicYear: parsed.data.academicYear || '2025-26',
-        amount: parsed.data.amount ?? 0,
       });
       return res.status(201).json({ record });
     } catch (err) {
@@ -1094,11 +1309,77 @@ feeFinanceRouter.get(
 );
 
 feeFinanceRouter.get(
+  '/transport/routes',
+  asyncHandler(async (req, res) => {
+    const querySchema = z.object({ academicYear: z.string().optional() });
+    const parsed = querySchema.safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const institutionId = await getDefaultInstitutionId();
+    const records = await listTransportRouteOptions(institutionId, parsed.data.academicYear);
+    return res.json({ records });
+  }),
+);
+
+feeFinanceRouter.get(
+  '/transport/student-context',
+  asyncHandler(async (req, res) => {
+    const querySchema = z.object({
+      academicYear: z.string().optional(),
+      studentId: z.string().optional(),
+      admissionNumber: z.string().optional(),
+    });
+    const parsed = querySchema.safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const institutionId = await getDefaultInstitutionId();
+    try {
+      const data = await getStudentTransportCollectContext(institutionId, parsed.data);
+      return res.json(data);
+    } catch (err) {
+      return handleModuleError(err, res, 'Transport');
+    }
+  }),
+);
+
+feeFinanceRouter.get(
   '/transport/vendors',
   asyncHandler(async (_req, res) => {
     const institutionId = await getDefaultInstitutionId();
     const records = await listTransportVendors(institutionId);
     return res.json({ records });
+  }),
+);
+
+feeFinanceRouter.get(
+  '/transport/vendors/compliance-alerts',
+  asyncHandler(async (req, res) => {
+    const querySchema = z.object({ status: z.string().optional() });
+    const parsed = querySchema.safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const institutionId = await getDefaultInstitutionId();
+    const records = await listTransportVendorComplianceAlerts(institutionId, parsed.data);
+    return res.json({ records });
+  }),
+);
+
+feeFinanceRouter.post(
+  '/transport/vendors/sync-compliance',
+  asyncHandler(async (_req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const result = await syncTransportVendorCompliance(institutionId);
+    return res.json(result);
+  }),
+);
+
+feeFinanceRouter.get(
+  '/transport/vendors/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    try {
+      const record = await getTransportVendor(institutionId, req.params.id);
+      return res.json({ record });
+    } catch (err) {
+      return handleModuleError(err, res, 'Transport vendor');
+    }
   }),
 );
 
@@ -1110,7 +1391,7 @@ feeFinanceRouter.post(
 
     const institutionId = await getDefaultInstitutionId();
     try {
-      const record = await createTransportVendor(institutionId, parsed.data);
+      const record = await createTransportVendor(institutionId, parsed.data, actor(req));
       return res.status(201).json({ record });
     } catch (err) {
       return handleModuleError(err, res, 'Transport vendor');
@@ -1128,6 +1409,41 @@ feeFinanceRouter.patch(
     try {
       const record = await updateTransportVendor(institutionId, req.params.id, parsed.data);
       if (!record) return res.status(404).json({ error: 'Transport vendor not found' });
+      return res.json({ record });
+    } catch (err) {
+      return handleModuleError(err, res, 'Transport vendor');
+    }
+  }),
+);
+
+feeFinanceRouter.post(
+  '/transport/vendors/:id/approve',
+  requireApprover,
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    try {
+      const record = await approveTransportVendor(institutionId, req.params.id, actor(req));
+      return res.json({ record });
+    } catch (err) {
+      return handleModuleError(err, res, 'Transport vendor');
+    }
+  }),
+);
+
+feeFinanceRouter.post(
+  '/transport/vendors/:id/reject',
+  requireApprover,
+  asyncHandler(async (req, res) => {
+    const parsed = rejectSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const institutionId = await getDefaultInstitutionId();
+    try {
+      const record = await rejectTransportVendor(
+        institutionId,
+        req.params.id,
+        actor(req),
+        parsed.data.reason,
+      );
       return res.json({ record });
     } catch (err) {
       return handleModuleError(err, res, 'Transport vendor');
@@ -1353,6 +1669,7 @@ const createOtherChargeRequestSchema = z.object({
   admissionNumber: z.string().optional(),
   className: z.string().optional(),
   sectionName: z.string().optional(),
+  totalDueFees: z.number().optional(),
   remarks: z.string().optional(),
 });
 
@@ -1368,6 +1685,40 @@ feeFinanceRouter.get(
       parsed.data.academicYear || '2025-26',
     );
     return res.json(summary);
+  }),
+);
+
+feeFinanceRouter.get(
+  '/other-charges/admission-candidates',
+  asyncHandler(async (req, res) => {
+    const querySchema = z.object({
+      academicYear: z.string().optional(),
+      q: z.string().optional(),
+    });
+    const parsed = querySchema.safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const institutionId = await getDefaultInstitutionId();
+    const records = await listAdmissionDiscountCandidates(institutionId, parsed.data);
+    return res.json({ records });
+  }),
+);
+
+feeFinanceRouter.get(
+  '/other-charges/student-all-session-dues',
+  asyncHandler(async (req, res) => {
+    const querySchema = z.object({
+      studentId: z.string().optional(),
+      admissionNumber: z.string().optional(),
+    });
+    const parsed = querySchema.safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const institutionId = await getDefaultInstitutionId();
+    try {
+      const data = await getStudentAllSessionDues(institutionId, parsed.data);
+      return res.json(data);
+    } catch (err) {
+      return handleModuleError(err, res, 'Other charge');
+    }
   }),
 );
 

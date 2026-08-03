@@ -82,10 +82,10 @@ export function PerformanceAppraisalView() {
   const [editModal, setEditModal] = useState(false);
   const [editForm, setEditForm] = useState<Record<string, number | string>>({});
 
-  const load = useCallback(async (seed = false) => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const d = await fetchPerformanceAppraisal({ seed, academicYear, quarter });
+      const d = await fetchPerformanceAppraisal({ academicYear, quarter });
       setData(d);
       setAcademicYear(d.academicYear);
       setQuarter(d.quarter);
@@ -185,9 +185,6 @@ export function PerformanceAppraisalView() {
         subtitle="Quarterly performance appraisal, annual review, PIP, promotions, increments & pay grades — linked to payroll"
         actions={(
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => void load(true)} disabled={busy} className={am.btnSecondary}>
-              <RefreshCw size={14} /> Load Demo
-            </button>
             {tab === 'Quarterly Appraisal' && (
               <>
                 <button type="button" onClick={() => void handleGenerate()} disabled={busy} className={am.btnSecondary}>

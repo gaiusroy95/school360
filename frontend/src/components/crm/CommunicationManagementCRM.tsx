@@ -1,17 +1,53 @@
+import { lazy, Suspense, type ReactNode } from 'react';
 import { SubModuleView } from './shared/SubModuleView';
-import { CommunicationDashboardView } from './communication/CommunicationDashboardView';
-import { ComposeMessageView } from './communication/ComposeMessageView';
-import { MessageTemplatesView } from './communication/MessageTemplatesView';
-import { SmsManagementView } from './communication/SmsManagementView';
-import { EmailManagementView } from './communication/EmailManagementView';
-import { WhatsAppManagementView } from './communication/WhatsAppManagementView';
-import { PushNotificationsView } from './communication/PushNotificationsView';
-import { CircularsNoticesView } from './communication/CircularsNoticesView';
-import { EventInvitationsView } from './communication/EventInvitationsView';
-import { SurveysFeedbackView } from './communication/SurveysFeedbackView';
-import { AutoRemindersView } from './communication/AutoRemindersView';
-import { MessageHistoryView } from './communication/MessageHistoryView';
-import { CommunicationReportsAnalyticsView } from './communication/CommunicationReportsAnalyticsView';
+
+const CommunicationDashboardView = lazy(() =>
+  import('./communication/CommunicationDashboardView').then((m) => ({ default: m.CommunicationDashboardView })),
+);
+const ComposeMessageView = lazy(() =>
+  import('./communication/ComposeMessageView').then((m) => ({ default: m.ComposeMessageView })),
+);
+const MessageTemplatesView = lazy(() =>
+  import('./communication/MessageTemplatesView').then((m) => ({ default: m.MessageTemplatesView })),
+);
+const SmsManagementView = lazy(() =>
+  import('./communication/SmsManagementView').then((m) => ({ default: m.SmsManagementView })),
+);
+const EmailManagementView = lazy(() =>
+  import('./communication/EmailManagementView').then((m) => ({ default: m.EmailManagementView })),
+);
+const WhatsAppManagementView = lazy(() =>
+  import('./communication/WhatsAppManagementView').then((m) => ({ default: m.WhatsAppManagementView })),
+);
+const PushNotificationsView = lazy(() =>
+  import('./communication/PushNotificationsView').then((m) => ({ default: m.PushNotificationsView })),
+);
+const CircularsNoticesView = lazy(() =>
+  import('./communication/CircularsNoticesView').then((m) => ({ default: m.CircularsNoticesView })),
+);
+const EventInvitationsView = lazy(() =>
+  import('./communication/EventInvitationsView').then((m) => ({ default: m.EventInvitationsView })),
+);
+const SurveysFeedbackView = lazy(() =>
+  import('./communication/SurveysFeedbackView').then((m) => ({ default: m.SurveysFeedbackView })),
+);
+const AutoRemindersView = lazy(() =>
+  import('./communication/AutoRemindersView').then((m) => ({ default: m.AutoRemindersView })),
+);
+const MessageHistoryView = lazy(() =>
+  import('./communication/MessageHistoryView').then((m) => ({ default: m.MessageHistoryView })),
+);
+const CommunicationReportsAnalyticsView = lazy(() =>
+  import('./communication/CommunicationReportsAnalyticsView').then((m) => ({ default: m.CommunicationReportsAnalyticsView })),
+);
+
+function wrap(node: ReactNode) {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[30vh] text-sm text-slate-400">Loading page…</div>}>
+      {node}
+    </Suspense>
+  );
+}
 
 export function CommunicationManagementCRM({
   currentView = 'Communication Dashboard',
@@ -21,46 +57,46 @@ export function CommunicationManagementCRM({
   onNavigate?: (view: string) => void;
 }) {
   if (currentView === 'Communication Dashboard' || !currentView) {
-    return <CommunicationDashboardView onNavigate={onNavigate} />;
+    return wrap(<CommunicationDashboardView onNavigate={onNavigate} />);
   }
   if (currentView === 'Compose Message') {
-    return <ComposeMessageView />;
+    return wrap(<ComposeMessageView />);
   }
   if (currentView === 'Message Templates') {
-    return <MessageTemplatesView />;
+    return wrap(<MessageTemplatesView />);
   }
   if (currentView === 'SMS Management') {
-    return <SmsManagementView />;
+    return wrap(<SmsManagementView />);
   }
   if (currentView === 'Email Management') {
-    return <EmailManagementView />;
+    return wrap(<EmailManagementView />);
   }
   if (currentView === 'WhatsApp Management') {
-    return <WhatsAppManagementView />;
+    return wrap(<WhatsAppManagementView />);
   }
   if (currentView === 'Push Notifications') {
-    return <PushNotificationsView />;
+    return wrap(<PushNotificationsView />);
   }
   if (currentView === 'Circulars / Notices') {
-    return <CircularsNoticesView />;
+    return wrap(<CircularsNoticesView />);
   }
   if (currentView === 'Event Invitations') {
-    return <EventInvitationsView />;
+    return wrap(<EventInvitationsView />);
   }
   if (currentView === 'Surveys & Feedback') {
-    return <SurveysFeedbackView />;
+    return wrap(<SurveysFeedbackView />);
   }
   if (currentView === 'Auto Reminders') {
-    return <AutoRemindersView />;
+    return wrap(<AutoRemindersView />);
   }
   if (currentView === 'Message History') {
-    return <MessageHistoryView />;
+    return wrap(<MessageHistoryView />);
   }
   if (currentView === 'Reports & Analytics') {
-    return <CommunicationReportsAnalyticsView />;
+    return wrap(<CommunicationReportsAnalyticsView />);
   }
   if (currentView) {
     return <SubModuleView module="Communication Management" title={currentView} />;
   }
-  return <CommunicationDashboardView onNavigate={onNavigate} />;
+  return wrap(<CommunicationDashboardView onNavigate={onNavigate} />);
 }

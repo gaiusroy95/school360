@@ -441,6 +441,8 @@ export type MessManagement = {
   weekStart: string;
   weekStartIso: string;
   mealTypes: { id: string; code: string; name: string; timeRange: string }[];
+  /** Canonical meal preference codes from hostel mess module: VEG | NON_VEG | EGGETARIAN */
+  mealPreferences?: string[];
   financials: { totalCollection: string; totalExpense: string; messBalance: string; studentsOpted: number };
   preferenceChart: { name: string; pct: number; color: string }[];
   calendar: {

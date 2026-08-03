@@ -24,20 +24,27 @@ const STATUS_COLORS: Record<string, string> = {
   EXPIRED: 'bg-orange-100 text-orange-800',
   WAIVED: 'bg-purple-100 text-purple-800',
   EMPANELLED: 'bg-teal-100 text-teal-800',
+  RED_CATEGORY: 'bg-red-100 text-red-800',
   GENERATED: 'bg-indigo-100 text-indigo-800',
   OPEN: 'bg-purple-100 text-purple-800',
-  COMPLETED: 'bg-blue-100 text-blue-800',
+  /** Legacy payment status — display as PAID */
+  COMPLETED: 'bg-green-100 text-green-800',
   DUE: 'bg-red-100 text-red-800',
   DAY_CLOSING_COMPLETED: 'bg-teal-100 text-teal-800',
   FROZEN: 'bg-cyan-100 text-cyan-800',
   RETURNED: 'bg-orange-100 text-orange-800',
 };
 
+const STATUS_LABELS: Record<string, string> = {
+  COMPLETED: 'PAID',
+};
+
 export function StatusBadge({ status }: { status: string }) {
   const cls = STATUS_COLORS[status] || 'bg-slate-100 text-slate-600';
+  const label = STATUS_LABELS[status] || status.replace(/_/g, ' ');
   return (
     <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${cls}`}>
-      {status.replace(/_/g, ' ')}
+      {label}
     </span>
   );
 }
