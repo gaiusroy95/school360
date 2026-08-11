@@ -16,7 +16,11 @@
         "foregroundImage": "./assets/favicon.png",
         "backgroundColor": "#0f172a"
       },
-      "package": "com.schoolerp.staff"
+      "package": "com.schoolerp.staff",
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -38,9 +42,11 @@
       ]
     ],
     "extra": {
+      "router": {},
       "eas": {
-        "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
+        "projectId": "80319b92-0009-44c2-89b7-5abf7b07ded1"
       }
-    }
+    },
+    "owner": "kok-expo"
   }
 }

@@ -277,7 +277,7 @@ async function importTeachers(
       }
 
       const empTypeRaw = cell(row.employmentType).toUpperCase();
-      let employmentType = PayrollEmploymentType.TEACHING;
+      let employmentType: PayrollEmploymentType = PayrollEmploymentType.TEACHING;
       if (empTypeRaw.includes('ADMIN')) employmentType = PayrollEmploymentType.ADMIN;
       else if (empTypeRaw.includes('SUPPORT')) employmentType = PayrollEmploymentType.SUPPORT;
       else if (empTypeRaw.includes('NON') || empTypeRaw.includes('STAFF')) {

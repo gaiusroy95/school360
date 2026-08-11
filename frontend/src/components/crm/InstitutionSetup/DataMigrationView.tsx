@@ -14,7 +14,7 @@ import {
   runMasterMigration,
   type MasterMigrationSummary,
   type MigrationTemplateMeta,
-} from '../../lib/dataMigrationServices';
+} from '../../../lib/dataMigrationServices';
 
 export function DataMigrationView({ onBack }: { onBack?: () => void }) {
   const [meta, setMeta] = useState<MigrationTemplateMeta | null>(null);
