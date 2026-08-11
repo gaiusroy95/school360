@@ -126,8 +126,15 @@ async function employeeOnLeaveToday(institutionId: string, employeeIds: string[]
   return codes;
 }
 
-export async function listHrDepartments(institutionId: string, q?: string) {
+export async function listHrDepartments(
+  institutionId: string,
+  q?: string,
+  opts?: { includeDeleted?: boolean },
+) {
   const where: Prisma.HrDepartmentWhereInput = { institutionId };
+  if (!opts?.includeDeleted) {
+    where.NOT = { status: 'DELETED' };
+  }
   if (q?.trim()) {
     const term = q.trim();
     where.OR = [
@@ -145,6 +152,7 @@ export async function listHrDepartments(institutionId: string, q?: string) {
 export async function getHrDepartment(institutionId: string, id: string) {
   const row = await prisma.hrDepartment.findFirst({ where: { id, institutionId } });
   if (!row) throw new Error('Department not found');
+  if (row.status === 'DELETED') throw new Error('Department was deleted');
 
   const dept = serializeDepartment(row);
   const [head, reportsTo, employees, parents] = await Promise.all([
@@ -347,6 +355,77 @@ export async function updateHrDepartment(
   }
 
   return getHrDepartment(institutionId, id);
+}
+
+/** Soft-delete department so it no longer appears in the directory (and sync will not resurrect it as ACTIVE). */
+export async function deleteHrDepartment(institutionId: string, id: string) {
+  const existing = await prisma.hrDepartment.findFirst({ where: { id, institutionId } });
+  if (!existing) throw new Error('Department not found');
+  if (existing.status === 'DELETED') {
+    return { id, code: existing.code, message: 'Department already deleted' };
+  }
+
+  const childCount = await prisma.hrDepartment.count({
+    where: { institutionId, parentId: id, NOT: { status: 'DELETED' } },
+  });
+  if (childCount > 0) {
+    throw new Error('Cannot delete department with active child departments. Reassign or delete children first.');
+  }
+
+  await prisma.hrDepartment.update({
+    where: { id },
+    data: { status: 'DELETED', parentId: null },
+  });
+
+  // Clear parent links pointing at this department
+  await prisma.hrDepartment.updateMany({
+    where: { institutionId, parentId: id },
+    data: { parentId: null },
+  });
+
+  // Deactivate ops mirror
+  await prisma.opsDepartment.updateMany({
+    where: {
+      institutionId,
+      OR: [{ hrDepartmentId: id }, { departmentCode: existing.code }],
+    },
+    data: { isActive: false },
+  });
+
+  // Remove from Institution Setup → Departments Setup records so sync does not keep it
+  const institution = await prisma.institution.findUnique({
+    where: { id: institutionId },
+    include: { setup: true },
+  });
+  const setup = institution?.setup;
+  if (setup?.departmentsSetup && typeof setup.departmentsSetup === 'object') {
+    const tile = setup.departmentsSetup as { records?: Array<Record<string, unknown>>; sections?: unknown };
+    const records = Array.isArray(tile.records) ? tile.records : [];
+    const nextRecords = records.filter((row) => {
+      const code = String(row.departmentCode || row.code || '').trim().toUpperCase();
+      const name = String(row.departmentName || row.name || '').trim().toLowerCase();
+      if (code && code === existing.code.toUpperCase()) return false;
+      if (name && name === existing.name.trim().toLowerCase()) return false;
+      return true;
+    });
+    if (nextRecords.length !== records.length) {
+      await prisma.institutionSetup.update({
+        where: { institutionId },
+        data: {
+          departmentsSetup: {
+            ...tile,
+            records: nextRecords,
+          } as Prisma.InputJsonValue,
+        },
+      });
+    }
+  }
+
+  return {
+    id,
+    code: existing.code,
+    message: `Department ${existing.name} (${existing.code}) deleted`,
+  };
 }
 
 export async function listDepartmentEmployeeOptions(institutionId: string) {

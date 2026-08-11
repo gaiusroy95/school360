@@ -250,7 +250,14 @@ export function TeacherAllocationView() {
     setBusy(true);
     try {
       const r = await syncTeacherRosterAllocations(academicYear);
-      setMessage(`Synced ${r.created} class/subject tasks from allocations`);
+      const fromSub = r.reconcile?.syncedFromSubject ?? 0;
+      const fromTeach = r.reconcile?.syncedFromTeacher ?? 0;
+      const periods = r.reconcile?.periodsUpdated ?? 0;
+      setMessage(
+        `Synced Subject ↔ Teacher: ${fromSub} from subjects, ${fromTeach} from teachers` +
+          (periods ? `, ${periods} period schedules updated` : '') +
+          `. Created ${r.created} class/subject roster task(s).`,
+      );
       void load();
     } finally { setBusy(false); }
   };
@@ -285,7 +292,7 @@ export function TeacherAllocationView() {
         actions={(
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => void handleSync()} disabled={busy} className={am.btnSecondary}>
-              <RefreshCw size={14} /> Sync Class Allocations
+              <RefreshCw size={14} /> Sync Subject ↔ Allocations
             </button>
             <button type="button" onClick={() => openTaskForm()} className={am.btnSecondary}>
               <Plus size={14} /> Create Task

@@ -166,6 +166,8 @@ import {
 import {
   generateAllCertificates,
   generateCertificates,
+  getCertificateAsset,
+  getCertificateConfig,
   getCertificatePreview,
   getCertificatesMeta,
   getMobileCertificateByToken,
@@ -175,6 +177,8 @@ import {
   recordCertificateFromMobile,
   recordCertificateFromAdmin,
   seedCertificatesDemo,
+  updateCertificateConfig,
+  uploadCertificateAsset,
 } from '../lib/examCertificates.js';
 import {
   getExamAnalytics,
@@ -1889,6 +1893,55 @@ examinationRouter.get(
   asyncHandler(async (_req, res) => {
     const institutionId = await getDefaultInstitutionId();
     return res.json(await getCertificatesMeta(institutionId));
+  }),
+);
+
+examinationRouter.get(
+  '/certificates/config',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const academicYear = typeof req.query.academicYear === 'string' ? req.query.academicYear : undefined;
+    return res.json(await getCertificateConfig(institutionId, academicYear));
+  }),
+);
+
+examinationRouter.put(
+  '/certificates/config',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const academicYear = typeof req.body?.academicYear === 'string' ? req.body.academicYear : '2025-26';
+    return res.json(await updateCertificateConfig(institutionId, academicYear, {
+      schoolName: typeof req.body?.schoolName === 'string' ? req.body.schoolName : undefined,
+      schoolAddress: typeof req.body?.schoolAddress === 'string' ? req.body.schoolAddress : undefined,
+      principalName: typeof req.body?.principalName === 'string' ? req.body.principalName : undefined,
+      footerNote: typeof req.body?.footerNote === 'string' ? req.body.footerNote : undefined,
+    }));
+  }),
+);
+
+examinationRouter.post(
+  '/certificates/assets/:assetType',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const assetType = req.params.assetType as 'principalSignature' | 'classTeacherSignature' | 'schoolSeal' | 'headerLogo';
+    const valid = ['principalSignature', 'classTeacherSignature', 'schoolSeal', 'headerLogo'];
+    if (!valid.includes(assetType)) return res.status(400).json({ error: 'Invalid asset type' });
+    const parsed = fileSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'fileData and fileName are required' });
+    const academicYear = typeof req.body?.academicYear === 'string' ? req.body.academicYear : '2025-26';
+    return res.json(await uploadCertificateAsset(
+      institutionId, academicYear, assetType, parsed.data.fileData, req.user?.email || 'Admin',
+    ));
+  }),
+);
+
+examinationRouter.get(
+  '/certificates/assets/:assetType',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const assetType = req.params.assetType as 'principalSignature' | 'classTeacherSignature' | 'schoolSeal' | 'headerLogo';
+    const academicYear = typeof req.query.academicYear === 'string' ? req.query.academicYear : '2025-26';
+    return res.json(await getCertificateAsset(institutionId, academicYear, assetType));
   }),
 );
 

@@ -425,6 +425,261 @@ export async function createEmployeeDirectoryEntry(
   return buildDetail(row, school);
 }
 
+function parseEmploymentType(raw?: string): PayrollEmploymentType {
+  const u = String(raw || '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+  if (u === 'NON_TEACHING' || u === 'NONTEACHING') return PayrollEmploymentType.NON_TEACHING;
+  if (u === 'ADMIN' || u === 'ADMINISTRATION') return PayrollEmploymentType.ADMIN;
+  if (u === 'SUPPORT') return PayrollEmploymentType.SUPPORT;
+  if (u === 'TEACHING') return PayrollEmploymentType.TEACHING;
+  return PayrollEmploymentType.TEACHING;
+}
+
+export type EmployeeBulkUploadRow = {
+  employeeCode?: string;
+  fullName: string;
+  employmentType?: string;
+  department?: string;
+  designation?: string;
+  classGroup?: string;
+  mobile?: string;
+  email?: string;
+  joinDate?: string;
+  gender?: string;
+  dateOfBirth?: string;
+  reportingTo?: string;
+  workLocation?: string;
+  subject?: string;
+  bankAccount?: string;
+  bankIfsc?: string;
+  panNumber?: string;
+  uanNumber?: string;
+  pfNumber?: string;
+  esicNumber?: string;
+  bankName?: string;
+  paymentMode?: string;
+  basicSalary?: number;
+  hra?: number;
+  da?: number;
+  specialAllowance?: number;
+  conveyanceAllowance?: number;
+  otherAllowances?: number;
+  epfEmployee?: number;
+  professionalTax?: number;
+  otherDeductions?: number;
+  structureCode?: string;
+  effectiveFrom?: string;
+};
+
+function hasSalaryPayload(row: EmployeeBulkUploadRow) {
+  return [
+    row.basicSalary, row.hra, row.da, row.specialAllowance, row.conveyanceAllowance,
+    row.otherAllowances, row.epfEmployee, row.professionalTax, row.otherDeductions,
+  ].some((v) => v != null && Number.isFinite(Number(v)));
+}
+
+async function upsertEmployeeSalaryStructure(
+  institutionId: string,
+  employeeId: string,
+  employeeCode: string,
+  row: EmployeeBulkUploadRow,
+) {
+  const basic = Number(row.basicSalary || 0);
+  const hra = Number(row.hra || 0);
+  const da = Number(row.da || 0);
+  const specialAllowance = Number(row.specialAllowance || 0);
+  const conveyanceAllowance = Number(row.conveyanceAllowance || 0);
+  const otherAllowances = Number(row.otherAllowances || 0);
+  const grossSalary = basic + hra + da + specialAllowance + conveyanceAllowance + otherAllowances;
+  const epfEmployee = Number(row.epfEmployee || 0);
+  const professionalTax = Number(row.professionalTax || 0);
+  const otherDeductions = Number(row.otherDeductions || 0);
+  const totalDeductions = epfEmployee + professionalTax + otherDeductions;
+  const netSalary = Math.max(0, grossSalary - totalDeductions);
+  const effectiveFrom = row.effectiveFrom ? new Date(row.effectiveFrom) : new Date();
+  const structureCode = (row.structureCode || `SS-${employeeCode}`).trim();
+
+  await prisma.payrollSalaryStructure.updateMany({
+    where: { institutionId, employeeId, status: FeeMasterStatus.ACTIVE },
+    data: { status: FeeMasterStatus.INACTIVE },
+  });
+
+  const existingByCode = await prisma.payrollSalaryStructure.findFirst({
+    where: { institutionId, structureCode },
+  });
+
+  if (existingByCode) {
+    await prisma.payrollSalaryStructure.update({
+      where: { id: existingByCode.id },
+      data: {
+        employeeId,
+        effectiveFrom,
+        basicSalary: basic,
+        hra,
+        da,
+        specialAllowance,
+        conveyanceAllowance,
+        otherAllowances,
+        grossSalary,
+        pfWages: basic,
+        epfEmployee,
+        epfEmployer: epfEmployee,
+        professionalTax,
+        otherDeductions,
+        totalDeductions,
+        netSalary,
+        status: FeeMasterStatus.ACTIVE,
+        remarks: 'Bulk upload',
+      },
+    });
+    return;
+  }
+
+  await prisma.payrollSalaryStructure.create({
+    data: {
+      institutionId,
+      employeeId,
+      structureCode,
+      effectiveFrom,
+      basicSalary: basic,
+      hra,
+      da,
+      specialAllowance,
+      conveyanceAllowance,
+      otherAllowances,
+      grossSalary,
+      pfWages: basic,
+      epfEmployee,
+      epfEmployer: epfEmployee,
+      professionalTax,
+      otherDeductions,
+      totalDeductions,
+      netSalary,
+      status: FeeMasterStatus.ACTIVE,
+      remarks: 'Bulk upload',
+    },
+  });
+}
+
+/** Bulk create/update employees + per-staff salary structures from Excel rows. */
+export async function bulkUpsertEmployeeDirectory(
+  institutionId: string,
+  rows: EmployeeBulkUploadRow[],
+) {
+  if (!rows.length) throw new Error('No employee rows to import');
+
+  let created = 0;
+  let updated = 0;
+  let salaryUpserted = 0;
+  const errors: string[] = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const line = i + 2;
+    try {
+      const fullName = String(row.fullName || '').trim();
+      if (!fullName) {
+        errors.push(`Row ${line}: fullName is required`);
+        continue;
+      }
+
+      const employmentType = parseEmploymentType(row.employmentType);
+      const profile: Partial<EmployeeProfileData> = {
+        ...(row.gender ? { gender: row.gender } : {}),
+        ...(row.dateOfBirth ? { dateOfBirth: row.dateOfBirth } : {}),
+        ...(row.reportingTo ? { reportingTo: row.reportingTo } : {}),
+        ...(row.workLocation ? { workLocation: row.workLocation } : {}),
+        ...(row.subject ? { subject: row.subject } : {}),
+        ...(row.bankName ? { bankName: row.bankName } : {}),
+        ...(row.paymentMode ? { paymentMode: row.paymentMode } : {}),
+        employmentStatus: 'Active',
+      };
+
+      let employee = row.employeeCode?.trim()
+        ? await prisma.payrollEmployee.findFirst({
+            where: { institutionId, employeeCode: row.employeeCode.trim() },
+          })
+        : null;
+
+      if (employee) {
+        const currentProfile = parseProfile(employee.profileData);
+        employee = await prisma.payrollEmployee.update({
+          where: { id: employee.id },
+          data: {
+            fullName,
+            employmentType,
+            department: row.department?.trim() || employee.department,
+            designation: row.designation?.trim() || employee.designation,
+            classGroup: row.classGroup?.trim() ?? employee.classGroup,
+            mobile: row.mobile?.trim() ?? employee.mobile,
+            email: row.email?.trim() ?? employee.email,
+            joinDate: row.joinDate ? new Date(row.joinDate) : employee.joinDate,
+            bankAccount: row.bankAccount?.trim() ?? employee.bankAccount,
+            bankIfsc: row.bankIfsc?.trim() ?? employee.bankIfsc,
+            panNumber: row.panNumber?.trim() ?? employee.panNumber,
+            uanNumber: row.uanNumber?.trim() ?? employee.uanNumber,
+            pfNumber: row.pfNumber?.trim() ?? employee.pfNumber,
+            esicNumber: row.esicNumber?.trim() ?? employee.esicNumber,
+            profileData: { ...currentProfile, ...profile } as Prisma.InputJsonValue,
+            status: FeeMasterStatus.ACTIVE,
+          },
+        });
+        updated += 1;
+      } else {
+        const count = await prisma.payrollEmployee.count({ where: { institutionId } });
+        const employeeCode = row.employeeCode?.trim() || `EMP-${5460 + count + created + 1}`;
+        const codeTaken = await prisma.payrollEmployee.findFirst({
+          where: { institutionId, employeeCode },
+        });
+        if (codeTaken) {
+          errors.push(`Row ${line}: employeeCode ${employeeCode} already exists`);
+          continue;
+        }
+        employee = await prisma.payrollEmployee.create({
+          data: {
+            institutionId,
+            employeeCode,
+            fullName,
+            employmentType,
+            department: row.department?.trim() || 'General',
+            designation: row.designation?.trim() || 'Staff',
+            classGroup: row.classGroup?.trim() || '',
+            mobile: row.mobile?.trim() || '',
+            email: row.email?.trim() || '',
+            joinDate: row.joinDate ? new Date(row.joinDate) : new Date(),
+            bankAccount: row.bankAccount?.trim() || '',
+            bankIfsc: row.bankIfsc?.trim() || '',
+            panNumber: row.panNumber?.trim() || '',
+            uanNumber: row.uanNumber?.trim() || '',
+            pfNumber: row.pfNumber?.trim() || '',
+            esicNumber: row.esicNumber?.trim() || '',
+            profileData: profile as Prisma.InputJsonValue,
+            status: FeeMasterStatus.ACTIVE,
+          },
+        });
+        created += 1;
+      }
+
+      if (hasSalaryPayload(row)) {
+        await upsertEmployeeSalaryStructure(institutionId, employee.id, employee.employeeCode, row);
+        salaryUpserted += 1;
+      }
+    } catch (err) {
+      errors.push(`Row ${line}: ${err instanceof Error ? err.message : 'Failed'}`);
+    }
+  }
+
+  return {
+    created,
+    updated,
+    salaryUpserted,
+    total: rows.length,
+    errors,
+    message: `Imported ${created + updated} staff (${created} created, ${updated} updated, ${salaryUpserted} salary structures)${
+      errors.length ? ` · ${errors.length} row error(s)` : ''
+    }`,
+  };
+}
+
 export async function seedEmployeeDirectoryDemo(institutionId: string) {
   const existing = await prisma.payrollEmployee.findFirst({
     where: { institutionId, employeeCode: 'EMP2025007' },

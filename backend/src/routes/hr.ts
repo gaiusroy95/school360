@@ -7,6 +7,7 @@ import { getDefaultInstitutionId } from '../lib/institution.js';
 import { getHrDashboard } from '../lib/hrDashboard.js';
 import {
   createEmployeeDirectoryEntry,
+  bulkUpsertEmployeeDirectory,
   getEmployeeDirectoryDetail,
   listEmployeeDirectory,
   seedEmployeeDirectoryDemo,
@@ -14,6 +15,7 @@ import {
 } from '../lib/employeeDirectory.js';
 import {
   createHrDepartment,
+  deleteHrDepartment,
   getHrDepartment,
   listDepartmentEmployeeOptions,
   listHrDepartments,
@@ -235,6 +237,54 @@ hrRouter.post(
   }),
 );
 
+const bulkEmployeeSchema = z.object({
+  rows: z.array(z.object({
+    employeeCode: z.string().optional(),
+    fullName: z.string().min(1),
+    employmentType: z.string().optional(),
+    department: z.string().optional(),
+    designation: z.string().optional(),
+    classGroup: z.string().optional(),
+    mobile: z.string().optional(),
+    email: z.string().optional(),
+    joinDate: z.string().optional(),
+    gender: z.string().optional(),
+    dateOfBirth: z.string().optional(),
+    reportingTo: z.string().optional(),
+    workLocation: z.string().optional(),
+    subject: z.string().optional(),
+    bankAccount: z.string().optional(),
+    bankIfsc: z.string().optional(),
+    panNumber: z.string().optional(),
+    uanNumber: z.string().optional(),
+    pfNumber: z.string().optional(),
+    esicNumber: z.string().optional(),
+    bankName: z.string().optional(),
+    paymentMode: z.string().optional(),
+    basicSalary: z.number().optional(),
+    hra: z.number().optional(),
+    da: z.number().optional(),
+    specialAllowance: z.number().optional(),
+    conveyanceAllowance: z.number().optional(),
+    otherAllowances: z.number().optional(),
+    epfEmployee: z.number().optional(),
+    professionalTax: z.number().optional(),
+    otherDeductions: z.number().optional(),
+    structureCode: z.string().optional(),
+    effectiveFrom: z.string().optional(),
+  })).min(1).max(2000),
+});
+
+hrRouter.post(
+  '/employees/bulk',
+  asyncHandler(async (req, res) => {
+    const parsed = bulkEmployeeSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'rows array with employee data is required' });
+    const institutionId = await getDefaultInstitutionId();
+    return res.json(await bulkUpsertEmployeeDirectory(institutionId, parsed.data.rows));
+  }),
+);
+
 hrRouter.get(
   '/employees/:id',
   asyncHandler(async (req, res) => {
@@ -311,11 +361,12 @@ hrRouter.get(
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
     const q = typeof req.query.q === 'string' ? req.query.q : undefined;
+    const includeDeleted = req.query.includeDeleted === '1' || req.query.includeDeleted === 'true';
     const seed = false;
-    let records = await listHrDepartments(institutionId, q);
+    let records = await listHrDepartments(institutionId, q, { includeDeleted });
     if (records.length === 0 && seed) {
       await seedHrDepartmentsDemo(institutionId);
-      records = await listHrDepartments(institutionId, q);
+      records = await listHrDepartments(institutionId, q, { includeDeleted });
     }
     return res.json({ records });
   }),
@@ -393,6 +444,20 @@ hrRouter.patch(
       return res.json({ record });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to update department';
+      return res.status(400).json({ error: message });
+    }
+  }),
+);
+
+hrRouter.delete(
+  '/departments/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    try {
+      const result = await deleteHrDepartment(institutionId, req.params.id);
+      return res.json(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete department';
       return res.status(400).json({ error: message });
     }
   }),

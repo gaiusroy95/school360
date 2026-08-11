@@ -449,3 +449,174 @@ export async function bulkAssignElectives(
   }
   return { created, skipped, maxElectivesPerStudent: policy.maxElectivesPerStudent };
 }
+
+export type SyllabusChapterBulkRow = {
+  className: string;
+  sectionName: string;
+  subjectName: string;
+  chapterTitle: string;
+  unitNumber?: number;
+  boardTopicCode?: string;
+  plannedStartDate?: string;
+  plannedEndDate?: string;
+  revisionDeadline?: string;
+  completionPercent?: number;
+};
+
+/** True when class+section+subject exists in teacher or subject allocations for the year. */
+export async function isClassSubjectAllocated(
+  institutionId: string,
+  academicYear: string,
+  className: string,
+  sectionName: string,
+  subjectName: string,
+) {
+  const cn = className.trim();
+  const sn = sectionName.trim();
+  const sub = subjectName.trim();
+  if (!cn || !sub) return false;
+
+  const teacherHit = await prisma.academicTeacherAllocation.findFirst({
+    where: {
+      institutionId,
+      academicYear,
+      className: cn,
+      sectionName: sn,
+      subjectName: { equals: sub, mode: 'insensitive' },
+    },
+    select: { id: true },
+  });
+  if (teacherHit) return true;
+
+  const subject = await prisma.academicSubject.findFirst({
+    where: { institutionId, subjectName: { equals: sub, mode: 'insensitive' } },
+    select: { id: true },
+  });
+  if (!subject) return false;
+
+  const offering = await prisma.academicSubjectAllocation.findFirst({
+    where: {
+      institutionId,
+      academicYear,
+      subjectId: subject.id,
+      className: cn,
+      sectionName: sn,
+    },
+    select: { id: true },
+  });
+  return !!offering;
+}
+
+/**
+ * Bulk upsert syllabus chapters keyed by
+ * academicYear + class + section + subject + chapterTitle (+ unitNumber when provided).
+ * Rejects rows whose class/section/subject is not in teacher or subject allocation.
+ */
+export async function bulkUpsertSyllabusChapters(
+  institutionId: string,
+  data: { academicYear: string; term?: string; rows: SyllabusChapterBulkRow[]; requireAllocation?: boolean },
+) {
+  const academicYear = data.academicYear || '2025-26';
+  const term = data.term || 'Term 1';
+  const requireAllocation = data.requireAllocation !== false;
+
+  let created = 0;
+  let updated = 0;
+  const errors: string[] = [];
+
+  for (let i = 0; i < data.rows.length; i++) {
+    const row = data.rows[i];
+    const excelRow = i + 2;
+    try {
+      const className = row.className?.trim();
+      const sectionName = (row.sectionName || '').trim();
+      const subjectName = row.subjectName?.trim();
+      const chapterTitle = row.chapterTitle?.trim();
+      if (!className || !subjectName || !chapterTitle) {
+        throw new Error('className, subjectName, and chapterTitle are required');
+      }
+      if (!sectionName) {
+        throw new Error('sectionName is required');
+      }
+
+      if (requireAllocation) {
+        const ok = await isClassSubjectAllocated(
+          institutionId,
+          academicYear,
+          className,
+          sectionName,
+          subjectName,
+        );
+        if (!ok) {
+          throw new Error(
+            `No teacher/subject allocation for ${subjectName} · ${className}-${sectionName}. Allocate first in Subject Management or Teacher Allocation.`,
+          );
+        }
+      }
+
+      const unitNumber = Number.isFinite(row.unitNumber) ? Number(row.unitNumber) : 1;
+      const completionPercent = Math.min(
+        100,
+        Math.max(0, Number.isFinite(row.completionPercent) ? Number(row.completionPercent) : 0),
+      );
+
+      const existing = await prisma.academicSyllabusChapter.findFirst({
+        where: {
+          institutionId,
+          academicYear,
+          className,
+          sectionName,
+          subjectName: { equals: subjectName, mode: 'insensitive' },
+          chapterTitle: { equals: chapterTitle, mode: 'insensitive' },
+          ...(row.unitNumber != null ? { unitNumber } : {}),
+        },
+      });
+
+      if (existing) {
+        await prisma.academicSyllabusChapter.update({
+          where: { id: existing.id },
+          data: {
+            term,
+            unitNumber,
+            boardTopicCode: row.boardTopicCode?.trim() || existing.boardTopicCode,
+            ...(row.plannedStartDate ? { plannedStartDate: new Date(row.plannedStartDate) } : {}),
+            ...(row.plannedEndDate ? { plannedEndDate: new Date(row.plannedEndDate) } : {}),
+            ...(row.revisionDeadline ? { revisionDeadline: new Date(row.revisionDeadline) } : {}),
+            ...(row.completionPercent != null ? { completionPercent } : {}),
+          },
+        });
+        updated += 1;
+      } else {
+        await prisma.academicSyllabusChapter.create({
+          data: {
+            institutionId,
+            recordId: await nextAcademicRecordId(institutionId, 'syllabus'),
+            academicYear,
+            term,
+            className,
+            sectionName,
+            subjectName,
+            chapterTitle,
+            unitNumber,
+            boardTopicCode: row.boardTopicCode?.trim() || '',
+            plannedStartDate: row.plannedStartDate ? new Date(row.plannedStartDate) : null,
+            plannedEndDate: row.plannedEndDate ? new Date(row.plannedEndDate) : null,
+            revisionDeadline: row.revisionDeadline ? new Date(row.revisionDeadline) : null,
+            completionPercent,
+          },
+        });
+        created += 1;
+      }
+    } catch (err) {
+      errors.push(`Row ${excelRow}: ${err instanceof Error ? err.message : 'Failed'}`);
+    }
+  }
+
+  return {
+    created,
+    updated,
+    errors,
+    totalRows: data.rows.length,
+  };
+}
+

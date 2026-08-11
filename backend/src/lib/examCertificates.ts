@@ -56,10 +56,10 @@ async function getOrCreateConfig(institutionId: string, academicYear: string) {
   let config = await prisma.examCertificateConfig.findFirst({
     where: { institutionId, academicYear },
   });
+  const reportConfig = await prisma.examReportCardConfig.findFirst({
+    where: { institutionId, academicYear },
+  });
   if (!config) {
-    const reportConfig = await prisma.examReportCardConfig.findFirst({
-      where: { institutionId, academicYear },
-    });
     const institution = await prisma.institution.findUnique({ where: { id: institutionId } });
     config = await prisma.examCertificateConfig.create({
       data: {
@@ -69,12 +69,145 @@ async function getOrCreateConfig(institutionId: string, academicYear: string) {
         schoolAddress: reportConfig?.schoolAddress || '',
         principalName: reportConfig?.principalName || 'Principal',
         principalSignatureData: reportConfig?.principalSignatureData || '',
+        classTeacherSignatureData: reportConfig?.classTeacherSignatureData || '',
         schoolSealData: reportConfig?.schoolSealData || '',
         headerLogoData: reportConfig?.headerLogoData || '',
       },
     });
+    return config;
+  }
+
+  // Fill empty branding from report-card config when available
+  if (reportConfig) {
+    const patch: Record<string, string> = {};
+    if (!config.schoolName && reportConfig.schoolName) patch.schoolName = reportConfig.schoolName;
+    if (!config.schoolAddress && reportConfig.schoolAddress) patch.schoolAddress = reportConfig.schoolAddress;
+    if (!config.principalName && reportConfig.principalName) patch.principalName = reportConfig.principalName;
+    if (!config.principalSignatureData && reportConfig.principalSignatureData) {
+      patch.principalSignatureData = reportConfig.principalSignatureData;
+    }
+    if (!config.classTeacherSignatureData && reportConfig.classTeacherSignatureData) {
+      patch.classTeacherSignatureData = reportConfig.classTeacherSignatureData;
+    }
+    if (!config.schoolSealData && reportConfig.schoolSealData) patch.schoolSealData = reportConfig.schoolSealData;
+    if (!config.headerLogoData && reportConfig.headerLogoData) patch.headerLogoData = reportConfig.headerLogoData;
+    if (Object.keys(patch).length) {
+      config = await prisma.examCertificateConfig.update({
+        where: { id: config.id },
+        data: patch,
+      });
+    }
   }
   return config;
+}
+
+function serializeCertificateConfig(c: {
+  id: string;
+  academicYear: string;
+  schoolName: string;
+  schoolAddress: string;
+  principalName: string;
+  principalSignatureData: string;
+  classTeacherSignatureData: string;
+  schoolSealData: string;
+  headerLogoData: string;
+  footerNote: string;
+  updatedAt: Date;
+}) {
+  return {
+    id: c.id,
+    academicYear: c.academicYear,
+    schoolName: c.schoolName,
+    schoolAddress: c.schoolAddress,
+    principalName: c.principalName,
+    footerNote: c.footerNote,
+    hasPrincipalSignature: Boolean(c.principalSignatureData),
+    hasClassTeacherSignature: Boolean(c.classTeacherSignatureData),
+    hasSchoolSeal: Boolean(c.schoolSealData),
+    hasHeaderLogo: Boolean(c.headerLogoData),
+    updatedAt: c.updatedAt.toISOString(),
+  };
+}
+
+export async function getCertificateConfig(institutionId: string, academicYear?: string) {
+  const year = academicYear || '2025-26';
+  const config = await getOrCreateConfig(institutionId, year);
+  return { config: serializeCertificateConfig(config) };
+}
+
+export async function updateCertificateConfig(
+  institutionId: string,
+  academicYear: string,
+  data: {
+    schoolName?: string;
+    schoolAddress?: string;
+    principalName?: string;
+    footerNote?: string;
+  },
+) {
+  await getOrCreateConfig(institutionId, academicYear);
+  const config = await prisma.examCertificateConfig.update({
+    where: { institutionId_academicYear: { institutionId, academicYear } },
+    data: {
+      ...(data.schoolName !== undefined ? { schoolName: data.schoolName } : {}),
+      ...(data.schoolAddress !== undefined ? { schoolAddress: data.schoolAddress } : {}),
+      ...(data.principalName !== undefined ? { principalName: data.principalName } : {}),
+      ...(data.footerNote !== undefined ? { footerNote: data.footerNote } : {}),
+    },
+  });
+  return { config: serializeCertificateConfig(config), message: 'Certificate branding saved' };
+}
+
+export async function uploadCertificateAsset(
+  institutionId: string,
+  academicYear: string,
+  assetType: 'principalSignature' | 'classTeacherSignature' | 'schoolSeal' | 'headerLogo',
+  fileData: string,
+  actor: string,
+) {
+  const fieldMap = {
+    principalSignature: 'principalSignatureData',
+    classTeacherSignature: 'classTeacherSignatureData',
+    schoolSeal: 'schoolSealData',
+    headerLogo: 'headerLogoData',
+  } as const;
+  const field = fieldMap[assetType];
+  const raw = fileData.includes(',') ? fileData.split(',')[1] : fileData;
+  if (!raw || raw.length < 20) throw new Error('Invalid file data');
+
+  await getOrCreateConfig(institutionId, academicYear);
+  const config = await prisma.examCertificateConfig.update({
+    where: { institutionId_academicYear: { institutionId, academicYear } },
+    data: { [field]: raw },
+  });
+
+  await prisma.examResultAuditLog.create({
+    data: {
+      institutionId,
+      entityType: 'CERTIFICATE_CONFIG',
+      entityId: config.id,
+      action: 'ASSET_UPLOADED',
+      actor,
+      details: `Uploaded certificate ${assetType}`,
+    },
+  });
+
+  return { config: serializeCertificateConfig(config), message: `${assetType} uploaded successfully` };
+}
+
+export async function getCertificateAsset(
+  institutionId: string,
+  academicYear: string,
+  assetType: 'principalSignature' | 'classTeacherSignature' | 'schoolSeal' | 'headerLogo',
+) {
+  const config = await getOrCreateConfig(institutionId, academicYear);
+  const fieldMap = {
+    principalSignature: config.principalSignatureData,
+    classTeacherSignature: config.classTeacherSignatureData,
+    schoolSeal: config.schoolSealData,
+    headerLogo: config.headerLogoData,
+  };
+  return { data: fieldMap[assetType] || null };
 }
 
 function serializeCertificate(c: {
@@ -602,6 +735,7 @@ export async function getCertificatePreview(institutionId: string, certificateId
       schoolAddress: config.schoolAddress,
       principalName: config.principalName,
       principalSignatureData: config.principalSignatureData,
+      classTeacherSignatureData: config.classTeacherSignatureData,
       schoolSealData: config.schoolSealData,
       headerLogoData: config.headerLogoData,
       footerNote: config.footerNote,

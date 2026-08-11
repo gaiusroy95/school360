@@ -7,6 +7,7 @@ import type {
 import { prisma } from './prisma.js';
 import { formatClassSection, getInstitutionFilterMeta } from './students.js';
 import { nextAcademicRecordId } from './academicManagement.js';
+import { reconcileSubjectTeacherAllocations } from './teacherSubjectAllocationSync.js';
 
 export const ROSTER_TASK_TYPES: { id: TeacherRosterTaskType; label: string; description: string }[] = [
   { id: 'CLASS_SUBJECT', label: 'Class & Subject', description: 'Teaching allocation for class and subject' },
@@ -272,6 +273,9 @@ export async function updateRosterTask(
 }
 
 export async function syncAllocationsToRoster(institutionId: string, academicYear: string) {
+  // Keep Subject Management ↔ Teacher Allocation in sync (teacher, subject, class/section, periods)
+  const reconcile = await reconcileSubjectTeacherAllocations(institutionId, academicYear);
+
   const allocations = await prisma.academicTeacherAllocation.findMany({
     where: { institutionId, academicYear },
   });
@@ -314,7 +318,11 @@ export async function syncAllocationsToRoster(institutionId: string, academicYea
     created += 1;
   }
 
-  return { created, total: allocations.length };
+  return {
+    created,
+    total: allocations.length,
+    reconcile,
+  };
 }
 
 export async function publishTeacherRosterTasks(

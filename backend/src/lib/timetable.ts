@@ -2,6 +2,7 @@ import type { AcademicPeriodType, AcademicTimetableSlot, Prisma } from '@prisma/
 import { prisma } from './prisma.js';
 import { formatClassSection } from './students.js';
 import { nextAcademicRecordId } from './academicManagement.js';
+import { syncAssignmentFromTimetableSlot } from './teacherSubjectAllocationSync.js';
 
 export const PERIOD_TYPE_LABELS: Record<AcademicPeriodType, string> = {
   THEORY: 'Theory',
@@ -311,6 +312,13 @@ export async function createTimetableSlotRecord(institutionId: string, data: Tim
       notes: data.notes || '',
     },
   });
+  await syncAssignmentFromTimetableSlot(institutionId, {
+    academicYear: row.academicYear,
+    className: row.className,
+    sectionName: row.sectionName,
+    subjectName: row.subjectName,
+    teacherName: row.teacherName,
+  });
   return serializeTimetableSlot(row);
 }
 
@@ -346,6 +354,13 @@ export async function updateTimetableSlotRecord(
         ? { publishedAt: data.publishedAt ? new Date(data.publishedAt) : null }
         : {}),
     },
+  });
+  await syncAssignmentFromTimetableSlot(institutionId, {
+    academicYear: row.academicYear,
+    className: row.className,
+    sectionName: row.sectionName,
+    subjectName: row.subjectName,
+    teacherName: row.teacherName,
   });
   return serializeTimetableSlot(row);
 }
@@ -421,6 +436,13 @@ export async function bulkUpsertTimetableSlots(
             notes: slot.notes || '',
             publishedAt: null,
           },
+        });
+        await syncAssignmentFromTimetableSlot(institutionId, {
+          academicYear: data.academicYear,
+          className: slot.className,
+          sectionName: slot.sectionName,
+          subjectName: slot.subjectName,
+          teacherName: slot.teacherName || '',
         });
         updated += 1;
       } else {

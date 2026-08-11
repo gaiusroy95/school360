@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import {
   bulkUploadSubjectTeacherMappings, createAcademicSubject, deleteAcademicSubject, fetchAcademicMeta,
-  fetchSubjectManagementDashboard, syncAcademicSubjects, updateSyllabusChapter,
+  fetchSubjectManagementDashboard, syncAcademicSubjects, syncTeacherRosterAllocations, updateSyllabusChapter,
   type AcademicTeachingStaffOption, type SubjectOffering, type SubjectManagementDashboard,
 } from '../../../lib/academicServices';
 import {
@@ -217,6 +217,14 @@ export function SubjectManagementView() {
     let msg = `Synced from Institution Setup: ${parts.join(', ')}`;
     if (res.errors?.length) msg += `. ${res.errors.slice(0, 3).join('; ')}`;
     if (res.warnings?.length && !res.errors?.length) msg += `. ${res.warnings.slice(0, 2).join('; ')}`;
+    try {
+      const bridge = await syncTeacherRosterAllocations(academicYear);
+      const fromSub = bridge.reconcile?.syncedFromSubject ?? 0;
+      const fromTeach = bridge.reconcile?.syncedFromTeacher ?? 0;
+      msg += `. Bridged to Teacher Allocation: ${fromSub} from subjects, ${fromTeach} from teachers, ${bridge.created} roster task(s).`;
+    } catch {
+      /* bridge is best-effort after subject master sync */
+    }
     setMessage(msg);
     void load();
   };

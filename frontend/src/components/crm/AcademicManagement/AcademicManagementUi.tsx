@@ -58,6 +58,10 @@ export function AcademicModal({
   open, onClose, title, children, large, wide,
 }: { open: boolean; onClose: () => void; title: string; children: ReactNode; large?: boolean; wide?: boolean }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  // Keep latest onClose without re-running the focus trap on every parent render
+  // (inline onClose={() => setX(false)} would otherwise steal focus back to the first field on each keystroke).
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
@@ -79,13 +83,16 @@ export function AcademicModal({
         .filter((el) => !el.hasAttribute('disabled') && el.tabIndex !== -1 && el.offsetParent !== null);
 
     const previouslyFocused = document.activeElement as HTMLElement | null;
-    const first = getFocusable()[0];
-    first?.focus();
+    const active = document.activeElement as HTMLElement | null;
+    // Initial focus only — never re-focus first field while the user is typing inside the modal
+    if (!active || !panel.contains(active)) {
+      getFocusable()[0]?.focus();
+    }
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== 'Tab') return;
@@ -97,14 +104,14 @@ export function AcademicModal({
       }
       const firstEl = items[0];
       const lastEl = items[items.length - 1];
-      const active = document.activeElement as HTMLElement | null;
+      const focused = document.activeElement as HTMLElement | null;
 
       if (e.shiftKey) {
-        if (!active || active === firstEl || !panel.contains(active)) {
+        if (!focused || focused === firstEl || !panel.contains(focused)) {
           e.preventDefault();
           lastEl.focus();
         }
-      } else if (!active || active === lastEl || !panel.contains(active)) {
+      } else if (!focused || focused === lastEl || !panel.contains(focused)) {
         e.preventDefault();
         firstEl.focus();
       }
@@ -115,14 +122,14 @@ export function AcademicModal({
       document.removeEventListener('keydown', onKeyDown);
       previouslyFocused?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
   const widthClass = wide ? 'max-w-3xl' : large ? 'max-w-lg' : 'max-w-md';
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/45 backdrop-blur-[3px]"
-      onClick={onClose}
+      onClick={() => onCloseRef.current()}
       role="presentation"
     >
       <div

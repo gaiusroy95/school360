@@ -36,10 +36,12 @@ import { syncTeacherProfilesFromAcademic } from '../lib/teacherAttendance.js';
 import { getInstitutionFilterMeta } from '../lib/students.js';
 import {
   bulkAssignElectives,
+  bulkUpsertSyllabusChapters,
   detectTimetableConflicts,
   getCurriculumAnalytics,
   getOrCreateCurriculum,
   getTeacherWorkloadSummary,
+  isClassSubjectAllocated,
   serializeCurriculum,
   serializeSyllabusChapter,
 } from '../lib/curriculumHub.js';
@@ -61,6 +63,7 @@ import {
 } from '../lib/lessonPlanning.js';
 import {
   assertTeacherHomeworkAllocation,
+  bulkUpsertHomeworkAssignments,
   getHomeworkDashboard,
   getHomeworkDetail,
   getMobileHomeworkForStudent,
@@ -75,6 +78,7 @@ import {
 import {
   confirmCalendarUpload,
   createCalendarUploadAndScan,
+  getAcademicCalendarMeta,
   getMobileAcademicCalendar,
   listCalendarUploads,
   publishAcademicCalendar,
@@ -479,6 +483,19 @@ academicRouter.post(
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const institutionId = await getDefaultInstitutionId();
+    const allocated = await isClassSubjectAllocated(
+      institutionId,
+      parsed.data.academicYear,
+      parsed.data.className,
+      parsed.data.sectionName || '',
+      parsed.data.subjectName,
+    );
+    if (!allocated) {
+      return res.status(400).json({
+        error:
+          'Class, section and subject must match an existing teacher or subject allocation. Allocate them first under Subject Management or Teacher Allocation.',
+      });
+    }
     const recordId = await nextAcademicRecordId(institutionId, 'syllabus');
     const row = await prisma.academicSyllabusChapter.create({
       data: {
@@ -499,6 +516,35 @@ academicRouter.post(
       },
     });
     return res.status(201).json({ record: serializeSyllabusChapter(row) });
+  }),
+);
+
+academicRouter.post(
+  '/syllabus/bulk',
+  asyncHandler(async (req, res) => {
+    const rowSchema = z.object({
+      className: z.string().min(1),
+      sectionName: z.string().min(1),
+      subjectName: z.string().min(1),
+      chapterTitle: z.string().min(1),
+      unitNumber: z.number().optional(),
+      boardTopicCode: z.string().optional(),
+      plannedStartDate: z.string().optional(),
+      plannedEndDate: z.string().optional(),
+      revisionDeadline: z.string().optional(),
+      completionPercent: z.number().min(0).max(100).optional(),
+    });
+    const schema = z.object({
+      academicYear: z.string().default('2025-26'),
+      term: z.string().default('Term 1'),
+      rows: z.array(rowSchema).min(1),
+      requireAllocation: z.boolean().optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const institutionId = await getDefaultInstitutionId();
+    const result = await bulkUpsertSyllabusChapters(institutionId, parsed.data);
+    return res.json(result);
   }),
 );
 
@@ -794,6 +840,19 @@ academicRouter.post(
     const parsed = lessonPlanSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const institutionId = await getDefaultInstitutionId();
+    const allocated = await isClassSubjectAllocated(
+      institutionId,
+      parsed.data.academicYear || '2025-26',
+      parsed.data.className,
+      parsed.data.sectionName || '',
+      parsed.data.subjectName,
+    );
+    if (!allocated) {
+      return res.status(400).json({
+        error:
+          'Class, section and subject must match an existing teacher or subject allocation. Allocate them first under Subject Management or Teacher Allocation.',
+      });
+    }
     const recordId = await nextAcademicRecordId(institutionId, 'lessonPlan');
     const row = await prisma.academicLessonPlan.create({
       data: {
@@ -1215,6 +1274,36 @@ academicRouter.post(
   }),
 );
 
+academicRouter.post(
+  '/homework/bulk',
+  asyncHandler(async (req, res) => {
+    const rowSchema = z.object({
+      className: z.string().min(1),
+      sectionName: z.string().min(1),
+      subjectName: z.string().min(1),
+      teacherName: z.string().optional(),
+      title: z.string().min(1),
+      description: z.string().optional(),
+      assignedDate: z.string().optional(),
+      dueDate: z.string().optional(),
+      totalStudents: z.number().optional(),
+      youtubeUrl: z.string().optional(),
+    });
+    const schema = z.object({
+      academicYear: z.string().default('2025-26'),
+      term: z.string().default('Term 1'),
+      defaultAssignedDate: z.string().optional(),
+      share: z.boolean().optional(),
+      rows: z.array(rowSchema).min(1),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const institutionId = await getDefaultInstitutionId();
+    const result = await bulkUpsertHomeworkAssignments(institutionId, parsed.data);
+    return res.json(result);
+  }),
+);
+
 academicRouter.patch(
   '/homework/:id',
   asyncHandler(async (req, res) => {
@@ -1243,6 +1332,14 @@ academicRouter.patch(
 );
 
 // ─── Calendar ─────────────────────────────────────────────────────────────────
+
+academicRouter.get(
+  '/calendar/meta',
+  asyncHandler(async (_req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    return res.json(await getAcademicCalendarMeta(institutionId));
+  }),
+);
 
 academicRouter.get(
   '/calendar',
@@ -1910,6 +2007,27 @@ academicRouter.post(
         periodsPerWeek: parsed.data.periodsPerWeek ?? 0,
         workloadLevel: (parsed.data.workloadLevel as AcademicWorkloadLevel) || 'MEDIUM',
       },
+    });
+    const { upsertSubjectAllocationFromTeacher, upsertTeacherAllocationFromSubject } = await import('../lib/teacherSubjectAllocationSync.js');
+    await upsertSubjectAllocationFromTeacher(institutionId, {
+      academicYear: parsed.data.academicYear,
+      className: parsed.data.className,
+      sectionName: parsed.data.sectionName || '',
+      subjectName: parsed.data.subjectName,
+      teacherName: parsed.data.teacherName,
+    });
+    // Refresh periods from timetable + ensure CLASS_SUBJECT roster task
+    await upsertTeacherAllocationFromSubject(institutionId, {
+      academicYear: parsed.data.academicYear,
+      className: parsed.data.className,
+      sectionName: parsed.data.sectionName || '',
+      subjectName: parsed.data.subjectName,
+      teacherName: parsed.data.teacherName,
+    }, {
+      department: parsed.data.department || 'General',
+      periodsPerWeek: parsed.data.periodsPerWeek,
+      workloadLevel: parsed.data.workloadLevel as AcademicWorkloadLevel | undefined,
+      skipHomeworkRemap: true,
     });
     await syncTeacherProfilesFromAcademic(institutionId, parsed.data.academicYear);
     const remap = await remapHomeworkTeachersForAllocation(institutionId, {

@@ -45,6 +45,9 @@ function isRetryableModelError(message: string): boolean {
 export function formatGeminiError(err: unknown): Error {
   const message = err instanceof Error ? err.message : String(err);
   if (message.includes('API key not valid') || message.includes('API_KEY_INVALID')) {
+    void import('./aiProviderHealth.js')
+      .then((m) => m.markAiProviderUnhealthy('gemini', message))
+      .catch(() => {});
     return new Error(
       'GEMINI_API_KEY is invalid. Add a valid Google AI API key to backend/.env and restart the server.',
     );
@@ -64,6 +67,11 @@ export async function runGeminiJsonRequest(
   temperature: number,
   request: (model: GenerativeModel) => Promise<string>,
 ): Promise<string> {
+  const { isAiProviderHealthy } = await import('./aiProviderHealth.js');
+  if (!(await isAiProviderHealthy('gemini'))) {
+    throw new Error('Gemini unavailable or GEMINI_API_KEY invalid/missing');
+  }
+
   const genAI = new GoogleGenerativeAI(getGeminiApiKey());
   let lastError: Error | null = null;
 
@@ -83,7 +91,12 @@ export async function runGeminiJsonRequest(
       lastError = formatGeminiError(err);
       const msg = lastError.message.toLowerCase();
       // Invalid / missing key — no point trying other Gemini models
-      if (msg.includes('invalid') || msg.includes('not configured') || msg.includes('api key')) {
+      if (
+        msg.includes('invalid')
+        || msg.includes('not configured')
+        || msg.includes('api key')
+        || msg.includes('unavailable')
+      ) {
         throw lastError;
       }
       if (isRetryableModelError(lastError.message)) continue;

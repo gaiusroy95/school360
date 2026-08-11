@@ -6,6 +6,7 @@ import {
   runGeminiJsonRequest,
   type GeneratedQuestion,
 } from './geminiQuestions.js';
+import { isAiProviderHealthy, markAiProviderUnhealthy } from './aiProviderHealth.js';
 
 const IMAGE_MIMES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']);
 
@@ -73,6 +74,7 @@ Return JSON only:
 function formatGeminiError(err: unknown): Error {
   const message = err instanceof Error ? err.message : String(err);
   if (message.includes('API key not valid') || message.includes('API_KEY_INVALID')) {
+    markAiProviderUnhealthy('gemini', message);
     return new Error(
       'GEMINI_API_KEY is invalid. Add a valid Google AI API key to backend/.env and restart the server.',
     );
@@ -85,6 +87,9 @@ async function runGeminiVisionJsonRequest(
   base64Data: string,
   prompt: string,
 ): Promise<string> {
+  if (!(await isAiProviderHealthy('gemini'))) {
+    throw new Error('Gemini unavailable or GEMINI_API_KEY invalid/missing');
+  }
   const genAI = new GoogleGenerativeAI(getGeminiApiKey());
   const preferred = process.env.GEMINI_MODEL?.trim();
   const models = [...new Set([
@@ -117,6 +122,7 @@ async function runGeminiVisionJsonRequest(
     } catch (err) {
       lastError = formatGeminiError(err);
       const msg = lastError.message.toLowerCase();
+      if (msg.includes('api key') || msg.includes('invalid')) throw lastError;
       if (msg.includes('not found') || msg.includes('404') || msg.includes('is not supported')) continue;
       throw lastError;
     }
@@ -130,11 +136,32 @@ async function ocrWithOpenAIVision(
   base64Data: string,
   questionType: string,
   difficulty: string,
+  fileName = 'scan.pdf',
 ): Promise<{ title: string; rawText: string; questions: GeneratedQuestion[] }> {
-  const key = process.env.OPENAI_API_KEY?.trim();
-  if (!key) throw new Error('OPENAI_API_KEY not configured');
+  if (!(await isAiProviderHealthy('openai'))) {
+    throw new Error('OPENAI_API_KEY not configured or unhealthy');
+  }
+  const key = process.env.OPENAI_API_KEY!.trim();
   const model = process.env.OPENAI_VISION_MODEL?.trim() || process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini';
   const raw = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+  const isPdf = mimeType.toLowerCase().includes('pdf') || fileName.toLowerCase().endsWith('.pdf');
+  const userContent: Array<Record<string, unknown>> = [
+    { type: 'text', text: OCR_JSON_PROMPT(questionType, difficulty) },
+  ];
+  if (isPdf) {
+    userContent.push({
+      type: 'file',
+      file: {
+        filename: fileName.endsWith('.pdf') ? fileName : 'scan.pdf',
+        file_data: `data:application/pdf;base64,${raw}`,
+      },
+    });
+  } else {
+    userContent.push({
+      type: 'image_url',
+      image_url: { url: `data:${mimeType};base64,${raw}` },
+    });
+  }
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -145,22 +172,18 @@ async function ocrWithOpenAIVision(
       model,
       temperature: 0.1,
       response_format: { type: 'json_object' },
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: OCR_JSON_PROMPT(questionType, difficulty) },
-            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${raw}` } },
-          ],
-        },
-      ],
+      messages: [{ role: 'user', content: userContent }],
     }),
   });
   const data = await res.json().catch(() => ({})) as {
     error?: { message?: string };
     choices?: { message?: { content?: string } }[];
   };
-  if (!res.ok) throw new Error(data.error?.message || `OpenAI OCR failed (${res.status})`);
+  if (!res.ok) {
+    const msg = data.error?.message || `OpenAI OCR failed (${res.status})`;
+    if (/api key|invalid|unauthorized|401/i.test(msg)) markAiProviderUnhealthy('openai', msg);
+    throw new Error(msg);
+  }
   const parsed = parseJsonFromModel(data.choices?.[0]?.message?.content || '') as {
     title?: string;
     rawText?: string;
@@ -180,6 +203,7 @@ async function ocrWithVision(
   base64Data: string,
   questionType: string,
   difficulty: string,
+  fileName = 'scan.pdf',
 ): Promise<{ title: string; rawText: string; questions: GeneratedQuestion[] }> {
   const errors: string[] = [];
   try {
@@ -212,12 +236,14 @@ async function ocrWithVision(
   }
 
   try {
-    return await ocrWithOpenAIVision(mimeType, base64Data, questionType, difficulty);
+    return await ocrWithOpenAIVision(mimeType, base64Data, questionType, difficulty, fileName);
   } catch (err) {
     errors.push(`OpenAI: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  throw new Error(`OCR failed with free AI providers.\n${errors.join('\n')}`);
+  throw new Error(
+    `OCR failed with free AI providers.\n${errors.join('\n')}\nTip: upload a clear JPG/PNG of the paper, or set a valid GEMINI_API_KEY for PDF OCR.`,
+  );
 }
 
 async function ocrFromPlainText(
@@ -228,30 +254,36 @@ async function ocrFromPlainText(
   const prompt = `${OCR_JSON_PROMPT(questionType, difficulty)}\n\nEXTRACTED TEXT FROM PDF:\n${text.slice(0, 100_000)}`;
   const errors: string[] = [];
 
-  try {
-    const responseText = await runGeminiJsonRequest(0.1, async (model) => {
-      const result = await model.generateContent(prompt);
-      return result.response.text();
-    });
-    const parsed = parseJsonFromModel(responseText) as {
-      title?: string;
-      rawText?: string;
-      questions?: GeneratedQuestion[];
-    };
-    const questions = normalizeQuestions(parsed.questions || [], questionType, difficulty);
-    if (questions.length === 0) throw new Error('No questions could be extracted from PDF text.');
-    return {
-      title: String(parsed.title || '').trim(),
-      rawText: String(parsed.rawText || text).trim(),
-      questions,
-    };
-  } catch (err) {
-    errors.push(`Gemini: ${err instanceof Error ? err.message : String(err)}`);
+  if (await isAiProviderHealthy('gemini')) {
+    try {
+      const responseText = await runGeminiJsonRequest(0.1, async (model) => {
+        const result = await model.generateContent(prompt);
+        return result.response.text();
+      });
+      const parsed = parseJsonFromModel(responseText) as {
+        title?: string;
+        rawText?: string;
+        questions?: GeneratedQuestion[];
+      };
+      const questions = normalizeQuestions(parsed.questions || [], questionType, difficulty);
+      if (questions.length === 0) throw new Error('No questions could be extracted from PDF text.');
+      return {
+        title: String(parsed.title || '').trim(),
+        rawText: String(parsed.rawText || text).trim(),
+        questions,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/api key|invalid/i.test(msg)) markAiProviderUnhealthy('gemini', msg);
+      errors.push(`Gemini: ${msg}`);
+    }
+  } else {
+    errors.push('Gemini: unavailable or GEMINI_API_KEY invalid/missing');
   }
 
-  const openAiKey = process.env.OPENAI_API_KEY?.trim();
-  if (openAiKey) {
+  if (await isAiProviderHealthy('openai')) {
     try {
+      const openAiKey = process.env.OPENAI_API_KEY!.trim();
       const model = process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini';
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -334,7 +366,7 @@ export async function scanTestPaperWithOcr(
       let usedTextLayer = false;
       try {
         const { text } = await extractTextFromPdfBase64(raw);
-        if (text.length > 80) {
+        if (text.length > 40) {
           usedTextLayer = true;
           const res = await ocrFromPlainText(text, questionType, difficulty);
           if (!detectedTitle && res.title) detectedTitle = res.title;
@@ -345,14 +377,14 @@ export async function scanTestPaperWithOcr(
         /* fall through to vision OCR */
       }
       if (!usedTextLayer) {
-        const res = await ocrWithVision(mimeType, raw, questionType, difficulty);
+        const res = await ocrWithVision(mimeType, raw, questionType, difficulty, file.fileName);
         if (!detectedTitle && res.title) detectedTitle = res.title;
         combinedRaw += (combinedRaw ? '\n\n' : '') + res.rawText;
         allQuestions.push(...res.questions);
       }
     } else if (isImageMime(mimeType)) {
       fileMeta.push({ fileName: file.fileName, mimeType, kind: 'image' });
-      const res = await ocrWithVision(mimeType, raw, questionType, difficulty);
+      const res = await ocrWithVision(mimeType, raw, questionType, difficulty, file.fileName);
       if (!detectedTitle && res.title) detectedTitle = res.title;
       combinedRaw += (combinedRaw ? '\n\n' : '') + res.rawText;
       allQuestions.push(...res.questions);

@@ -1,16 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, AlertTriangle, BookOpen, GraduationCap, Layers, Users, FileText,
-  BrainCircuit, Share2, Link as LinkIcon, CheckCircle,
+  BrainCircuit, Share2, Link as LinkIcon, CheckCircle, Download, Upload,
 } from 'lucide-react';
 import {
-  bulkAssignElectives, createLessonPlan, createSyllabusChapter, fetchAcademicMeta,
+  bulkAssignElectives, bulkUploadSyllabusChapters, createLessonPlan, createSyllabusChapter, fetchAcademicMeta,
   fetchAcademicSubjects, fetchClassSections, fetchCurriculumAnalytics, fetchCurriculumFramework,
   fetchCurriculumTeacherWorkload, fetchElectives, fetchLessonPlans, fetchSyllabus,
-  fetchTimetableConflicts, saveCurriculumFramework, updateLessonPlan, updateSyllabusChapter,
+  fetchTeacherAllocationMeta, fetchTimetableConflicts, saveCurriculumFramework, updateLessonPlan, updateSyllabusChapter,
   type CurriculumAnalytics, type CurriculumFramework, type LessonPlan, type SyllabusChapter,
+  type TeacherAllocationMeta,
 } from '../../../lib/academicServices';
 import { fetchStudents } from '../../../lib/studentServices';
+import {
+  downloadSyllabusChapterTemplate, parseSyllabusChapterUploadFile,
+} from '../../../lib/syllabusChapterExcel';
 import {
   AcademicLoading, AcademicModal, AcademicPageHeader, AcademicPageShell,
   AcademicYearTermFilters, am,
@@ -30,6 +34,19 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
 
 const SEV_COLOR = { high: 'text-red-700 bg-red-50 border-red-200', medium: 'text-amber-800 bg-amber-50 border-amber-200', low: 'text-blue-700 bg-blue-50 border-blue-200' };
 
+const EMPTY_CHAPTER = {
+  className: '', sectionName: '', subjectName: '', chapterTitle: '', boardTopicCode: '',
+  plannedStartDate: '', plannedEndDate: '', unitNumber: 1,
+};
+
+const EMPTY_LESSON = {
+  title: '', className: '', sectionName: '', subjectName: '', teacherName: '',
+  syllabusChapterId: '', resourceTitle: '', resourceUrl: '',
+};
+
+const btnExcel = 'inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100';
+
+
 export function CurriculumSyllabusView() {
   const [tab, setTab] = useState<TabId>('framework');
   const [loading, setLoading] = useState(true);
@@ -38,7 +55,11 @@ export function CurriculumSyllabusView() {
   const [className, setClassName] = useState('');
   const [sectionName, setSectionName] = useState('');
   const [meta, setMeta] = useState<{ academicYears: string[]; classes: string[]; sectionsByClass: Record<string, string[]>; terms: string[] } | null>(null);
+  const [allocMeta, setAllocMeta] = useState<TeacherAllocationMeta | null>(null);
   const [message, setMessage] = useState('');
+  const [formError, setFormError] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const [framework, setFramework] = useState<CurriculumFramework | null>(null);
   const [instFramework, setInstFramework] = useState<Record<string, string>>({});
@@ -52,15 +73,9 @@ export function CurriculumSyllabusView() {
   const [electives, setElectives] = useState<Record<string, unknown>[]>([]);
 
   const [showChapterForm, setShowChapterForm] = useState(false);
-  const [chapterForm, setChapterForm] = useState({
-    className: '', sectionName: '', subjectName: '', chapterTitle: '', boardTopicCode: '',
-    plannedStartDate: '', plannedEndDate: '', unitNumber: 1,
-  });
+  const [chapterForm, setChapterForm] = useState({ ...EMPTY_CHAPTER });
   const [showLessonForm, setShowLessonForm] = useState(false);
-  const [lessonForm, setLessonForm] = useState({
-    title: '', className: '', sectionName: '', subjectName: '', teacherName: '',
-    syllabusChapterId: '', resourceTitle: '', resourceUrl: '',
-  });
+  const [lessonForm, setLessonForm] = useState({ ...EMPTY_LESSON });
   const [showElectiveModal, setShowElectiveModal] = useState(false);
   const [electiveSubjectId, setElectiveSubjectId] = useState('');
   const [electiveStudents, setElectiveStudents] = useState<{ id: string; fullName: string }[]>([]);
@@ -68,12 +83,103 @@ export function CurriculumSyllabusView() {
 
   const terms = useMemo(() => framework?.terms?.length ? framework.terms : meta?.terms || ['Term 1', 'Term 2'], [framework, meta]);
 
+  const allocationSlots = useMemo(() => {
+    const slots: Array<{ className: string; sectionName: string; subjectName: string; teacherName: string }> = [];
+    for (const t of allocMeta?.teachers || []) {
+      for (const cs of t.classSubjects) {
+        slots.push({
+          className: cs.className,
+          sectionName: cs.sectionName,
+          subjectName: cs.subjectName,
+          teacherName: t.teacherName,
+        });
+      }
+    }
+    return slots;
+  }, [allocMeta]);
+
+  const chapterClassOptions = useMemo(() => {
+    const fromAlloc = [...new Set(allocationSlots.map((s) => s.className).filter(Boolean))];
+    return fromAlloc.length ? fromAlloc.sort() : (allocMeta?.classes || meta?.classes || []);
+  }, [allocationSlots, allocMeta, meta]);
+
+  const chapterSectionOptions = useMemo(() => {
+    if (!chapterForm.className) return [] as string[];
+    const fromAlloc = [...new Set(
+      allocationSlots.filter((s) => s.className === chapterForm.className).map((s) => s.sectionName).filter(Boolean),
+    )];
+    if (fromAlloc.length) return fromAlloc.sort();
+    return allocMeta?.sectionsByClass[chapterForm.className] || meta?.sectionsByClass[chapterForm.className] || [];
+  }, [allocationSlots, chapterForm.className, allocMeta, meta]);
+
+  const chapterSubjectOptions = useMemo(() => {
+    if (!chapterForm.className) return [] as string[];
+    return [...new Set(
+      allocationSlots
+        .filter((s) =>
+          s.className === chapterForm.className
+          && (!chapterForm.sectionName || s.sectionName === chapterForm.sectionName || !s.sectionName),
+        )
+        .map((s) => s.subjectName)
+        .filter(Boolean),
+    )].sort();
+  }, [allocationSlots, chapterForm.className, chapterForm.sectionName]);
+
+  const lessonClassOptions = useMemo(() => {
+    const fromAlloc = [...new Set(allocationSlots.map((s) => s.className).filter(Boolean))];
+    return fromAlloc.length ? fromAlloc.sort() : (allocMeta?.classes || meta?.classes || []);
+  }, [allocationSlots, allocMeta, meta]);
+
+  const lessonSectionOptions = useMemo(() => {
+    if (!lessonForm.className) return [] as string[];
+    const fromAlloc = [...new Set(
+      allocationSlots.filter((s) => s.className === lessonForm.className).map((s) => s.sectionName).filter(Boolean),
+    )];
+    if (fromAlloc.length) return fromAlloc.sort();
+    return allocMeta?.sectionsByClass[lessonForm.className] || meta?.sectionsByClass[lessonForm.className] || [];
+  }, [allocationSlots, lessonForm.className, allocMeta, meta]);
+
+  const lessonSubjectOptions = useMemo(() => {
+    if (!lessonForm.className) return [] as string[];
+    return [...new Set(
+      allocationSlots
+        .filter((s) =>
+          s.className === lessonForm.className
+          && (!lessonForm.sectionName || s.sectionName === lessonForm.sectionName || !s.sectionName),
+        )
+        .map((s) => s.subjectName)
+        .filter(Boolean),
+    )].sort();
+  }, [allocationSlots, lessonForm.className, lessonForm.sectionName]);
+
+  const lessonTeacherOptions = useMemo(() => {
+    if (!lessonForm.className || !lessonForm.subjectName) return [] as string[];
+    return [...new Set(
+      allocationSlots
+        .filter((s) =>
+          s.className === lessonForm.className
+          && s.subjectName === lessonForm.subjectName
+          && (!lessonForm.sectionName || s.sectionName === lessonForm.sectionName || !s.sectionName),
+        )
+        .map((s) => s.teacherName)
+        .filter(Boolean),
+    )].sort();
+  }, [allocationSlots, lessonForm.className, lessonForm.sectionName, lessonForm.subjectName]);
+
+  const linkedChapterOptions = useMemo(() => {
+    return chapters.filter((c) =>
+      (!lessonForm.className || c.className === lessonForm.className)
+      && (!lessonForm.sectionName || c.sectionName === lessonForm.sectionName || !c.sectionName)
+      && (!lessonForm.subjectName || c.subjectName === lessonForm.subjectName),
+    );
+  }, [chapters, lessonForm.className, lessonForm.sectionName, lessonForm.subjectName]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const m = await fetchAcademicMeta();
       setMeta(m);
-      const [fw, cs, sub, syl, ana, tw, lp, tc, el] = await Promise.all([
+      const [fw, cs, sub, syl, ana, tw, lp, tc, el, alloc] = await Promise.all([
         fetchCurriculumFramework(academicYear),
         fetchClassSections(academicYear),
         fetchAcademicSubjects(),
@@ -83,6 +189,7 @@ export function CurriculumSyllabusView() {
         fetchLessonPlans(academicYear),
         fetchTimetableConflicts(academicYear),
         fetchElectives({ academicYear, className: className || undefined, sectionName: sectionName || undefined }),
+        fetchTeacherAllocationMeta(academicYear).catch(() => null),
       ]);
       setFramework(fw.curriculum);
       setInstFramework(fw.institutionFramework);
@@ -94,6 +201,7 @@ export function CurriculumSyllabusView() {
       setLessonPlans(lp.records);
       setConflicts(tc.conflicts);
       setElectives(el.records);
+      setAllocMeta(alloc);
     } finally {
       setLoading(false);
     }
@@ -108,30 +216,82 @@ export function CurriculumSyllabusView() {
     void load();
   };
 
+  const openChapterForm = () => {
+    setChapterForm({ ...EMPTY_CHAPTER });
+    setFormError('');
+    setShowChapterForm(true);
+  };
+
+  const openLessonForm = () => {
+    setLessonForm({ ...EMPTY_LESSON });
+    setFormError('');
+    setShowLessonForm(true);
+  };
+
   const addChapter = async () => {
-    await createSyllabusChapter({ ...chapterForm, academicYear, term });
-    setShowChapterForm(false);
-    void load();
+    setFormError('');
+    if (!chapterForm.className || !chapterForm.sectionName || !chapterForm.subjectName || !chapterForm.chapterTitle.trim()) {
+      setFormError('Select class, section, subject (from allocations) and enter a chapter title.');
+      return;
+    }
+    try {
+      await createSyllabusChapter({ ...chapterForm, academicYear, term });
+      setShowChapterForm(false);
+      setMessage('Syllabus chapter saved');
+      void load();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to save chapter');
+    }
   };
 
   const addLessonWithLms = async () => {
-    const resources = lessonForm.resourceUrl
-      ? [{ type: 'link' as const, title: lessonForm.resourceTitle || 'Resource', url: lessonForm.resourceUrl }]
-      : [];
-    await createLessonPlan({
-      title: lessonForm.title,
-      className: lessonForm.className,
-      sectionName: lessonForm.sectionName,
-      subjectName: lessonForm.subjectName,
-      teacherName: lessonForm.teacherName,
-      syllabusChapterId: lessonForm.syllabusChapterId || undefined,
-      resources,
-      share: true,
-      academicYear,
-      term,
-    });
-    setShowLessonForm(false);
-    void load();
+    setFormError('');
+    if (!lessonForm.title.trim() || !lessonForm.className || !lessonForm.sectionName || !lessonForm.subjectName) {
+      setFormError('Enter lesson title and select class, section, subject from allocations.');
+      return;
+    }
+    try {
+      const resources = lessonForm.resourceUrl
+        ? [{ type: 'link' as const, title: lessonForm.resourceTitle || 'Resource', url: lessonForm.resourceUrl }]
+        : [];
+      await createLessonPlan({
+        title: lessonForm.title,
+        className: lessonForm.className,
+        sectionName: lessonForm.sectionName,
+        subjectName: lessonForm.subjectName,
+        teacherName: lessonForm.teacherName,
+        syllabusChapterId: lessonForm.syllabusChapterId || undefined,
+        resources,
+        share: true,
+        academicYear,
+        term,
+      });
+      setShowLessonForm(false);
+      setMessage('Lesson plan created and shared');
+      void load();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to create lesson plan');
+    }
+  };
+
+  const handleBulkUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      const rows = await parseSyllabusChapterUploadFile(file);
+      if (!rows.length) {
+        setMessage('No valid rows found. Need className, sectionName, subjectName, and chapterTitle.');
+        return;
+      }
+      const res = await bulkUploadSyllabusChapters({ academicYear, term, rows });
+      let msg = `Bulk syllabus: ${res.created} created, ${res.updated} updated from ${res.totalRows} row(s)`;
+      if (res.errors?.length) msg += `. Errors: ${res.errors.slice(0, 3).join('; ')}`;
+      setMessage(msg);
+      void load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Bulk upload failed');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const openElectiveBulk = async () => {
@@ -291,9 +451,36 @@ export function CurriculumSyllabusView() {
         {/* Phase B: Syllabus Map */}
         {tab === 'syllabus' && (
           <div className="space-y-3">
-            <div className="flex justify-end">
-              <button type="button" onClick={() => setShowChapterForm(true)} className={am.btnPrimary}><Plus size={14} /> Add Chapter</button>
+            <div className="flex flex-wrap justify-end gap-2">
+              <button type="button" onClick={() => downloadSyllabusChapterTemplate()} className={btnExcel}>
+                <Download size={14} /> Excel Template
+              </button>
+              <button
+                type="button"
+                disabled={uploading}
+                onClick={() => fileRef.current?.click()}
+                className={btnExcel}
+              >
+                <Upload size={14} /> {uploading ? 'Uploading…' : 'Bulk Upload'}
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleBulkUpload(file);
+                  e.target.value = '';
+                }}
+              />
+              <button type="button" onClick={openChapterForm} className={am.btnPrimary}><Plus size={14} /> Add Chapter</button>
             </div>
+            {allocationSlots.length === 0 && (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                No teacher/subject allocations found for {academicYear}. Allocate class–section–subject under Subject Management or Teacher Allocation before adding syllabus chapters.
+              </p>
+            )}
             <div className={am.tableWrap}>
               <table className="w-full"><thead><tr>
                 <th className={am.th}>Class-Section</th><th className={am.th}>Subject</th><th className={am.th}>Chapter</th><th className={am.th}>Board Code</th><th className={am.th}>Planned End</th><th className={am.th}>Progress</th><th className={am.th}>Status</th>
@@ -355,7 +542,7 @@ export function CurriculumSyllabusView() {
         {tab === 'lessons' && (
           <div className="space-y-3">
             <div className="flex justify-end">
-              <button type="button" onClick={() => setShowLessonForm(true)} className={am.btnPrimary}><Plus size={14} /> New Lesson Plan</button>
+              <button type="button" onClick={openLessonForm} className={am.btnPrimary}><Plus size={14} /> New Lesson Plan</button>
             </div>
             <div className={am.tableWrap}>
               <table className="w-full"><thead><tr>
@@ -447,14 +634,82 @@ export function CurriculumSyllabusView() {
       </div>
 
       <AcademicModal open={showChapterForm} onClose={() => setShowChapterForm(false)} title="Add Syllabus Chapter" large>
+        <p className="text-xs text-slate-500 mb-2">
+          Class, section and subject are loaded from Subject Management / Teacher Allocation for {academicYear}.
+        </p>
+        {formError && <p className="text-xs text-red-600 mb-2">{formError}</p>}
         <div className="grid grid-cols-2 gap-3">
-          <input placeholder="Class" value={chapterForm.className} onChange={(e) => setChapterForm((f) => ({ ...f, className: e.target.value }))} className={am.input} />
-          <input placeholder="Section" value={chapterForm.sectionName} onChange={(e) => setChapterForm((f) => ({ ...f, sectionName: e.target.value }))} className={am.input} />
-          <input placeholder="Subject" value={chapterForm.subjectName} onChange={(e) => setChapterForm((f) => ({ ...f, subjectName: e.target.value }))} className={am.input} />
-          <input placeholder="Board Topic Code" value={chapterForm.boardTopicCode} onChange={(e) => setChapterForm((f) => ({ ...f, boardTopicCode: e.target.value }))} className={am.input} />
-          <input placeholder="Chapter Title" value={chapterForm.chapterTitle} onChange={(e) => setChapterForm((f) => ({ ...f, chapterTitle: e.target.value }))} className={`${am.input} col-span-2`} />
-          <input type="date" value={chapterForm.plannedStartDate} onChange={(e) => setChapterForm((f) => ({ ...f, plannedStartDate: e.target.value }))} className={am.input} />
-          <input type="date" value={chapterForm.plannedEndDate} onChange={(e) => setChapterForm((f) => ({ ...f, plannedEndDate: e.target.value }))} className={am.input} />
+          <label className="text-xs space-y-1">
+            <span className="font-semibold text-slate-600">Class</span>
+            <select
+              value={chapterForm.className}
+              onChange={(e) => setChapterForm((f) => ({ ...f, className: e.target.value, sectionName: '', subjectName: '' }))}
+              className={am.input}
+            >
+              <option value="">Select class…</option>
+              {chapterClassOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+          <label className="text-xs space-y-1">
+            <span className="font-semibold text-slate-600">Section</span>
+            <select
+              value={chapterForm.sectionName}
+              onChange={(e) => setChapterForm((f) => ({ ...f, sectionName: e.target.value, subjectName: '' }))}
+              className={am.input}
+              disabled={!chapterForm.className}
+            >
+              <option value="">Select section…</option>
+              {chapterSectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+          <label className="text-xs space-y-1">
+            <span className="font-semibold text-slate-600">Subject</span>
+            <select
+              value={chapterForm.subjectName}
+              onChange={(e) => setChapterForm((f) => ({ ...f, subjectName: e.target.value }))}
+              className={am.input}
+              disabled={!chapterForm.className}
+            >
+              <option value="">Select subject…</option>
+              {chapterSubjectOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+          <label className="text-xs space-y-1">
+            <span className="font-semibold text-slate-600">Board Topic Code</span>
+            <input
+              placeholder="Board Topic Code"
+              value={chapterForm.boardTopicCode}
+              onChange={(e) => setChapterForm((f) => ({ ...f, boardTopicCode: e.target.value }))}
+              className={am.input}
+            />
+          </label>
+          <label className="text-xs space-y-1 col-span-2">
+            <span className="font-semibold text-slate-600">Chapter Title</span>
+            <input
+              placeholder="Chapter Title"
+              value={chapterForm.chapterTitle}
+              onChange={(e) => setChapterForm((f) => ({ ...f, chapterTitle: e.target.value }))}
+              className={am.input}
+            />
+          </label>
+          <label className="text-xs space-y-1">
+            <span className="font-semibold text-slate-600">Planned Start</span>
+            <input
+              type="date"
+              value={chapterForm.plannedStartDate}
+              onChange={(e) => setChapterForm((f) => ({ ...f, plannedStartDate: e.target.value }))}
+              className={am.input}
+            />
+          </label>
+          <label className="text-xs space-y-1">
+            <span className="font-semibold text-slate-600">Planned End</span>
+            <input
+              type="date"
+              value={chapterForm.plannedEndDate}
+              onChange={(e) => setChapterForm((f) => ({ ...f, plannedEndDate: e.target.value }))}
+              className={am.input}
+            />
+          </label>
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={() => setShowChapterForm(false)} className={am.btnSecondary}>Cancel</button>
@@ -463,18 +718,102 @@ export function CurriculumSyllabusView() {
       </AcademicModal>
 
       <AcademicModal open={showLessonForm} onClose={() => setShowLessonForm(false)} title="Lesson Plan + LMS Resource" large>
+        <p className="text-xs text-slate-500 mb-2">
+          Class, section, subject and teacher are synced from Subject Management / Teacher Allocation.
+        </p>
+        {formError && <p className="text-xs text-red-600 mb-2">{formError}</p>}
         <div className="space-y-3">
-          <input placeholder="Lesson Title" value={lessonForm.title} onChange={(e) => setLessonForm((f) => ({ ...f, title: e.target.value }))} className={am.input} />
+          <label className="text-xs space-y-1 block">
+            <span className="font-semibold text-slate-600">Lesson Title</span>
+            <input
+              placeholder="Lesson Title"
+              value={lessonForm.title}
+              onChange={(e) => setLessonForm((f) => ({ ...f, title: e.target.value }))}
+              className={am.input}
+            />
+          </label>
           <div className="grid grid-cols-2 gap-3">
-            <input placeholder="Class" value={lessonForm.className} onChange={(e) => setLessonForm((f) => ({ ...f, className: e.target.value }))} className={am.input} />
-            <input placeholder="Section" value={lessonForm.sectionName} onChange={(e) => setLessonForm((f) => ({ ...f, sectionName: e.target.value }))} className={am.input} />
-            <input placeholder="Subject" value={lessonForm.subjectName} onChange={(e) => setLessonForm((f) => ({ ...f, subjectName: e.target.value }))} className={am.input} />
-            <input placeholder="Teacher" value={lessonForm.teacherName} onChange={(e) => setLessonForm((f) => ({ ...f, teacherName: e.target.value }))} className={am.input} />
+            <label className="text-xs space-y-1">
+              <span className="font-semibold text-slate-600">Class</span>
+              <select
+                value={lessonForm.className}
+                onChange={(e) => setLessonForm((f) => ({
+                  ...f, className: e.target.value, sectionName: '', subjectName: '', teacherName: '', syllabusChapterId: '',
+                }))}
+                className={am.input}
+              >
+                <option value="">Select class…</option>
+                {lessonClassOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+            <label className="text-xs space-y-1">
+              <span className="font-semibold text-slate-600">Section</span>
+              <select
+                value={lessonForm.sectionName}
+                onChange={(e) => setLessonForm((f) => ({
+                  ...f, sectionName: e.target.value, subjectName: '', teacherName: '', syllabusChapterId: '',
+                }))}
+                className={am.input}
+                disabled={!lessonForm.className}
+              >
+                <option value="">Select section…</option>
+                {lessonSectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+            <label className="text-xs space-y-1">
+              <span className="font-semibold text-slate-600">Subject</span>
+              <select
+                value={lessonForm.subjectName}
+                onChange={(e) => {
+                  const subjectName = e.target.value;
+                  const teachersFor = allocationSlots
+                    .filter((s) =>
+                      s.className === lessonForm.className
+                      && s.subjectName === subjectName
+                      && (!lessonForm.sectionName || s.sectionName === lessonForm.sectionName || !s.sectionName),
+                    )
+                    .map((s) => s.teacherName);
+                  const uniqueTeachers = [...new Set(teachersFor)];
+                  setLessonForm((f) => ({
+                    ...f,
+                    subjectName,
+                    teacherName: uniqueTeachers.length === 1 ? uniqueTeachers[0] : '',
+                    syllabusChapterId: '',
+                  }));
+                }}
+                className={am.input}
+                disabled={!lessonForm.className}
+              >
+                <option value="">Select subject…</option>
+                {lessonSubjectOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+            <label className="text-xs space-y-1">
+              <span className="font-semibold text-slate-600">Teacher</span>
+              <select
+                value={lessonForm.teacherName}
+                onChange={(e) => setLessonForm((f) => ({ ...f, teacherName: e.target.value }))}
+                className={am.input}
+                disabled={!lessonForm.subjectName}
+              >
+                <option value="">Select teacher…</option>
+                {lessonTeacherOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </label>
           </div>
-          <select value={lessonForm.syllabusChapterId} onChange={(e) => setLessonForm((f) => ({ ...f, syllabusChapterId: e.target.value }))} className={am.input}>
-            <option value="">Link to syllabus chapter (optional)</option>
-            {chapters.map((c) => <option key={c.id} value={c.id}>{c.classGroup} · {c.subjectName} · {c.chapterTitle}</option>)}
-          </select>
+          <label className="text-xs space-y-1 block">
+            <span className="font-semibold text-slate-600">Link to syllabus chapter (optional)</span>
+            <select
+              value={lessonForm.syllabusChapterId}
+              onChange={(e) => setLessonForm((f) => ({ ...f, syllabusChapterId: e.target.value }))}
+              className={am.input}
+            >
+              <option value="">Link to syllabus chapter (optional)</option>
+              {linkedChapterOptions.map((c) => (
+                <option key={c.id} value={c.id}>{c.classGroup} · {c.subjectName} · {c.chapterTitle}</option>
+              ))}
+            </select>
+          </label>
           <div className="border-t pt-3">
             <p className="text-xs font-bold text-slate-600 mb-2 flex items-center gap-1"><LinkIcon size={12} /> LMS Resource</p>
             <input placeholder="Resource title" value={lessonForm.resourceTitle} onChange={(e) => setLessonForm((f) => ({ ...f, resourceTitle: e.target.value }))} className={am.input} />

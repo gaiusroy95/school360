@@ -30,6 +30,7 @@ type CertificatePreviewData = {
     schoolAddress: string;
     principalName: string;
     principalSignatureData: string;
+    classTeacherSignatureData?: string;
     schoolSealData: string;
     headerLogoData: string;
     footerNote: string;
@@ -104,48 +105,63 @@ export function downloadCertificatePdf(data: CertificatePreviewData, fileName?: 
   pdf.rect(0, 0, pageW, pageH, 'F');
   drawBorder(pdf, style);
 
+  // School logo (top center)
   if (config?.headerLogoData) {
-    addImageIfPresent(pdf, config.headerLogoData, pageW / 2 - 12, 20, 24, 24);
+    addImageIfPresent(pdf, config.headerLogoData, pageW / 2 - 12, 18, 24, 24);
+  } else {
+    pdf.setDrawColor(180, 180, 180);
+    pdf.rect(pageW / 2 - 12, 18, 24, 24);
+    pdf.setFontSize(6);
+    pdf.setTextColor(150, 150, 150);
+    pdf.text('LOGO', pageW / 2, 32, { align: 'center' });
+  }
+
+  // Seal (top right, subtle)
+  if (config?.schoolSealData) {
+    addImageIfPresent(pdf, config.schoolSealData, pageW - 48, 18, 22, 22);
   }
 
   pdf.setTextColor(...style.primary);
   pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(22);
-  pdf.text(config?.schoolName || 'School Name', pageW / 2, 52, { align: 'center' });
+  pdf.setFontSize(20);
+  pdf.text(config?.schoolName || 'School Name', pageW / 2, 50, { align: 'center' });
 
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(80, 80, 80);
-  pdf.text(config?.schoolAddress || '', pageW / 2, 58, { align: 'center' });
+  const address = config?.schoolAddress || 'School Address';
+  const addrLines = pdf.splitTextToSize(address, pageW - 80);
+  pdf.text(addrLines, pageW / 2, 56, { align: 'center' });
+  const addrOffset = Math.max(0, (addrLines.length - 1) * 4);
 
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(16);
   pdf.setTextColor(...style.primary);
-  pdf.text(style.title, pageW / 2, 72, { align: 'center' });
+  pdf.text(style.title, pageW / 2, 68 + addrOffset, { align: 'center' });
 
   pdf.setFontSize(11);
   pdf.setTextColor(...style.accent);
-  pdf.text(style.subtitle, pageW / 2, 80, { align: 'center' });
+  pdf.text(style.subtitle, pageW / 2, 76 + addrOffset, { align: 'center' });
 
   pdf.setDrawColor(...style.accent);
   pdf.setLineWidth(0.3);
-  pdf.line(60, 86, pageW - 60, 86);
+  pdf.line(60, 82 + addrOffset, pageW - 60, 82 + addrOffset);
 
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(11);
   pdf.setTextColor(50, 50, 50);
-  pdf.text('This is to certify that', pageW / 2, 96, { align: 'center' });
+  pdf.text('This is to certify that', pageW / 2, 92 + addrOffset, { align: 'center' });
 
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(20);
   pdf.setTextColor(...style.primary);
-  pdf.text(data.certificate.studentName, pageW / 2, 108, { align: 'center' });
+  pdf.text(data.certificate.studentName, pageW / 2, 104 + addrOffset, { align: 'center' });
 
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(10);
   pdf.setTextColor(60, 60, 60);
   const classText = `Admission No: ${data.certificate.admissionNumber}  |  Class: ${data.certificate.className} — ${data.certificate.sectionName}  |  Session: ${data.certificate.academicYear}`;
-  pdf.text(classText, pageW / 2, 116, { align: 'center' });
+  pdf.text(classText, pageW / 2, 112 + addrOffset, { align: 'center' });
 
   const bodyLines = [
     `has demonstrated outstanding performance in`,
@@ -154,7 +170,7 @@ export function downloadCertificatePdf(data: CertificatePreviewData, fileName?: 
     `Performance: ${data.certificate.performanceScore} — Grade ${data.certificate.performanceGrade} (${data.certificate.performanceBandLabel})`,
   ].filter(Boolean);
 
-  let y = 128;
+  let y = 124 + addrOffset;
   for (const line of bodyLines) {
     pdf.setFontSize(line.includes('"') ? 12 : 10);
     pdf.setFont('helvetica', line.includes('"') ? 'bolditalic' : 'normal');
@@ -169,27 +185,33 @@ export function downloadCertificatePdf(data: CertificatePreviewData, fileName?: 
     pdf.text(`"${data.certificate.remarks}"`, pageW / 2, y + 4, { align: 'center' });
   }
 
-  const sigY = pageH - 45;
-  if (config?.principalSignatureData) {
-    addImageIfPresent(pdf, config.principalSignatureData, pageW - 70, sigY - 12, 40, 14);
+  const sigY = pageH - 42;
+  const teacherSig = config?.classTeacherSignatureData || '';
+  const principalSig = config?.principalSignatureData || '';
+
+  if (teacherSig) {
+    addImageIfPresent(pdf, teacherSig, 35, sigY - 14, 40, 14);
+  }
+  if (principalSig) {
+    addImageIfPresent(pdf, principalSig, pageW - 75, sigY - 14, 40, 14);
   }
   if (config?.schoolSealData) {
-    addImageIfPresent(pdf, config.schoolSealData, pageW / 2 - 15, sigY - 18, 30, 30);
+    addImageIfPresent(pdf, config.schoolSealData, pageW / 2 - 12, sigY - 16, 24, 24);
   }
 
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(9);
   pdf.setTextColor(60, 60, 60);
-  pdf.line(30, sigY + 4, 80, sigY + 4);
-  pdf.line(pageW - 80, sigY + 4, pageW - 30, sigY + 4);
+  pdf.line(30, sigY + 4, 85, sigY + 4);
+  pdf.line(pageW - 85, sigY + 4, pageW - 30, sigY + 4);
   pdf.text('Class Teacher', 30, sigY + 10);
-  pdf.text(config?.principalName || 'Principal', pageW - 80, sigY + 10);
-  pdf.text(`Recorded by: ${data.certificate.recordedBy}`, 30, sigY + 16);
+  pdf.text(config?.principalName || 'Principal', pageW - 85, sigY + 10);
+  pdf.text(`Recorded by: ${data.certificate.recordedBy || '—'}`, 30, sigY + 16);
 
   const dateStr = data.certificate.issuedAt
     ? new Date(data.certificate.issuedAt).toLocaleDateString('en-IN')
     : new Date().toLocaleDateString('en-IN');
-  pdf.text(`Date: ${dateStr}`, pageW - 80, sigY + 16);
+  pdf.text(`Date: ${dateStr}`, pageW - 85, sigY + 16);
 
   pdf.setFontSize(7);
   pdf.setTextColor(120, 120, 120);

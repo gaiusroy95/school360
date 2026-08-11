@@ -117,6 +117,14 @@ async function syncHrDepartment(
   budget: number,
   hod: string,
 ) {
+  const existing = await prisma.hrDepartment.findUnique({
+    where: { institutionId_code: { institutionId, code } },
+  });
+  // Respect soft-deletes — do not resurrect a department the user removed from HR
+  if (existing?.status === 'DELETED') {
+    return existing.id;
+  }
+
   const hr = await prisma.hrDepartment.upsert({
     where: { institutionId_code: { institutionId, code } },
     create: {
@@ -157,11 +165,13 @@ export async function syncDepartmentOpsFromSetup(institutionId: string, actorEma
   let staffCount = 0;
   let locationCount = 0;
   let budgetCount = 0;
+  const syncedCodes = new Set<string>();
 
   for (const row of config.departments) {
     const name = (row.departmentName || '').trim();
     const code = (row.departmentCode || slugCode(name)).trim();
     if (!name || !code) continue;
+    syncedCodes.add(code.toUpperCase());
 
     const hod = (row.hod || '').trim();
     const location = (row.location || '').trim();
@@ -425,6 +435,35 @@ export async function syncDepartmentOpsFromSetup(institutionId: string, actorEma
         data: { institutionId, title: evt.title || 'Event', startDate: start, endDate: end, createdBy: actorEmail },
       });
       customCount += 1;
+    }
+  }
+
+  // Departments removed from Institution Setup → soft-delete from HR directory / ops
+  if (syncedCodes.size > 0) {
+    const activeOps = await prisma.opsDepartment.findMany({
+      where: { institutionId, isActive: true },
+    });
+    const staleOps = activeOps.filter((op) => !syncedCodes.has(op.departmentCode.toUpperCase()));
+    for (const op of staleOps) {
+      await prisma.opsDepartment.update({
+        where: { id: op.id },
+        data: { isActive: false },
+      });
+      if (op.hrDepartmentId) {
+        await prisma.hrDepartment.updateMany({
+          where: { id: op.hrDepartmentId, institutionId, NOT: { status: 'DELETED' } },
+          data: { status: 'DELETED' },
+        });
+      } else {
+        await prisma.hrDepartment.updateMany({
+          where: {
+            institutionId,
+            code: { equals: op.departmentCode, mode: 'insensitive' },
+            NOT: { status: 'DELETED' },
+          },
+          data: { status: 'DELETED' },
+        });
+      }
     }
   }
 

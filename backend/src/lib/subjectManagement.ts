@@ -5,6 +5,8 @@ import { nextAcademicRecordId, serializeSubject } from './academicManagement.js'
 import { serializeSyllabusChapter } from './curriculumHub.js';
 import { validateSubjectPayload, validateTeacherWorkload } from './academicSetupSync.js';
 import { listTeachingStaffForAcademic } from './employeeDirectory.js';
+import { upsertTeacherAllocationFromSubject } from './teacherSubjectAllocationSync.js';
+import { syncTeacherProfilesFromAcademic } from './teacherAttendance.js';
 
 export type TeacherAssignmentInput = {
   teacherName: string;
@@ -274,7 +276,20 @@ export async function createSubjectWithTeachers(
       },
       include: { subject: true },
     });
+    if (t.teacherName?.trim()) {
+      await upsertTeacherAllocationFromSubject(institutionId, {
+        academicYear,
+        className: t.className,
+        sectionName: t.sectionName,
+        subjectName: subject.subjectName,
+        teacherName: t.teacherName,
+      });
+    }
     createdOfferings.push(allocation);
+  }
+
+  if (createdOfferings.length > 0) {
+    await syncTeacherProfilesFromAcademic(institutionId, academicYear);
   }
 
   return {
@@ -408,9 +423,27 @@ export async function bulkUpsertSubjectTeacherMappings(
         });
         allocationsCreated += 1;
       }
+
+      if (teacherName) {
+        await upsertTeacherAllocationFromSubject(
+          institutionId,
+          {
+            academicYear,
+            className,
+            sectionName,
+            subjectName,
+            teacherName,
+          },
+          { skipHomeworkRemap: true },
+        );
+      }
     } catch (err) {
       errors.push(`Row ${excelRow}: ${err instanceof Error ? err.message : 'Failed'}`);
     }
+  }
+
+  if (allocationsCreated + allocationsUpdated > 0) {
+    await syncTeacherProfilesFromAcademic(institutionId, academicYear);
   }
 
   return {
@@ -454,17 +487,30 @@ export async function updateSubjectOffering(
     include: { subject: true },
   });
 
+  const subjectName = row.subject?.subjectName || existing.subject?.subjectName || '';
+  const teacherName = (row.teacherName || '').trim();
+  if (teacherName && subjectName) {
+    await upsertTeacherAllocationFromSubject(institutionId, {
+      academicYear: row.academicYear,
+      className: row.className,
+      sectionName: row.sectionName,
+      subjectName,
+      teacherName,
+    });
+    await syncTeacherProfilesFromAcademic(institutionId, row.academicYear);
+  }
+
   const chapters = await prisma.academicSyllabusChapter.findMany({
     where: {
       institutionId,
       academicYear: row.academicYear,
       className: row.className,
       sectionName: row.sectionName,
-      subjectName: row.subject?.subjectName || '',
+      subjectName,
     },
   });
 
-  return serializeSubjectOffering(row, chapters, row.subject?.subjectName || '');
+  return serializeSubjectOffering(row, chapters, subjectName);
 }
 
 export async function addTeacherToSubject(
@@ -515,6 +561,17 @@ export async function addTeacherToSubject(
     },
     include: { subject: true },
   });
+
+  if (data.teacherName?.trim()) {
+    await upsertTeacherAllocationFromSubject(institutionId, {
+      academicYear,
+      className: data.className,
+      sectionName: data.sectionName,
+      subjectName: subject.subjectName,
+      teacherName: data.teacherName,
+    });
+    await syncTeacherProfilesFromAcademic(institutionId, academicYear);
+  }
 
   const chapters = await prisma.academicSyllabusChapter.findMany({
     where: {

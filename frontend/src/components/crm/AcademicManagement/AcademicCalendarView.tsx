@@ -4,8 +4,8 @@ import {
 } from 'lucide-react';
 import {
   BOARD_OPTIONS, confirmCalendarUpload, createAcademicCalendarEvent, deleteAcademicCalendarEvent,
-  fetchAcademicCalendar, fetchCalendarUploads, publishAcademicCalendar, uploadBoardCalendarOcr,
-  type CalendarEvent, type CalendarUpload, type OcrCalendarEventPreview,
+  fetchAcademicCalendar, fetchAcademicCalendarMeta, fetchCalendarUploads, publishAcademicCalendar, uploadBoardCalendarOcr,
+  type AcademicCalendarMeta, type CalendarEvent, type CalendarUpload, type OcrCalendarEventPreview,
 } from '../../../lib/academicServices';
 import {
   AcademicLoading, AcademicModal, AcademicPageHeader, AcademicPageShell,
@@ -32,6 +32,7 @@ function fileToBase64(file: File): Promise<string> {
 export function AcademicCalendarView() {
   const [records, setRecords] = useState<CalendarEvent[]>([]);
   const [uploads, setUploads] = useState<CalendarUpload[]>([]);
+  const [meta, setMeta] = useState<AcademicCalendarMeta | null>(null);
   const [loading, setLoading] = useState(true);
   const [academicYear, setAcademicYear] = useState('2025-26');
   const [boardName, setBoardName] = useState('CBSE');
@@ -56,6 +57,18 @@ export function AcademicCalendarView() {
       setUploads(up.uploads);
     } finally { setLoading(false); }
   }, [academicYear, boardName]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const m = await fetchAcademicCalendarMeta();
+        setMeta(m);
+        setAcademicYear((prev) => (m.academicYears.includes(prev) ? prev : m.defaultAcademicYear || prev));
+      } catch {
+        // meta is optional — calendar still works
+      }
+    })();
+  }, []);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -104,7 +117,7 @@ export function AcademicCalendarView() {
       if (/entity too large|too large|413/i.test(msg)) {
         setMessage('Upload failed: file is too large. Use a PDF/image under 20 MB.');
       } else if (/internal server error/i.test(msg)) {
-        setMessage('OCR failed on the server. Check GEMINI_API_KEY / GEMINI_MODEL in backend/.env and restart the API, then retry.');
+        setMessage('OCR failed on the server. Restart the API after updating AI keys (OPENAI_API_KEY / GROQ_API_KEY / GEMINI_API_KEY), then retry.');
       } else {
         setMessage(msg);
       }
@@ -162,17 +175,34 @@ export function AcademicCalendarView() {
 
       <div className={am.content}>
         {message && (
-          <p className={`${am.message} ${/failed|error|too large|invalid/i.test(message) ? 'bg-red-50 text-red-700 border-red-100' : ''}`}>
+          <p className={`${am.message} whitespace-pre-wrap ${/failed|error|too large|invalid|unavailable/i.test(message) ? 'bg-red-50 text-red-700 border-red-100' : ''}`}>
             {message}
           </p>
         )}
         <p className="text-xs text-slate-500 -mt-2">
-          Tip: Upload a board academic calendar or government circular (PDF/JPG/PNG, max 20 MB). OCR will propose events by date — review and import, then Publish to Mobile.
+          Tip: Upload a board academic calendar or government circular (PDF/JPG/PNG, max 20 MB). OCR proposes date-wise events — review, import, then Publish to Mobile to sync teacher/student/parent calendars.
         </p>
+        {meta?.aiProviders && (
+          <p className="text-[11px] text-slate-600 -mt-3">
+            OCR AI:{' '}
+            <strong>Gemini</strong>{meta.aiProviders.gemini ? ' ✓' : meta.aiProviders.configured.gemini ? ' ✗ invalid key' : ' (missing)'}
+            {' · '}
+            <strong>OpenAI</strong>{meta.aiProviders.openai ? ' ✓' : meta.aiProviders.configured.openai ? ' ✗' : ' (missing)'}
+            {' · '}
+            <strong>Groq</strong>{meta.aiProviders.groq ? ' ✓' : meta.aiProviders.configured.groq ? ' ✗' : ' (missing)'}
+            {!meta.aiProviders.gemini && meta.aiProviders.openai ? (
+              <span className="block mt-1 text-amber-700">
+                Gemini key is invalid/unavailable — calendar OCR will use OpenAI automatically. Replace <code>GEMINI_API_KEY</code> in backend/.env when ready.
+              </span>
+            ) : null}
+          </p>
+        )}
 
         <div className={`${am.filterBar} flex-wrap`}>
           <select value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} className={am.select}>
-            <option>2025-26</option><option>2024-25</option>
+            {(meta?.academicYears?.length ? meta.academicYears : ['2025-26', '2024-25', '2023-24']).map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
           </select>
           <div className="flex flex-wrap gap-1">
             {BOARD_OPTIONS.map((b) => (
@@ -266,7 +296,10 @@ export function AcademicCalendarView() {
         )}
 
         <p className="text-xs text-slate-500 flex items-center gap-1">
-          <Smartphone size={12} /> Mobile API: <code className="bg-slate-100 px-1 rounded">GET /api/academic/calendar/mobile?academicYear=&boardName=</code>
+          <Smartphone size={12} /> Mobile API:{' '}
+          <code className="bg-slate-100 px-1 rounded">
+            {`GET /api/academic/calendar/mobile?academicYear=${encodeURIComponent(academicYear)}&boardName=${encodeURIComponent(boardName)}`}
+          </code>
         </p>
       </div>
 

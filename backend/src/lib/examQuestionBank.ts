@@ -178,6 +178,7 @@ export async function getQuestionBankMeta(institutionId: string) {
     orderBy: [{ subjectName: 'asc' }],
   });
   const { listConfiguredAiProviders } = await import('./aiQuestionProviders.js');
+  const aiProviders = await listConfiguredAiProviders();
   return {
     defaultAcademicYear: filters.defaultAcademicYear,
     academicYears: filters.academicYears,
@@ -188,7 +189,7 @@ export async function getQuestionBankMeta(institutionId: string) {
     difficulties: [...DIFFICULTIES],
     purposes: Object.entries(PURPOSE_LABELS).map(([id, label]) => ({ id, label })),
     sources: Object.entries(SOURCE_LABELS).map(([id, label]) => ({ id, label })),
-    aiProviders: listConfiguredAiProviders(),
+    aiProviders,
   };
 }
 
@@ -299,6 +300,7 @@ export async function generatePaperFromPdf(
       questionType: params.questionType,
       difficulty: params.difficulty,
       title: params.title,
+      fileName: first.fileName,
     });
     usedVision = true;
     fileMeta = files.map((f) => ({

@@ -6,6 +6,12 @@ import {
   runGeminiJsonRequest,
   type GeneratedQuestion,
 } from './geminiQuestions.js';
+import {
+  isAiProviderHealthy,
+  listAiProviderStatus,
+  listConfiguredAiProvidersSync,
+  markAiProviderUnhealthy,
+} from './aiProviderHealth.js';
 
 export type { GeneratedQuestion };
 
@@ -67,16 +73,18 @@ function normalizeQuestions(
   return questions.slice(0, numQuestions);
 }
 
-function hasGemini() {
-  return Boolean(process.env.GEMINI_API_KEY?.trim());
-}
-
-function hasOpenAI() {
-  return Boolean(process.env.OPENAI_API_KEY?.trim());
-}
-
-function hasGroq() {
-  return Boolean(process.env.GROQ_API_KEY?.trim());
+function noteProviderFailure(id: 'gemini' | 'openai' | 'groq', err: unknown) {
+  const msg = err instanceof Error ? err.message : String(err);
+  const lower = msg.toLowerCase();
+  if (
+    lower.includes('api key') ||
+    lower.includes('invalid') ||
+    lower.includes('unauthorized') ||
+    lower.includes('401') ||
+    lower.includes('authentication')
+  ) {
+    markAiProviderUnhealthy(id, msg);
+  }
 }
 
 async function generateWithOpenAI(params: {
@@ -166,38 +174,41 @@ export async function generateQuestionsFromText(params: {
 }): Promise<GeneratedQuestion[]> {
   const errors: string[] = [];
 
-  if (hasGemini()) {
+  if (await isAiProviderHealthy('gemini')) {
     try {
       return await generateQuestionsGemini(params);
     } catch (err) {
+      noteProviderFailure('gemini', err);
       errors.push(`Gemini: ${err instanceof Error ? err.message : String(err)}`);
     }
   } else {
-    errors.push('Gemini: GEMINI_API_KEY not configured');
+    errors.push('Gemini: unavailable or GEMINI_API_KEY invalid/missing');
   }
 
-  if (hasOpenAI()) {
+  if (await isAiProviderHealthy('openai')) {
     try {
       return await generateWithOpenAI(params);
     } catch (err) {
+      noteProviderFailure('openai', err);
       errors.push(`OpenAI: ${err instanceof Error ? err.message : String(err)}`);
     }
   } else {
-    errors.push('OpenAI: OPENAI_API_KEY not configured');
+    errors.push('OpenAI: unavailable or OPENAI_API_KEY invalid/missing');
   }
 
-  if (hasGroq()) {
+  if (await isAiProviderHealthy('groq')) {
     try {
       return await generateWithGroq(params);
     } catch (err) {
+      noteProviderFailure('groq', err);
       errors.push(`Groq: ${err instanceof Error ? err.message : String(err)}`);
     }
   } else {
-    errors.push('Groq: GROQ_API_KEY not configured');
+    errors.push('Groq: unavailable or GROQ_API_KEY invalid/missing');
   }
 
   throw new Error(
-    `All free AI providers failed for question generation.\n${errors.join('\n')}\nConfigure GEMINI_API_KEY (preferred), OPENAI_API_KEY, or GROQ_API_KEY in backend/.env.`,
+    `All free AI providers failed for question generation.\n${errors.join('\n')}\nFix GEMINI_API_KEY (preferred), or ensure OPENAI_API_KEY / GROQ_API_KEY are valid in backend/.env, then restart the API.`,
   );
 }
 
@@ -208,6 +219,7 @@ export async function generateQuestionsFromVision(params: {
   questionType: string;
   difficulty: string;
   title?: string;
+  fileName?: string;
 }): Promise<GeneratedQuestion[]> {
   const prompt = `You are an expert school examination question paper writer.
 
@@ -227,13 +239,15 @@ Return JSON only:
 
   const errors: string[] = [];
   const raw = params.base64Data.includes(',') ? params.base64Data.split(',')[1] : params.base64Data;
+  const mime = (params.mimeType || 'application/octet-stream').toLowerCase();
+  const isPdf = mime.includes('pdf') || (params.fileName || '').toLowerCase().endsWith('.pdf');
 
-  if (hasGemini()) {
+  if (await isAiProviderHealthy('gemini')) {
     try {
       getGeminiApiKey();
       const responseText = await runGeminiJsonRequest(0.3, async (model) => {
         const result = await model.generateContent([
-          { inlineData: { mimeType: params.mimeType, data: raw } },
+          { inlineData: { mimeType: isPdf ? 'application/pdf' : mime, data: raw } },
           { text: prompt },
         ]);
         return result.response.text();
@@ -241,14 +255,30 @@ Return JSON only:
       const parsed = parseJsonFromModel(responseText) as { questions?: GeneratedQuestion[] };
       return normalizeQuestions(parsed.questions || [], params.questionType, params.difficulty, params.numQuestions);
     } catch (err) {
+      noteProviderFailure('gemini', err);
       errors.push(`Gemini vision: ${formatGeminiError(err).message}`);
     }
   }
 
-  if (hasOpenAI()) {
+  if (await isAiProviderHealthy('openai')) {
     try {
       const key = process.env.OPENAI_API_KEY!.trim();
       const model = process.env.OPENAI_VISION_MODEL?.trim() || process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini';
+      const userContent: Array<Record<string, unknown>> = [{ type: 'text', text: prompt }];
+      if (isPdf) {
+        userContent.push({
+          type: 'file',
+          file: {
+            filename: params.fileName || 'material.pdf',
+            file_data: `data:application/pdf;base64,${raw}`,
+          },
+        });
+      } else {
+        userContent.push({
+          type: 'image_url',
+          image_url: { url: `data:${mime};base64,${raw}` },
+        });
+      }
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -259,15 +289,7 @@ Return JSON only:
           model,
           temperature: 0.3,
           response_format: { type: 'json_object' },
-          messages: [
-            {
-              role: 'user',
-              content: [
-                { type: 'text', text: prompt },
-                { type: 'image_url', image_url: { url: `data:${params.mimeType};base64,${raw}` } },
-              ],
-            },
-          ],
+          messages: [{ role: 'user', content: userContent }],
         }),
       });
       const data = await res.json().catch(() => ({})) as {
@@ -278,20 +300,20 @@ Return JSON only:
       const parsed = parseJsonFromModel(data.choices?.[0]?.message?.content || '') as { questions?: GeneratedQuestion[] };
       return normalizeQuestions(parsed.questions || [], params.questionType, params.difficulty, params.numQuestions);
     } catch (err) {
+      noteProviderFailure('openai', err);
       errors.push(`OpenAI vision: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
   throw new Error(
-    `Could not generate questions from document vision.\n${errors.join('\n') || 'No vision-capable free AI key configured (Gemini or OpenAI).'}`,
+    `Could not generate questions from document vision.\n${errors.join('\n') || 'No vision-capable AI key healthy (Gemini or OpenAI).'}\nTip: upload JPG/PNG scans, or fix GEMINI_API_KEY for PDF vision.`,
   );
 }
 
-export function listConfiguredAiProviders() {
-  return {
-    gemini: hasGemini(),
-    openai: hasOpenAI(),
-    groq: hasGroq(),
-    priority: ['gemini', 'openai', 'groq'] as const,
-  };
+export async function listConfiguredAiProviders() {
+  try {
+    return await listAiProviderStatus(false);
+  } catch {
+    return listConfiguredAiProvidersSync();
+  }
 }

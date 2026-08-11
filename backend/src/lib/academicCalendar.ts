@@ -11,6 +11,7 @@ import {
   runGeminiJsonRequest,
   runGeminiVisionJsonRequest,
 } from './geminiQuestions.js';
+import { isAiProviderHealthy, markAiProviderUnhealthy } from './aiProviderHealth.js';
 import { nextAcademicRecordId, EVENT_TYPE_UI } from './academicManagement.js';
 
 export const BOARD_OPTIONS = ['CBSE', 'ICSE', 'State Board', 'IB', 'Cambridge', 'NIOS', 'Other'] as const;
@@ -22,6 +23,8 @@ export type OcrCalendarEvent = {
   eventType: AcademicEventType;
   description?: string;
 };
+
+type CalendarOcrResult = { rawText: string; events: OcrCalendarEvent[]; documentSummary?: string };
 
 const CALENDAR_OCR_PROMPT = (boardName: string, academicYear: string) => {
   const { start, end } = academicYearParts(academicYear);
@@ -140,72 +143,248 @@ function normalizeOcrEvents(items: unknown[], academicYear: string): OcrCalendar
   return out.sort((a, b) => a.eventDate.localeCompare(b.eventDate));
 }
 
-async function ocrCalendarWithGemini(
+function parseCalendarOcrResponse(text: string, academicYear: string, fallbackRaw = ''): CalendarOcrResult {
+  const parsed = parseJsonFromModel(text) as {
+    rawText?: string;
+    events?: unknown[];
+    documentSummary?: string;
+  };
+  const events = normalizeOcrEvents(parsed.events || [], academicYear);
+  if (events.length === 0) {
+    throw new Error('No dated calendar events could be proposed from this document. Try a clearer PDF/circular.');
+  }
+  return {
+    rawText: String(parsed.rawText || parsed.documentSummary || fallbackRaw || '').trim(),
+    events,
+    documentSummary: parsed.documentSummary ? String(parsed.documentSummary) : undefined,
+  };
+}
+
+function noteProviderFailure(id: 'gemini' | 'openai' | 'groq', err: unknown) {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/api key|invalid|unauthorized|401|authentication/i.test(msg)) {
+    markAiProviderUnhealthy(id, msg);
+  }
+}
+
+async function ocrCalendarWithOpenAIText(
+  sourceText: string,
+  boardName: string,
+  academicYear: string,
+): Promise<CalendarOcrResult> {
+  if (!(await isAiProviderHealthy('openai'))) {
+    throw new Error('OPENAI_API_KEY not configured or unhealthy');
+  }
+  const key = process.env.OPENAI_API_KEY!.trim();
+  const model = process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini';
+  const prompt = `${CALENDAR_OCR_PROMPT(boardName, academicYear)}\n\nEXTRACTED DOCUMENT TEXT:\n${sourceText.slice(0, 120_000)}`;
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.1,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: 'Extract dated academic calendar events. Reply with valid JSON only.' },
+        { role: 'user', content: prompt },
+      ],
+    }),
+  });
+  const data = await res.json().catch(() => ({})) as {
+    error?: { message?: string };
+    choices?: { message?: { content?: string } }[];
+  };
+  if (!res.ok) {
+    const msg = data.error?.message || `OpenAI failed (${res.status})`;
+    noteProviderFailure('openai', msg);
+    throw new Error(msg);
+  }
+  return parseCalendarOcrResponse(data.choices?.[0]?.message?.content || '', academicYear, sourceText);
+}
+
+async function ocrCalendarWithGroqText(
+  sourceText: string,
+  boardName: string,
+  academicYear: string,
+): Promise<CalendarOcrResult> {
+  if (!(await isAiProviderHealthy('groq'))) {
+    throw new Error('GROQ_API_KEY not configured or unhealthy');
+  }
+  const key = process.env.GROQ_API_KEY!.trim();
+  const model = process.env.GROQ_MODEL?.trim() || 'llama-3.3-70b-versatile';
+  const prompt = `${CALENDAR_OCR_PROMPT(boardName, academicYear)}\n\nEXTRACTED DOCUMENT TEXT:\n${sourceText.slice(0, 80_000)}`;
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.1,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: 'Extract dated academic calendar events. Reply with valid JSON only.' },
+        { role: 'user', content: prompt },
+      ],
+    }),
+  });
+  const data = await res.json().catch(() => ({})) as {
+    error?: { message?: string };
+    choices?: { message?: { content?: string } }[];
+  };
+  if (!res.ok) {
+    const msg = data.error?.message || `Groq failed (${res.status})`;
+    noteProviderFailure('groq', msg);
+    throw new Error(msg);
+  }
+  return parseCalendarOcrResponse(data.choices?.[0]?.message?.content || '', academicYear, sourceText);
+}
+
+async function ocrCalendarWithOpenAIVision(
   mimeType: string,
   base64Data: string,
   boardName: string,
   academicYear: string,
-): Promise<{ rawText: string; events: OcrCalendarEvent[]; documentSummary?: string }> {
-  try {
-    const text = await runGeminiVisionJsonRequest(0.1, async (model) => {
-      const result = await model.generateContent([
-        { inlineData: { mimeType, data: base64Data } },
-        { text: CALENDAR_OCR_PROMPT(boardName, academicYear) },
-      ]);
-      return result.response.text();
-    });
-
-    const parsed = parseJsonFromModel(text) as {
-      rawText?: string;
-      events?: unknown[];
-      documentSummary?: string;
-    };
-    const events = normalizeOcrEvents(parsed.events || [], academicYear);
-    if (events.length === 0) {
-      throw new Error('No dated calendar events could be proposed from this document. Try a clearer PDF/circular.');
-    }
-
-    return {
-      rawText: String(parsed.rawText || parsed.documentSummary || '').trim(),
-      events,
-      documentSummary: parsed.documentSummary ? String(parsed.documentSummary) : undefined,
-    };
-  } catch (err) {
-    throw formatGeminiError(err);
+  fileName: string,
+): Promise<CalendarOcrResult> {
+  if (!(await isAiProviderHealthy('openai'))) {
+    throw new Error('OPENAI_API_KEY not configured or unhealthy');
   }
+  const key = process.env.OPENAI_API_KEY!.trim();
+  const model = process.env.OPENAI_VISION_MODEL?.trim() || process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini';
+  const raw = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+  const isPdf = mimeType.toLowerCase().includes('pdf') || fileName.toLowerCase().endsWith('.pdf');
+  const userContent: Array<Record<string, unknown>> = [
+    { type: 'text', text: CALENDAR_OCR_PROMPT(boardName, academicYear) },
+  ];
+  if (isPdf) {
+    userContent.push({
+      type: 'file',
+      file: {
+        filename: fileName.endsWith('.pdf') ? fileName : 'calendar.pdf',
+        file_data: `data:application/pdf;base64,${raw}`,
+      },
+    });
+  } else {
+    userContent.push({
+      type: 'image_url',
+      image_url: { url: `data:${mimeType};base64,${raw}` },
+    });
+  }
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.1,
+      response_format: { type: 'json_object' },
+      messages: [{ role: 'user', content: userContent }],
+    }),
+  });
+  const data = await res.json().catch(() => ({})) as {
+    error?: { message?: string };
+    choices?: { message?: { content?: string } }[];
+  };
+  if (!res.ok) {
+    const msg = data.error?.message || `OpenAI vision failed (${res.status})`;
+    noteProviderFailure('openai', msg);
+    throw new Error(msg);
+  }
+  return parseCalendarOcrResponse(data.choices?.[0]?.message?.content || '', academicYear);
 }
 
 async function ocrCalendarFromText(
   sourceText: string,
   boardName: string,
   academicYear: string,
-): Promise<{ rawText: string; events: OcrCalendarEvent[]; documentSummary?: string }> {
-  try {
-    const responseText = await runGeminiJsonRequest(0.1, async (model) => {
-      const result = await model.generateContent(
-        `${CALENDAR_OCR_PROMPT(boardName, academicYear)}\n\nEXTRACTED DOCUMENT TEXT:\n${sourceText.slice(0, 120_000)}`,
-      );
-      return result.response.text();
-    });
+): Promise<CalendarOcrResult> {
+  const errors: string[] = [];
+  const prompt = `${CALENDAR_OCR_PROMPT(boardName, academicYear)}\n\nEXTRACTED DOCUMENT TEXT:\n${sourceText.slice(0, 120_000)}`;
 
-    const parsed = parseJsonFromModel(responseText) as {
-      rawText?: string;
-      events?: unknown[];
-      documentSummary?: string;
-    };
-    const events = normalizeOcrEvents(parsed.events || [], academicYear);
-    if (events.length === 0) {
-      throw new Error('No dated events found in the circular/calendar text.');
+  if (await isAiProviderHealthy('gemini')) {
+    try {
+      const responseText = await runGeminiJsonRequest(0.1, async (model) => {
+        const result = await model.generateContent(prompt);
+        return result.response.text();
+      });
+      return parseCalendarOcrResponse(responseText, academicYear, sourceText);
+    } catch (err) {
+      const formatted = formatGeminiError(err);
+      noteProviderFailure('gemini', formatted);
+      errors.push(`Gemini: ${formatted.message}`);
     }
-
-    return {
-      rawText: String(parsed.rawText || sourceText).trim(),
-      events,
-      documentSummary: parsed.documentSummary ? String(parsed.documentSummary) : undefined,
-    };
-  } catch (err) {
-    throw formatGeminiError(err);
+  } else {
+    errors.push('Gemini: unavailable or GEMINI_API_KEY invalid/missing');
   }
+
+  if (await isAiProviderHealthy('openai')) {
+    try {
+      return await ocrCalendarWithOpenAIText(sourceText, boardName, academicYear);
+    } catch (err) {
+      errors.push(`OpenAI: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  if (await isAiProviderHealthy('groq')) {
+    try {
+      return await ocrCalendarWithGroqText(sourceText, boardName, academicYear);
+    } catch (err) {
+      errors.push(`Groq: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  throw new Error(
+    `Calendar OCR (text) failed.\n${errors.join('\n')}\nTip: ensure OPENAI_API_KEY or GROQ_API_KEY is valid in backend/.env (Gemini optional), then restart the API.`,
+  );
+}
+
+async function ocrCalendarWithVision(
+  mimeType: string,
+  base64Data: string,
+  boardName: string,
+  academicYear: string,
+  fileName: string,
+): Promise<CalendarOcrResult> {
+  const errors: string[] = [];
+
+  if (await isAiProviderHealthy('gemini')) {
+    try {
+      const text = await runGeminiVisionJsonRequest(0.1, async (model) => {
+        const result = await model.generateContent([
+          { inlineData: { mimeType, data: base64Data } },
+          { text: CALENDAR_OCR_PROMPT(boardName, academicYear) },
+        ]);
+        return result.response.text();
+      });
+      return parseCalendarOcrResponse(text, academicYear);
+    } catch (err) {
+      const formatted = formatGeminiError(err);
+      noteProviderFailure('gemini', formatted);
+      errors.push(`Gemini: ${formatted.message}`);
+    }
+  } else {
+    errors.push('Gemini: unavailable or GEMINI_API_KEY invalid/missing');
+  }
+
+  if (await isAiProviderHealthy('openai')) {
+    try {
+      return await ocrCalendarWithOpenAIVision(mimeType, base64Data, boardName, academicYear, fileName);
+    } catch (err) {
+      errors.push(`OpenAI: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  throw new Error(
+    `Calendar OCR (vision) failed.\n${errors.join('\n')}\nTip: upload a clear JPG/PNG, or set a valid OPENAI_API_KEY / GEMINI_API_KEY in backend/.env and restart.`,
+  );
 }
 
 export async function scanBoardCalendarPdf(
@@ -227,7 +406,7 @@ export async function scanBoardCalendarPdf(
   }
 
   const buf = Buffer.from(raw, 'base64');
-  let ocrResult: { rawText: string; events: OcrCalendarEvent[]; documentSummary?: string };
+  let ocrResult: CalendarOcrResult;
 
   if (mimeType.includes('pdf') || fileName.toLowerCase().endsWith('.pdf')) {
     try {
@@ -235,22 +414,34 @@ export async function scanBoardCalendarPdf(
       if (text.length > 80) {
         try {
           ocrResult = await ocrCalendarFromText(text, boardName, academicYear);
-        } catch {
+        } catch (textErr) {
           // Fallback to vision OCR for scanned/govt circular PDFs with weak text layer
-          ocrResult = await ocrCalendarWithGemini('application/pdf', raw, boardName, academicYear);
+          try {
+            ocrResult = await ocrCalendarWithVision('application/pdf', raw, boardName, academicYear, fileName);
+          } catch (visionErr) {
+            const t = textErr instanceof Error ? textErr.message : String(textErr);
+            const v = visionErr instanceof Error ? visionErr.message : String(visionErr);
+            throw new Error(`${t}\n\nVision fallback:\n${v}`);
+          }
         }
       } else {
-        ocrResult = await ocrCalendarWithGemini('application/pdf', raw, boardName, academicYear);
+        ocrResult = await ocrCalendarWithVision('application/pdf', raw, boardName, academicYear, fileName);
       }
     } catch (firstErr) {
+      // If PDF text extraction itself failed, try vision
+      if (String(firstErr).includes('Vision fallback') || String(firstErr).includes('Calendar OCR')) {
+        throw firstErr instanceof Error ? firstErr : new Error(String(firstErr));
+      }
       try {
-        ocrResult = await ocrCalendarWithGemini('application/pdf', raw, boardName, academicYear);
+        ocrResult = await ocrCalendarWithVision('application/pdf', raw, boardName, academicYear, fileName);
       } catch (secondErr) {
-        throw formatGeminiError(secondErr || firstErr);
+        const a = firstErr instanceof Error ? firstErr.message : String(firstErr);
+        const b = secondErr instanceof Error ? secondErr.message : String(secondErr);
+        throw new Error(`${a}\n\n${b}`);
       }
     }
   } else if (mimeType.startsWith('image/')) {
-    ocrResult = await ocrCalendarWithGemini(mimeType, raw, boardName, academicYear);
+    ocrResult = await ocrCalendarWithVision(mimeType, raw, boardName, academicYear, fileName);
   } else {
     throw new Error('Unsupported file type. Upload a PDF or image (JPG/PNG) of the board calendar / govt circular.');
   }
@@ -310,6 +501,19 @@ export function serializeCalendarUpload(row: AcademicBoardCalendarUpload) {
     ocrRawTextPreview: row.ocrRawText.slice(0, 500),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export async function getAcademicCalendarMeta(institutionId: string) {
+  const { getInstitutionFilterMeta } = await import('./students.js');
+  const filters = await getInstitutionFilterMeta(institutionId);
+  const { listConfiguredAiProviders } = await import('./aiQuestionProviders.js');
+  const aiProviders = await listConfiguredAiProviders();
+  return {
+    defaultAcademicYear: filters.defaultAcademicYear,
+    academicYears: filters.academicYears?.length ? filters.academicYears : ['2025-26', '2024-25', '2023-24'],
+    boards: [...BOARD_OPTIONS],
+    aiProviders,
   };
 }
 

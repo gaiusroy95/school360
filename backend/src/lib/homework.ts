@@ -1,7 +1,8 @@
 import type { AcademicHomework } from '@prisma/client';
 import { prisma } from './prisma.js';
 import { formatClassSection } from './students.js';
-import { serializeHomework } from './academicManagement.js';
+import { nextAcademicRecordId, serializeHomework } from './academicManagement.js';
+import { normalizeHomeworkAttachments, isYouTubeUrl } from './homeworkUploads.js';
 
 export type HomeworkDashboardRow = {
   date: string;
@@ -236,3 +237,229 @@ export async function assertTeacherHomeworkAllocation(
     message: `${teacher} is not allocated to ${opts.className}-${opts.sectionName} · ${opts.subjectName} for ${opts.academicYear}. Update Teacher Allocation first.`,
   };
 }
+
+export type HomeworkBulkRow = {
+  className: string;
+  sectionName: string;
+  subjectName: string;
+  teacherName?: string;
+  title: string;
+  description?: string;
+  assignedDate?: string;
+  dueDate?: string;
+  totalStudents?: number;
+  youtubeUrl?: string;
+};
+
+async function resolveTeacherForSlot(
+  institutionId: string,
+  academicYear: string,
+  className: string,
+  sectionName: string,
+  subjectName: string,
+  preferredTeacher?: string,
+) {
+  const preferred = preferredTeacher?.trim() || '';
+  if (preferred) return preferred;
+
+  const teacherAlloc = await prisma.academicTeacherAllocation.findFirst({
+    where: {
+      institutionId,
+      academicYear,
+      className,
+      sectionName,
+      subjectName: { equals: subjectName, mode: 'insensitive' },
+    },
+    select: { teacherName: true },
+  });
+  if (teacherAlloc?.teacherName) return teacherAlloc.teacherName;
+
+  const subject = await prisma.academicSubject.findFirst({
+    where: { institutionId, subjectName: { equals: subjectName, mode: 'insensitive' } },
+    select: { id: true },
+  });
+  if (!subject) return '';
+
+  const offering = await prisma.academicSubjectAllocation.findFirst({
+    where: {
+      institutionId,
+      academicYear,
+      subjectId: subject.id,
+      className,
+      sectionName,
+    },
+    select: { teacherName: true },
+  });
+  return offering?.teacherName?.trim() || '';
+}
+
+function dayBoundsIso(dateStr: string) {
+  const start = new Date(dateStr);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(dateStr);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
+
+/**
+ * Bulk create/update homework assignments from Excel.
+ * Validates class/section/subject/teacher against Teacher + Subject allocations.
+ */
+export async function bulkUpsertHomeworkAssignments(
+  institutionId: string,
+  data: {
+    academicYear: string;
+    term?: string;
+    defaultAssignedDate?: string;
+    share?: boolean;
+    rows: HomeworkBulkRow[];
+  },
+) {
+  const academicYear = data.academicYear || '2025-26';
+  const term = data.term || 'Term 1';
+  const share = data.share !== false;
+  const defaultAssignedDate = data.defaultAssignedDate || new Date().toISOString().slice(0, 10);
+
+  let created = 0;
+  let updated = 0;
+  const errors: string[] = [];
+
+  for (let i = 0; i < data.rows.length; i++) {
+    const row = data.rows[i];
+    const excelRow = i + 2;
+    try {
+      const className = row.className?.trim();
+      const sectionName = (row.sectionName || '').trim();
+      const subjectName = row.subjectName?.trim();
+      const title = row.title?.trim();
+      if (!className || !sectionName || !subjectName || !title) {
+        throw new Error('className, sectionName, subjectName, and title are required');
+      }
+
+      const assignedDateStr = (row.assignedDate || defaultAssignedDate).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(assignedDateStr)) {
+        throw new Error(`Invalid assignedDate "${row.assignedDate || ''}" — use YYYY-MM-DD`);
+      }
+
+      const teacherName = await resolveTeacherForSlot(
+        institutionId,
+        academicYear,
+        className,
+        sectionName,
+        subjectName,
+        row.teacherName,
+      );
+      if (!teacherName) {
+        throw new Error(
+          `No teacher allocated for ${subjectName} · ${className}-${sectionName}. Allocate first in Subject Management or Teacher Allocation.`,
+        );
+      }
+
+      const check = await assertTeacherHomeworkAllocation(institutionId, {
+        academicYear,
+        teacherName,
+        className,
+        sectionName,
+        subjectName,
+      });
+      if (!check.ok) throw new Error(check.message);
+
+      const attachments = normalizeHomeworkAttachments([]);
+      if (row.youtubeUrl?.trim()) {
+        const yt = row.youtubeUrl.trim();
+        if (!isYouTubeUrl(yt) && !/^https?:\/\//i.test(yt)) {
+          throw new Error('Invalid YouTube / video link');
+        }
+        attachments.push({
+          id: `yt_${Date.now()}_${i}`,
+          type: isYouTubeUrl(yt) ? 'video' : 'link',
+          title: 'Video / supporting link',
+          url: yt,
+        });
+      }
+
+      const studentCount =
+        row.totalStudents != null && Number.isFinite(Number(row.totalStudents))
+          ? Math.max(0, Number(row.totalStudents))
+          : await prisma.student.count({
+              where: {
+                institutionId,
+                className,
+                sectionName,
+                status: 'ACTIVE',
+              },
+            });
+
+      const { start, end } = dayBoundsIso(assignedDateStr);
+      const existing = await prisma.academicHomework.findFirst({
+        where: {
+          institutionId,
+          academicYear,
+          className,
+          sectionName,
+          subjectName: { equals: subjectName, mode: 'insensitive' },
+          title: { equals: title, mode: 'insensitive' },
+          assignedDate: { gte: start, lte: end },
+        },
+      });
+
+      const now = new Date();
+      const assignedDate = new Date(assignedDateStr);
+      const dueDate = row.dueDate ? new Date(row.dueDate) : null;
+
+      if (existing) {
+        await prisma.academicHomework.update({
+          where: { id: existing.id },
+          data: {
+            teacherName,
+            description: row.description?.trim() ?? existing.description,
+            dueDate: dueDate ?? existing.dueDate,
+            totalStudents: studentCount || existing.totalStudents,
+            attachments: (attachments.length ? attachments : existing.attachments) as object,
+            ...(share
+              ? {
+                  sharedAt: existing.sharedAt || now,
+                  publishedAt: existing.publishedAt || now,
+                  status: existing.status === 'OVERDUE' ? existing.status : 'ASSIGNED',
+                }
+              : {}),
+          },
+        });
+        updated += 1;
+      } else {
+        await prisma.academicHomework.create({
+          data: {
+            institutionId,
+            recordId: await nextAcademicRecordId(institutionId, 'homework'),
+            academicYear,
+            term,
+            className,
+            sectionName,
+            subjectName,
+            teacherName,
+            title,
+            description: row.description?.trim() || '',
+            assignedDate,
+            dueDate,
+            totalStudents: studentCount,
+            attachments: attachments as object,
+            sharedAt: share ? now : null,
+            publishedAt: share ? now : null,
+            status: 'ASSIGNED',
+          },
+        });
+        created += 1;
+      }
+    } catch (err) {
+      errors.push(`Row ${excelRow}: ${err instanceof Error ? err.message : 'Failed'}`);
+    }
+  }
+
+  return {
+    created,
+    updated,
+    errors,
+    totalRows: data.rows.length,
+  };
+}
+

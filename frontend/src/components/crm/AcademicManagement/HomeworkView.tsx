@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, Eye, Calendar, CheckCircle2, XCircle, Smartphone, ClipboardList,
-  Upload, Link2, FileText, Image as ImageIcon, Video, Trash2,
+  Upload, Link2, FileText, Image as ImageIcon, Video, Trash2, Download,
 } from 'lucide-react';
 import {
-  createHomework, fetchAcademicMeta, fetchHomeworkDashboard, fetchHomeworkDetail,
+  bulkUploadHomework, createHomework, fetchAcademicMeta, fetchHomeworkDashboard, fetchHomeworkDetail,
   fetchTeacherAllocationMeta, uploadHomeworkAttachment,
   type Homework, type HomeworkAttachment, type HomeworkDashboardRow, type TeacherAllocationMeta,
 } from '../../../lib/academicServices';
+import {
+  downloadHomeworkTemplate, parseHomeworkUploadFile,
+} from '../../../lib/homeworkExcel';
 import {
   AcademicLoading, AcademicModal, AcademicPageHeader, AcademicPageShell,
   AcademicYearTermFilters, am,
@@ -24,6 +27,10 @@ const EMPTY_FORM = {
   dueDate: '',
   youtubeUrl: '',
 };
+
+const btnExcel =
+  'inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 disabled:opacity-60';
+
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -165,7 +172,9 @@ export function HomeworkView() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [formError, setFormError] = useState('');
+  const [uploadingExcel, setUploadingExcel] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const excelFileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -328,6 +337,31 @@ export function HomeworkView() {
     }
   };
 
+  const handleBulkUpload = async (file: File) => {
+    setUploadingExcel(true);
+    try {
+      const rows = await parseHomeworkUploadFile(file);
+      if (!rows.length) {
+        setMessage('No valid rows found. Need className, sectionName, subjectName, and title.');
+        return;
+      }
+      const res = await bulkUploadHomework({
+        academicYear,
+        defaultAssignedDate: date,
+        share: true,
+        rows,
+      });
+      let msg = `Bulk homework: ${res.created} created, ${res.updated} updated from ${res.totalRows} row(s)`;
+      if (res.errors?.length) msg += `. Errors: ${res.errors.slice(0, 3).join('; ')}`;
+      setMessage(msg);
+      void load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Bulk upload failed');
+    } finally {
+      setUploadingExcel(false);
+    }
+  };
+
   const assignHomework = async () => {
     setFormError('');
     if (!form.title.trim() || !form.className || !form.sectionName || !form.subjectName) {
@@ -370,7 +404,35 @@ export function HomeworkView() {
         breadcrumb="Academic Management › Homework"
         title="Homework Dashboard"
         subtitle="Track daily homework assignments by teacher, class & subject — synced with mobile app"
-        actions={<button type="button" onClick={openAssignBlank} className={am.btnPrimary}><Plus size={14} /> Assign Homework</button>}
+        actions={(
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => downloadHomeworkTemplate()} className={btnExcel}>
+              <Download size={14} /> Excel Template
+            </button>
+            <button
+              type="button"
+              disabled={uploadingExcel}
+              onClick={() => excelFileRef.current?.click()}
+              className={btnExcel}
+            >
+              <Upload size={14} /> {uploadingExcel ? 'Uploading…' : 'Bulk Upload'}
+            </button>
+            <input
+              ref={excelFileRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleBulkUpload(file);
+                e.target.value = '';
+              }}
+            />
+            <button type="button" onClick={openAssignBlank} className={am.btnPrimary}>
+              <Plus size={14} /> Assign Homework
+            </button>
+          </div>
+        )}
       />
       <div className={am.content}>
         {message && <p className={am.message}>{message}</p>}

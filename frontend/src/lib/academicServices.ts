@@ -446,6 +446,33 @@ export async function createSyllabusChapter(payload: Record<string, unknown>) {
   return api<{ record: Record<string, unknown> }>('/api/academic/syllabus', { method: 'POST', body: JSON.stringify(payload) });
 }
 
+export async function bulkUploadSyllabusChapters(payload: {
+  academicYear: string;
+  term?: string;
+  rows: {
+    className: string;
+    sectionName: string;
+    subjectName: string;
+    chapterTitle: string;
+    unitNumber?: number;
+    boardTopicCode?: string;
+    plannedStartDate?: string;
+    plannedEndDate?: string;
+    revisionDeadline?: string;
+    completionPercent?: number;
+  }[];
+}) {
+  return api<{
+    created: number;
+    updated: number;
+    errors: string[];
+    totalRows: number;
+  }>('/api/academic/syllabus/bulk', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function updateSyllabusChapter(id: string, payload: Record<string, unknown>) {
   return api<{ record: Record<string, unknown> }>(`/api/academic/syllabus/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
 }
@@ -599,6 +626,35 @@ export async function createHomework(payload: Record<string, unknown>) {
   return api<{ record: Homework }>('/api/academic/homework', { method: 'POST', body: JSON.stringify(payload) });
 }
 
+export async function bulkUploadHomework(payload: {
+  academicYear: string;
+  term?: string;
+  defaultAssignedDate?: string;
+  share?: boolean;
+  rows: {
+    assignedDate?: string;
+    className: string;
+    sectionName: string;
+    subjectName: string;
+    teacherName?: string;
+    title: string;
+    description?: string;
+    dueDate?: string;
+    totalStudents?: number;
+    youtubeUrl?: string;
+  }[];
+}) {
+  return api<{
+    created: number;
+    updated: number;
+    errors: string[];
+    totalRows: number;
+  }>('/api/academic/homework/bulk', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function uploadHomeworkAttachment(payload: {
   fileName: string;
   mimeType: string;
@@ -660,6 +716,23 @@ export type OcrCalendarEventPreview = {
 };
 
 export const BOARD_OPTIONS = ['CBSE', 'ICSE', 'State Board', 'IB', 'Cambridge', 'NIOS', 'Other'] as const;
+
+export type AcademicCalendarMeta = {
+  defaultAcademicYear: string;
+  academicYears: string[];
+  boards: string[];
+  aiProviders: {
+    gemini: boolean;
+    openai: boolean;
+    groq: boolean;
+    configured: { gemini: boolean; openai: boolean; groq: boolean };
+    details?: { gemini?: string; openai?: string; groq?: string };
+  };
+};
+
+export async function fetchAcademicCalendarMeta() {
+  return api<AcademicCalendarMeta>('/api/academic/calendar/meta');
+}
 
 export async function fetchAcademicCalendar(params?: { academicYear?: string; boardName?: string }) {
   return api<{ records: CalendarEvent[] }>(`/api/academic/calendar${qs(params)}`);
@@ -963,7 +1036,17 @@ export async function updateTeacherRosterTask(id: string, payload: Record<string
 }
 
 export async function syncTeacherRosterAllocations(academicYear: string) {
-  return api<{ created: number; total: number }>('/api/academic/teacher-roster/sync-allocations', {
+  return api<{
+    created: number;
+    total: number;
+    reconcile?: {
+      subjectOfferings: number;
+      teacherAllocations: number;
+      syncedFromSubject: number;
+      syncedFromTeacher: number;
+      periodsUpdated: number;
+    };
+  }>('/api/academic/teacher-roster/sync-allocations', {
     method: 'POST',
     body: JSON.stringify({ academicYear }),
   });

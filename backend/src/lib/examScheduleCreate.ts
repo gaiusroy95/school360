@@ -2,7 +2,7 @@ import {
   AcademicEventType,
   ExamCalendarEventType,
   ExamMarksColumnKey,
-  ExamPaperPickSource,
+  ExamSchedulePaperSource,
   ExamPaperPurpose,
   ExamPaperSource,
   ExamPaperStatus,
@@ -28,6 +28,61 @@ const EXAM_TYPE_TO_PURPOSE: Record<ExamTypeFilter, ExamPaperPurpose> = {
   PRE_FINAL: ExamPaperPurpose.ANNUAL_EXAM,
   FINAL_EXAMINATION: ExamPaperPurpose.ANNUAL_EXAM,
 };
+
+let paperSourceEnumHealPromise: Promise<void> | null = null;
+
+/** Align DB enum name with Prisma (`ExamSchedulePaperSource`) when older installs used `ExamPaperPickSource`. */
+async function ensureExamPaperSourceEnumAligned() {
+  if (!paperSourceEnumHealPromise) {
+    paperSourceEnumHealPromise = (async () => {
+      await prisma.$executeRawUnsafe(`
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ExamPaperPickSource')
+     AND NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ExamSchedulePaperSource') THEN
+    ALTER TYPE "ExamPaperPickSource" RENAME TO "ExamSchedulePaperSource";
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ExamSchedulePaperSource') THEN
+    CREATE TYPE "ExamSchedulePaperSource" AS ENUM ('QUESTION_BANK', 'PAPER_UPLOAD', 'NONE');
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ExamPaperPickSource')
+     AND EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ExamSchedulePaperSource') THEN
+    IF EXISTS (
+      SELECT 1
+      FROM pg_attribute a
+      JOIN pg_class c ON c.oid = a.attrelid
+      JOIN pg_type t ON t.oid = a.atttypid
+      WHERE c.relname = 'ExamCalendarSession'
+        AND a.attname = 'paperSource'
+        AND NOT a.attisdropped
+        AND t.typname = 'ExamPaperPickSource'
+    ) THEN
+      ALTER TABLE "ExamCalendarSession" ALTER COLUMN "paperSource" DROP DEFAULT;
+      ALTER TABLE "ExamCalendarSession"
+        ALTER COLUMN "paperSource" TYPE "ExamSchedulePaperSource"
+        USING ("paperSource"::text::"ExamSchedulePaperSource");
+      ALTER TABLE "ExamCalendarSession"
+        ALTER COLUMN "paperSource" SET DEFAULT 'NONE'::"ExamSchedulePaperSource";
+    END IF;
+    BEGIN
+      DROP TYPE "ExamPaperPickSource";
+    EXCEPTION
+      WHEN dependent_objects_still_exist THEN NULL;
+      WHEN undefined_object THEN NULL;
+    END;
+  END IF;
+END $$;
+`);
+    })().catch((err) => {
+      paperSourceEnumHealPromise = null;
+      throw err;
+    });
+  }
+  await paperSourceEnumHealPromise;
+}
+
 
 const EXAM_TYPE_TO_COLUMN: Record<ExamTypeFilter, ExamMarksColumnKey> = {
   UNIT_TEST: ExamMarksColumnKey.UNIT_1,
@@ -105,7 +160,7 @@ function serializeSession(row: {
   endTime: string;
   status: string;
   examMode: ExamSessionMode;
-  paperSource: ExamPaperPickSource;
+  paperSource: ExamSchedulePaperSource;
   questionPaperId: string | null;
   marksAssignmentId: string | null;
   marksColumnKey: ExamMarksColumnKey | null;
@@ -234,19 +289,22 @@ export async function createScheduledExam(institutionId: string, input: CreateSc
     throw new Error('academicYear, seriesName, className, sectionName, subjectName, and examDate are required');
   }
 
+  // Heal legacy DB enum name mismatch before insert (ExamPaperPickSource vs ExamSchedulePaperSource).
+  await ensureExamPaperSourceEnumAligned();
+
   const examMode = input.examMode === 'DIGITAL' ? ExamSessionMode.DIGITAL : ExamSessionMode.MANUAL;
   const examType = input.examType;
   const marksColumn = EXAM_TYPE_TO_COLUMN[examType] || ExamMarksColumnKey.UNIT_1;
   const maxMarks = input.maxMarks || columnMax(marksColumn);
-  let paperSource: ExamPaperPickSource = ExamPaperPickSource.NONE;
+  let paperSource: ExamSchedulePaperSource = ExamSchedulePaperSource.NONE;
   let questionPaperId: string | null = input.questionPaperId || null;
   const uploadedMeta = input.uploadedPaperMeta || [];
 
   if (input.paperSource === 'QUESTION_BANK' || questionPaperId) {
-    paperSource = ExamPaperPickSource.QUESTION_BANK;
+    paperSource = ExamSchedulePaperSource.QUESTION_BANK;
   }
   if (input.paperSource === 'PAPER_UPLOAD' || uploadedMeta.length > 0) {
-    paperSource = ExamPaperPickSource.PAPER_UPLOAD;
+    paperSource = ExamSchedulePaperSource.PAPER_UPLOAD;
   }
 
   // Create paper from uploaded questions if provided
@@ -273,7 +331,7 @@ export async function createScheduledExam(institutionId: string, input: CreateSc
       createdBy: 'Exam Schedule',
     });
     questionPaperId = paper.id;
-    if (uploadedMeta.length) paperSource = ExamPaperPickSource.PAPER_UPLOAD;
+    if (uploadedMeta.length) paperSource = ExamSchedulePaperSource.PAPER_UPLOAD;
   }
 
   if (examMode === ExamSessionMode.DIGITAL) {

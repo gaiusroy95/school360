@@ -1,23 +1,27 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Award, CheckCircle2, Download, FileText, Loader2, Plus, Printer, RefreshCw,
-  Smartphone, XCircle,
+  Award, CheckCircle2, Download, FileText, Image, Loader2, Plus, Printer, RefreshCw,
+  Smartphone, Upload, XCircle,
 } from 'lucide-react';
 import {
   CoScholasticCertificate,
   createCertificateFromAdmin,
+  fetchCertificateConfig,
   fetchCertificatePreview,
   fetchCertificates,
   fetchCertificatesMeta,
   generateAllCertificates,
   generateCertificates,
   issueCertificates,
+  updateCertificateConfig,
+  uploadCertificateAsset,
+  type CertificateConfig,
 } from '../../../lib/examinationServices';
 import { fetchStudents, type Student } from '../../../lib/studentServices';
 import { downloadCertificatePdf } from '../../../lib/certificatePdf';
 import { AcademicLoading, AcademicPageHeader, AcademicPageShell, am } from '../AcademicManagement/AcademicManagementUi';
 
-type Tab = 'create' | 'templates' | 'records' | 'generate' | 'mobile';
+type Tab = 'create' | 'branding' | 'templates' | 'records' | 'generate' | 'mobile';
 
 const STATUS_COLORS: Record<string, string> = {
   RECORDED: 'bg-amber-100 text-amber-800',
@@ -37,6 +41,15 @@ function scorePreview(score: number, maxScore: number) {
   const grade = pct >= 90 ? 'A+' : pct >= 80 ? 'A' : pct >= 70 ? 'B+' : pct >= 60 ? 'B' : pct >= 50 ? 'C' : pct >= 40 ? 'D' : 'E';
   const band = pct >= 85 ? 'Excellent' : pct >= 70 ? 'Good' : pct >= 55 ? 'Average' : 'Needs Improvement';
   return { grade, band };
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 export function CertificatesView() {
@@ -75,6 +88,15 @@ export function CertificatesView() {
   const [formGenerate, setFormGenerate] = useState(true);
   const [formIssue, setFormIssue] = useState(false);
   const [createdPreview, setCreatedPreview] = useState<CoScholasticCertificate | null>(null);
+  const [certConfig, setCertConfig] = useState<CertificateConfig | null>(null);
+  const [brandingForm, setBrandingForm] = useState({
+    schoolName: '',
+    schoolAddress: '',
+    principalName: '',
+    footerNote: '',
+  });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadAssetType, setUploadAssetType] = useState<'principalSignature' | 'classTeacherSignature' | 'schoolSeal' | 'headerLogo' | null>(null);
 
   const sectionOptions = useMemo(() => {
     if (!meta) return [];
@@ -132,16 +154,26 @@ export function CertificatesView() {
         if (m.categories?.[0]) setFormCategory(m.categories[0].id);
       }
       const yearFilter = year || academicYear || m.defaultAcademicYear;
-      const data = await fetchCertificates({
-        academicYear: yearFilter,
-        className: className || undefined,
-        sectionName: sectionName || undefined,
-        category: category !== 'all' ? category : undefined,
-        status: status !== 'all' ? status : undefined,
-      });
+      const [data, configData] = await Promise.all([
+        fetchCertificates({
+          academicYear: yearFilter,
+          className: className || undefined,
+          sectionName: sectionName || undefined,
+          category: category !== 'all' ? category : undefined,
+          status: status !== 'all' ? status : undefined,
+        }),
+        fetchCertificateConfig(yearFilter),
+      ]);
       setCertificates(data.certificates);
       setSummary(data.summary);
       setSelected(new Set());
+      setCertConfig(configData.config);
+      setBrandingForm({
+        schoolName: configData.config.schoolName,
+        schoolAddress: configData.config.schoolAddress,
+        principalName: configData.config.principalName,
+        footerNote: configData.config.footerNote,
+      });
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to load certificates');
     } finally {
@@ -316,8 +348,38 @@ export function CertificatesView() {
     }
   };
 
+  const handleSaveBranding = async () => {
+    setActionLoading(true);
+    try {
+      const result = await updateCertificateConfig({ academicYear, ...brandingForm });
+      setCertConfig(result.config);
+      setSuccessMsg(result.message);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to save branding');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleAssetUpload = async (file: File) => {
+    if (!uploadAssetType) return;
+    setActionLoading(true);
+    try {
+      const fileData = await fileToBase64(file);
+      const result = await uploadCertificateAsset(uploadAssetType, file.name, fileData, academicYear);
+      setCertConfig(result.config);
+      setSuccessMsg(result.message);
+      setUploadAssetType(null);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const tabs: { id: Tab; label: string }[] = [
     { id: 'create', label: 'Create Certificate' },
+    { id: 'branding', label: 'Logo & Signatures' },
     { id: 'templates', label: 'Default Designs' },
     { id: 'records', label: 'All Records' },
     { id: 'generate', label: 'Generate & Issue' },
@@ -331,7 +393,7 @@ export function CertificatesView() {
       <AcademicPageHeader
         breadcrumb="Examination Management › Certificates"
         title="Co-Scholastic Certificates"
-        subtitle="Admin can enter performance and generate certificates · also syncs from teacher mobile / co-scholastic records"
+        subtitle="Enter performance, upload school logo / address / teacher & principal signatures, and generate certificates"
         actions={(
           <div className="flex items-center gap-2">
             <select
@@ -353,20 +415,21 @@ export function CertificatesView() {
         )}
       />
 
+      <div className={am.content}>
       {errorMsg && (
-        <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
           <XCircle size={16} /> {errorMsg}
           <button type="button" onClick={() => setErrorMsg(null)} className="ml-auto text-xs underline">Dismiss</button>
         </div>
       )}
       {successMsg && (
-        <div className="mb-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
           <CheckCircle2 size={16} /> {successMsg}
           <button type="button" onClick={() => setSuccessMsg(null)} className="ml-auto text-xs underline">Dismiss</button>
         </div>
       )}
 
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
           { label: 'Total Records', value: summary.total, color: 'text-slate-700' },
           { label: 'Recorded', value: summary.recorded, color: 'text-amber-600' },
@@ -380,8 +443,8 @@ export function CertificatesView() {
         ))}
       </div>
 
-      {tab !== 'create' && (
-        <div className="mb-4 flex flex-wrap items-end gap-2">
+      {tab !== 'create' && tab !== 'branding' && (
+        <div className="flex flex-wrap items-end gap-2">
           <div>
             <label className={am.label}>Class</label>
             <select value={className} onChange={(e) => { setClassName(e.target.value); setSectionName(''); }} className={am.select}>
@@ -417,7 +480,7 @@ export function CertificatesView() {
         </div>
       )}
 
-      <div className="mb-4 flex flex-wrap gap-1 border-b border-slate-200 pb-1">
+      <div className="flex flex-wrap gap-1 border-b border-slate-200 pb-1">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -602,6 +665,63 @@ export function CertificatesView() {
               </button>
               <button type="button" onClick={resetCreateForm} className={am.btnSecondary}>Clear Form</button>
             </div>
+
+            {/* Branding uploads — logo, address, teacher & principal signatures */}
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/80 p-4 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800">Certificate branding</h4>
+                  <p className="text-[10px] text-slate-500">
+                    School logo, address, and teacher/principal signatures print on every certificate PDF.
+                  </p>
+                </div>
+                <button type="button" onClick={() => setTab('branding')} className="text-[10px] font-semibold text-blue-700 hover:underline">
+                  Full settings
+                </button>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <input
+                  type="text"
+                  value={brandingForm.schoolName}
+                  onChange={(e) => setBrandingForm((f) => ({ ...f, schoolName: e.target.value }))}
+                  className={am.input}
+                  placeholder="School name"
+                />
+                <input
+                  type="text"
+                  value={brandingForm.schoolAddress}
+                  onChange={(e) => setBrandingForm((f) => ({ ...f, schoolAddress: e.target.value }))}
+                  className={am.input}
+                  placeholder="School address"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {([
+                  { type: 'headerLogo' as const, label: 'School Logo', icon: Image, uploaded: certConfig?.hasHeaderLogo },
+                  { type: 'classTeacherSignature' as const, label: 'Teacher Signature', icon: FileText, uploaded: certConfig?.hasClassTeacherSignature },
+                  { type: 'principalSignature' as const, label: 'Principal Signature', icon: FileText, uploaded: certConfig?.hasPrincipalSignature },
+                  { type: 'schoolSeal' as const, label: 'School Seal', icon: Image, uploaded: certConfig?.hasSchoolSeal },
+                ]).map((asset) => (
+                  <button
+                    key={asset.type}
+                    type="button"
+                    onClick={() => { setUploadAssetType(asset.type); fileInputRef.current?.click(); }}
+                    className="flex flex-col items-center gap-1 rounded-lg border border-dashed border-slate-300 bg-white p-2.5 hover:border-blue-400 hover:bg-blue-50"
+                  >
+                    <asset.icon size={16} className="text-slate-400" />
+                    <span className="text-[9px] font-medium text-slate-700 text-center">{asset.label}</span>
+                    {asset.uploaded ? (
+                      <span className="flex items-center gap-0.5 text-[8px] text-emerald-600"><CheckCircle2 size={9} /> Uploaded</span>
+                    ) : (
+                      <span className="text-[8px] text-slate-400">Upload</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <button type="button" disabled={actionLoading} onClick={() => void handleSaveBranding()} className={am.btnSecondary}>
+                <Upload size={12} /> Save school name &amp; address
+              </button>
+            </div>
           </div>
 
           <div className={`${am.card} ${am.cardPad} lg:col-span-2 space-y-3`}>
@@ -626,11 +746,89 @@ export function CertificatesView() {
               </div>
             ) : (
               <p className="text-xs text-slate-500">
-                Fill the form and generate. Uses the category design template and school branding.
+                Fill the form and generate. Uses category design template plus school logo, address, and signatures.
               </p>
             )}
+            <div className="rounded-lg border border-slate-200 bg-white p-3 text-[10px] text-slate-600 space-y-1">
+              <p className="font-semibold text-slate-800">On certificate PDF</p>
+              <p>· Logo: {certConfig?.hasHeaderLogo ? 'Ready' : 'Not uploaded'}</p>
+              <p>· Address: {brandingForm.schoolAddress ? brandingForm.schoolAddress : 'Not set'}</p>
+              <p>· Teacher signature: {certConfig?.hasClassTeacherSignature ? 'Ready' : 'Not uploaded'}</p>
+              <p>· Principal signature: {certConfig?.hasPrincipalSignature ? 'Ready' : 'Not uploaded'}</p>
+            </div>
             <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
               Teachers can also record from the mobile app; those records appear under Generate &amp; Issue.
+            </div>
+          </div>
+        </div>
+      ) : tab === 'branding' ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className={`${am.card} ${am.cardPad} space-y-3`}>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-800">School details on certificate</h3>
+              <p className="text-[10px] text-slate-500">Printed in the certificate header (name + address under logo).</p>
+            </div>
+            {(['schoolName', 'schoolAddress', 'principalName'] as const).map((field) => (
+              <div key={field}>
+                <label className={am.label}>{field === 'schoolName' ? 'School Name' : field === 'schoolAddress' ? 'School Address' : 'Principal Name'}</label>
+                {field === 'schoolAddress' ? (
+                  <textarea
+                    value={brandingForm[field]}
+                    onChange={(e) => setBrandingForm((f) => ({ ...f, [field]: e.target.value }))}
+                    className={`${am.input} min-h-[64px]`}
+                    placeholder="Address, city, state — PIN"
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    value={brandingForm[field]}
+                    onChange={(e) => setBrandingForm((f) => ({ ...f, [field]: e.target.value }))}
+                    className={am.input}
+                  />
+                )}
+              </div>
+            ))}
+            <div>
+              <label className={am.label}>Footer Note</label>
+              <input
+                type="text"
+                value={brandingForm.footerNote}
+                onChange={(e) => setBrandingForm((f) => ({ ...f, footerNote: e.target.value }))}
+                className={am.input}
+              />
+            </div>
+            <button type="button" disabled={actionLoading} onClick={() => void handleSaveBranding()} className={am.btnPrimary}>
+              {actionLoading ? <Loader2 size={14} className="animate-spin" /> : null} Save Branding
+            </button>
+          </div>
+
+          <div className={`${am.card} ${am.cardPad}`}>
+            <h3 className="mb-1 text-sm font-semibold text-slate-800">Upload logo &amp; signatures</h3>
+            <p className="mb-3 text-[10px] text-slate-500">
+              Teacher and principal signatures appear on the certificate footer. Logo and seal appear in the header.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              {([
+                { type: 'headerLogo' as const, label: 'School Logo', icon: Image, uploaded: certConfig?.hasHeaderLogo },
+                { type: 'classTeacherSignature' as const, label: 'Class Teacher Signature', icon: FileText, uploaded: certConfig?.hasClassTeacherSignature },
+                { type: 'principalSignature' as const, label: 'Principal Signature', icon: FileText, uploaded: certConfig?.hasPrincipalSignature },
+                { type: 'schoolSeal' as const, label: 'School Seal', icon: Image, uploaded: certConfig?.hasSchoolSeal },
+              ]).map((asset) => (
+                <button
+                  key={asset.type}
+                  type="button"
+                  onClick={() => { setUploadAssetType(asset.type); fileInputRef.current?.click(); }}
+                  className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-slate-300 p-4 hover:border-blue-400 hover:bg-blue-50"
+                >
+                  <asset.icon size={20} className="text-slate-400" />
+                  <span className="text-[10px] font-medium text-slate-700 text-center">{asset.label}</span>
+                  {asset.uploaded ? (
+                    <span className="flex items-center gap-1 text-[9px] text-emerald-600"><CheckCircle2 size={10} /> Uploaded</span>
+                  ) : (
+                    <span className="text-[9px] text-slate-400">Click to upload</span>
+                  )}
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -726,6 +924,19 @@ export function CertificatesView() {
           previewLoading={previewLoading}
         />
       )}
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleAssetUpload(file);
+          e.target.value = '';
+        }}
+      />
+      </div>
     </AcademicPageShell>
   );
 }

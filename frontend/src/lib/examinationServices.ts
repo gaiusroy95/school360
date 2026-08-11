@@ -519,6 +519,8 @@ export type QuestionBankMeta = {
     openai: boolean;
     groq: boolean;
     priority: readonly string[];
+    configured?: { gemini: boolean; openai: boolean; groq: boolean };
+    details?: { gemini?: string; openai?: string; groq?: string };
   };
 };
 
@@ -1598,6 +1600,14 @@ export async function uploadReportCardAsset(
   );
 }
 
+export async function fetchReportCardAsset(
+  assetType: 'principalSignature' | 'schoolSeal' | 'classTeacherSignature' | 'headerLogo',
+  academicYear?: string,
+) {
+  const q = academicYear ? `?academicYear=${encodeURIComponent(academicYear)}` : '';
+  return api<{ data: string | null }>(`/api/examination/report-cards/assets/${assetType}${q}`);
+}
+
 export async function generateReportCards(batchId: string) {
   return api<{ generated: number; templateType: ReportCardTemplate; templateLabel: string; message: string }>(
     `/api/examination/report-cards/batches/${batchId}/generate`,
@@ -2183,11 +2193,64 @@ export async function fetchCertificatePreview(certificateId: string) {
       schoolAddress: string;
       principalName: string;
       principalSignatureData: string;
+      classTeacherSignatureData?: string;
       schoolSealData: string;
       headerLogoData: string;
       footerNote: string;
     } | null;
   }>(`/api/examination/certificates/${certificateId}/preview`);
+}
+
+export type CertificateConfig = {
+  id: string;
+  academicYear: string;
+  schoolName: string;
+  schoolAddress: string;
+  principalName: string;
+  footerNote: string;
+  hasPrincipalSignature: boolean;
+  hasClassTeacherSignature: boolean;
+  hasSchoolSeal: boolean;
+  hasHeaderLogo: boolean;
+  updatedAt: string;
+};
+
+export async function fetchCertificateConfig(academicYear?: string) {
+  const q = academicYear ? `?academicYear=${encodeURIComponent(academicYear)}` : '';
+  return api<{ config: CertificateConfig }>(`/api/examination/certificates/config${q}`);
+}
+
+export async function updateCertificateConfig(payload: {
+  academicYear: string;
+  schoolName?: string;
+  schoolAddress?: string;
+  principalName?: string;
+  footerNote?: string;
+}) {
+  return api<{ config: CertificateConfig; message: string }>(
+    '/api/examination/certificates/config',
+    { method: 'PUT', body: JSON.stringify(payload) },
+  );
+}
+
+export async function uploadCertificateAsset(
+  assetType: 'principalSignature' | 'classTeacherSignature' | 'schoolSeal' | 'headerLogo',
+  fileName: string,
+  fileData: string,
+  academicYear?: string,
+) {
+  return api<{ config: CertificateConfig; message: string }>(
+    `/api/examination/certificates/assets/${assetType}`,
+    { method: 'POST', body: JSON.stringify({ fileName, fileData, academicYear }) },
+  );
+}
+
+export async function fetchCertificateAsset(
+  assetType: 'principalSignature' | 'classTeacherSignature' | 'schoolSeal' | 'headerLogo',
+  academicYear?: string,
+) {
+  const q = academicYear ? `?academicYear=${encodeURIComponent(academicYear)}` : '';
+  return api<{ data: string | null }>(`/api/examination/certificates/assets/${assetType}${q}`);
 }
 
 export async function seedCertificates(academicYear?: string) {

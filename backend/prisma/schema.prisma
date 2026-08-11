@@ -3116,7 +3116,7 @@ enum ExamSessionMode {
   MANUAL
 }
 
-enum ExamPaperPickSource {
+enum ExamSchedulePaperSource {
   QUESTION_BANK
   PAPER_UPLOAD
   NONE
@@ -3145,7 +3145,7 @@ model ExamCalendarSession {
   sortOrder     Int                   @default(0)
   /// DIGITAL = online taking via exam link; MANUAL = pen-paper / teacher marks entry
   examMode      ExamSessionMode       @default(MANUAL)
-  paperSource   ExamPaperPickSource   @default(NONE)
+  paperSource   ExamSchedulePaperSource @default(NONE)
   questionPaperId String?
   questionPaper ExamQuestionPaper?    @relation(fields: [questionPaperId], references: [id], onDelete: SetNull)
   marksAssignmentId String?
@@ -4010,6 +4010,7 @@ model ExamCertificateConfig {
   schoolAddress             String   @default("")
   principalName             String   @default("")
   principalSignatureData    String   @default("") @db.Text
+  classTeacherSignatureData String   @default("") @db.Text
   schoolSealData            String   @default("") @db.Text
   headerLogoData            String   @default("") @db.Text
   footerNote                String   @default("This certificate is issued by the school authority.")

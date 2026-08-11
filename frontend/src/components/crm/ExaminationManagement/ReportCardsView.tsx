@@ -7,6 +7,7 @@ import {
   ClassReportCardStatus,
   fetchBoardMarksheetUploads,
   fetchClassReportCardStatuses,
+  fetchReportCardAsset,
   fetchReportCardConfig,
   fetchReportCardPreview,
   fetchReportCardsMeta,
@@ -74,6 +75,39 @@ export function ReportCardsView() {
   const [boardUploadModal, setBoardUploadModal] = useState<{ studentId: string; studentName: string; className: string; sectionName: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadAssetType, setUploadAssetType] = useState<'principalSignature' | 'schoolSeal' | 'classTeacherSignature' | 'headerLogo' | null>(null);
+  const [previewAssets, setPreviewAssets] = useState<{
+    logoDataUrl?: string | null;
+    principalSignatureDataUrl?: string | null;
+    teacherSignatureDataUrl?: string | null;
+    sealDataUrl?: string | null;
+  }>({});
+
+  const loadPreviewAssets = useCallback(async (year: string, cfg: ReportCardConfig | null) => {
+    if (!cfg) {
+      setPreviewAssets({});
+      return;
+    }
+    const types = [
+      { key: 'logoDataUrl' as const, type: 'headerLogo' as const, has: cfg.hasHeaderLogo },
+      { key: 'principalSignatureDataUrl' as const, type: 'principalSignature' as const, has: cfg.hasPrincipalSignature },
+      { key: 'teacherSignatureDataUrl' as const, type: 'classTeacherSignature' as const, has: cfg.hasClassTeacherSignature },
+      { key: 'sealDataUrl' as const, type: 'schoolSeal' as const, has: cfg.hasSchoolSeal },
+    ];
+    const next: typeof previewAssets = {};
+    await Promise.all(types.map(async (item) => {
+      if (!item.has) {
+        next[item.key] = null;
+        return;
+      }
+      try {
+        const res = await fetchReportCardAsset(item.type, year);
+        next[item.key] = res.data;
+      } catch {
+        next[item.key] = null;
+      }
+    }));
+    setPreviewAssets(next);
+  }, []);
 
   const load = useCallback(async (year?: string) => {
     setLoading(true);
@@ -102,12 +136,13 @@ export function ReportCardsView() {
         boardExamNotice: configData.config.boardExamNotice,
       });
       setBoardUploads(boardData.uploads);
+      await loadPreviewAssets(yearFilter, configData.config);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to load');
     } finally {
       setLoading(false);
     }
-  }, [meta, academicYear]);
+  }, [meta, academicYear, loadPreviewAssets]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -178,6 +213,7 @@ export function ReportCardsView() {
       const fileData = await fileToBase64(file);
       const result = await uploadReportCardAsset(uploadAssetType, file.name, fileData, academicYear);
       setConfig(result.config);
+      await loadPreviewAssets(academicYear, result.config);
       setSuccessMsg(result.message);
       setUploadAssetType(null);
     } catch (err) {
@@ -239,7 +275,7 @@ export function ReportCardsView() {
       <AcademicPageHeader
         breadcrumb="Examination Management › Report Cards"
         title="Report Cards"
-        subtitle="Class-wise report card status, four default designs, signature/seal uploads, and board exam marksheets"
+        subtitle="Class-wise status, A4 template bank (application-form style), signature/seal uploads, and board exam marksheets"
         actions={(
           <div className="flex items-center gap-2">
             <select
@@ -258,20 +294,21 @@ export function ReportCardsView() {
         )}
       />
 
+      <div className={am.content}>
       {errorMsg && (
-        <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
           <XCircle size={16} /> {errorMsg}
           <button type="button" onClick={() => setErrorMsg(null)} className="ml-auto text-xs underline">Dismiss</button>
         </div>
       )}
       {successMsg && (
-        <div className="mb-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
           <CheckCircle2 size={16} /> {successMsg}
           <button type="button" onClick={() => setSuccessMsg(null)} className="ml-auto text-xs underline">Dismiss</button>
         </div>
       )}
 
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {[
           { label: 'Total Classes', value: summary.totalClasses, color: 'text-slate-700' },
           { label: 'Marks Pending', value: summary.marksPending, color: 'text-amber-600' },
@@ -287,7 +324,7 @@ export function ReportCardsView() {
         ))}
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-1 border-b border-slate-200 pb-1">
+      <div className="flex flex-wrap gap-1 border-b border-slate-200 pb-1">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -439,7 +476,7 @@ export function ReportCardsView() {
                       {selectedTemplate}
                     </span>
                   </div>
-                  <div className="flex min-h-[420px] items-start justify-center overflow-auto rounded-xl border border-dashed border-slate-200 bg-gradient-to-b from-slate-50 to-white p-4">
+                  <div className="flex min-h-[520px] items-start justify-center overflow-auto rounded-xl border border-dashed border-slate-200 bg-slate-100/80 p-4">
                     <ReportCardTemplateLivePreview
                       templateId={selectedTemplate}
                       schoolName={configForm.schoolName}
@@ -447,6 +484,7 @@ export function ReportCardsView() {
                       principalName={configForm.principalName}
                       footerNote={configForm.footerNote}
                       boardExamNotice={configForm.boardExamNotice}
+                      assets={previewAssets}
                     />
                   </div>
                 </div>
@@ -483,7 +521,7 @@ export function ReportCardsView() {
 
                 <div className={`${am.card} ${am.cardPad}`}>
                   <h3 className="mb-3 text-sm font-semibold text-slate-800">Upload Signatures &amp; Seal</h3>
-                  <p className="mb-3 text-[10px] text-slate-500">These assets appear on generated PDFs for all templates.</p>
+                  <p className="mb-3 text-[10px] text-slate-500">These assets appear in the live A4 preview and on generated PDFs.</p>
                   <div className="grid grid-cols-2 gap-3">
                     {([
                       { type: 'headerLogo' as const, label: 'School Logo', icon: Image, uploaded: config?.hasHeaderLogo },
@@ -656,6 +694,7 @@ export function ReportCardsView() {
           e.target.value = '';
         }}
       />
+      </div>
     </AcademicPageShell>
   );
 }

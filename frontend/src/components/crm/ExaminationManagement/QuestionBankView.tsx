@@ -231,7 +231,7 @@ export function QuestionBankView() {
       />
 
       <div className={am.content}>
-        {errorMsg && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{errorMsg}</p>}
+        {errorMsg && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 whitespace-pre-wrap">{errorMsg}</p>}
         {successMsg && <p className="text-xs text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-2">{successMsg}</p>}
 
         <div className={am.filterBar}>
@@ -308,12 +308,15 @@ export function QuestionBankView() {
           <div className={`${am.card} ${am.cardPad} space-y-4`}>
             <h3 className="text-sm font-bold text-slate-800">Create Question Paper</h3>
             <p className="text-[10px] text-slate-500 leading-relaxed">
-              Free AI priority: <strong>Gemini Flash</strong>{meta?.aiProviders?.gemini ? ' ✓' : ' (key missing)'}
+              Free AI priority: <strong>Gemini Flash</strong>{meta?.aiProviders?.gemini ? ' ✓' : meta?.aiProviders?.configured?.gemini ? ' ✗ invalid key' : ' (key missing)'}
               {' → '}
-              <strong>ChatGPT (gpt-4o-mini)</strong>{meta?.aiProviders?.openai ? ' ✓' : ''}
+              <strong>ChatGPT (gpt-4o-mini)</strong>{meta?.aiProviders?.openai ? ' ✓' : meta?.aiProviders?.configured?.openai ? ' ✗' : ''}
               {' → '}
-              <strong>Groq Llama</strong>{meta?.aiProviders?.groq ? ' ✓' : ''}.
+              <strong>Groq Llama</strong>{meta?.aiProviders?.groq ? ' ✓' : meta?.aiProviders?.configured?.groq ? ' ✗' : ''}.
               Select class &amp; subject above, then generate and publish.
+              {!meta?.aiProviders?.gemini && meta?.aiProviders?.openai ? (
+                <span className="block mt-1 text-amber-700">Gemini key is invalid/unavailable — OCR/AI will use OpenAI automatically. Replace <code>GEMINI_API_KEY</code> in backend/.env when ready.</span>
+              ) : null}
             </p>
             <div className="grid grid-cols-2 gap-2">
               <div>

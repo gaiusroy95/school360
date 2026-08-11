@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Briefcase,
   Calendar,
   ChevronDown,
+  Download,
   Filter,
   GraduationCap,
   Loader2,
@@ -13,6 +14,7 @@ import {
   Plus,
   RefreshCcw,
   Search,
+  Upload,
   User,
   Users,
   FileText,
@@ -20,6 +22,7 @@ import {
   Award,
 } from 'lucide-react';
 import {
+  bulkUploadEmployeeDirectory,
   createEmployeeDirectory,
   fetchEmployeeDirectoryDetail,
   formatInr,
@@ -27,6 +30,10 @@ import {
   type EmployeeDirectoryDetail,
   type EmployeeDirectoryRow,
 } from '../../../lib/hrServices';
+import {
+  downloadEmployeeDirectoryTemplate,
+  parseEmployeeDirectoryUploadFile,
+} from '../../../lib/employeeDirectoryExcel';
 import { toViewKey } from '../../../lib/navigation';
 import {
   am,
@@ -106,6 +113,8 @@ export function EmployeesDirectoryView({ onNavigate }: Props) {
   const [statusFilter, setStatusFilter] = useState('');
   const [activeTab, setActiveTab] = useState<ProfileTab>('Personal Information');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const bulkFileRef = useRef<HTMLInputElement>(null);
   const [addForm, setAddForm] = useState({
     fullName: '',
     designation: '',
@@ -179,6 +188,25 @@ export function EmployeesDirectoryView({ onNavigate }: Props) {
     }
   };
 
+  const handleBulkUpload = async (file: File) => {
+    setBulkBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const rows = await parseEmployeeDirectoryUploadFile(file);
+      const result = await bulkUploadEmployeeDirectory(rows as unknown as Record<string, unknown>[]);
+      setMessage(result.message);
+      if (result.errors.length) {
+        setError(result.errors.slice(0, 8).join(' · ') + (result.errors.length > 8 ? ` …(+${result.errors.length - 8} more)` : ''));
+      }
+      await loadList();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Bulk upload failed');
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   const showPersonal =
     activeTab === 'Personal Information' || activeTab === 'Family Details';
   const showJob = activeTab === 'Personal Information' || activeTab === 'Job Information';
@@ -208,15 +236,46 @@ export function EmployeesDirectoryView({ onNavigate }: Props) {
       <AcademicPageHeader
         breadcrumb="HR & Payroll Management › Employees Directory"
         title="Employees Directory"
-        subtitle="Search, view and manage complete employee profiles"
+        subtitle="Search, view and manage employee profiles — bulk upload staff with salary structure via Excel"
         actions={
-          <button
-            type="button"
-            onClick={() => setShowAddModal(true)}
-            className={am.btnPrimary}
-          >
-            <Plus size={14} /> Add New Employee
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => downloadEmployeeDirectoryTemplate()}
+              className={am.btnSecondary}
+              title="Download Excel template with salary structure columns"
+            >
+              <Download size={14} /> Excel Template
+            </button>
+            <button
+              type="button"
+              disabled={bulkBusy}
+              onClick={() => bulkFileRef.current?.click()}
+              className={am.btnSecondary}
+              title="Bulk upload existing employees / staff with salary"
+            >
+              {bulkBusy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              Bulk Upload
+            </button>
+            <input
+              ref={bulkFileRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleBulkUpload(file);
+                e.target.value = '';
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowAddModal(true)}
+              className={am.btnPrimary}
+            >
+              <Plus size={14} /> Add New Employee
+            </button>
+          </div>
         }
       />
 

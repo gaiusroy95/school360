@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import {
   createHrDepartment,
+  deleteHrDepartment,
   fetchDepartmentEmployeeOptions,
   fetchHrDepartment,
   formatInr,
@@ -278,6 +279,7 @@ export function DepartmentsView({ onNavigate }: Props) {
   const [empDesignation, setEmpDesignation] = useState('');
   const [editMode, setEditMode] = useState(false);
   const [empPage, setEmpPage] = useState(1);
+  const [deleting, setDeleting] = useState(false);
   const initialAutoOpen = useRef(false);
   const EMP_PAGE_SIZE = 12;
 
@@ -412,6 +414,28 @@ export function DepartmentsView({ onNavigate }: Props) {
     }
   };
 
+  const handleDelete = async (id: string, name: string) => {
+    if (!window.confirm(`Delete department “${name}”? It will be removed from the Departments list.`)) return;
+    setDeleting(true);
+    setError('');
+    setMessage('');
+    try {
+      const result = await deleteHrDepartment(id);
+      setMessage(result.message);
+      if (selectedId === id) {
+        setSelectedId(null);
+        setDetail(null);
+        setMode('list');
+        setEditMode(false);
+      }
+      await loadList();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Delete failed');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const toggleWorkingDay = (day: string) => {
     setForm((f) => ({
       ...f,
@@ -446,13 +470,26 @@ export function DepartmentsView({ onNavigate }: Props) {
                 <ArrowLeft size={14} /> Back to Departments
               </button>
               {mode === 'detail' && !editMode && (
-                <button
-                  type="button"
-                  onClick={() => setEditMode(true)}
-                  className={`${am.btnPrimary} bg-blue-600 hover:bg-blue-700`}
-                >
-                  <Pencil size={14} /> Edit Department
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setEditMode(true)}
+                    className={`${am.btnPrimary} bg-blue-600 hover:bg-blue-700`}
+                  >
+                    <Pencil size={14} /> Edit Department
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deleting || !selectedId}
+                    onClick={() => {
+                      if (selectedId && detail) void handleDelete(selectedId, detail.name);
+                    }}
+                    className={`${am.btnSecondary} bg-white text-red-700 border-red-200 hover:bg-red-50`}
+                  >
+                    {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                    Delete
+                  </button>
+                </>
               )}
               <button type="button" onClick={() => void openCreate()} className={`${am.btnPrimary} bg-green-600 hover:bg-green-700`}>
                 <Plus size={14} /> Add New Department
@@ -514,9 +551,20 @@ export function DepartmentsView({ onNavigate }: Props) {
                         </span>
                       </td>
                       <td className={am.td}>
-                        <button type="button" onClick={() => openDetail(row.id)} className="text-xs font-semibold text-blue-600 hover:underline">
-                          Open
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button type="button" onClick={() => openDetail(row.id)} className="text-xs font-semibold text-blue-600 hover:underline">
+                            Open
+                          </button>
+                          <button
+                            type="button"
+                            disabled={deleting}
+                            onClick={() => void handleDelete(row.id, row.name)}
+                            className="text-xs font-semibold text-red-600 hover:underline disabled:opacity-50"
+                            title="Delete department"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

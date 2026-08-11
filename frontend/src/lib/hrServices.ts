@@ -152,6 +152,20 @@ export async function createEmployeeDirectory(body: Record<string, unknown>) {
   });
 }
 
+export async function bulkUploadEmployeeDirectory(rows: Record<string, unknown>[]) {
+  return api<{
+    created: number;
+    updated: number;
+    salaryUpserted: number;
+    total: number;
+    errors: string[];
+    message: string;
+  }>('/api/hr/employees/bulk', {
+    method: 'POST',
+    body: JSON.stringify({ rows }),
+  });
+}
+
 export async function updateEmployeeDirectory(id: string, body: Record<string, unknown>) {
   return api<{ record: EmployeeDirectoryDetail }>(`/api/hr/employees/${id}`, {
     method: 'PATCH',
@@ -245,6 +259,12 @@ export async function updateHrDepartment(id: string, body: Record<string, unknow
   return api<{ record: HrDepartmentDetail }>(`/api/hr/departments/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(body),
+  });
+}
+
+export async function deleteHrDepartment(id: string) {
+  return api<{ id: string; code: string; message: string }>(`/api/hr/departments/${id}`, {
+    method: 'DELETE',
   });
 }
 
