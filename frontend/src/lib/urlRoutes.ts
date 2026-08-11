@@ -70,7 +70,7 @@ const MODULES: ModuleDef[] = [
   },
   {
     label: 'Institution Setup',
-    subItems: ['Basic Information', 'Academic Setup', 'Classes & Sections', 'Subjects Setup', 'Departments Setup', 'Session & Term Setup', 'Grade & Marks Setup', 'Fee Group Setup', 'Document Setup', 'ID Card & Numbering', 'Calendar Setup', 'Custom Fields Setup', 'Notification Setup', 'Other Preferences'],
+    subItems: ['Basic Information', 'Academic Setup', 'Classes & Sections', 'Subjects Setup', 'Departments Setup', 'Session & Term Setup', 'Grade & Marks Setup', 'Fee Group Setup', 'Document Setup', 'ID Card & Numbering', 'Calendar Setup', 'Custom Fields Setup', 'Notification Setup', 'Other Preferences', 'Data Migration'],
   },
   {
     label: 'Settings Management',

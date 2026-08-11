@@ -11,6 +11,18 @@ Shared code: `packages/shared` (API client, auth, types, hooks).
 
 ---
 
+## Go-live with a real school (data + apps)
+
+1. **Web:** Institution Setup → **Data Migration (Excel)**  
+   Download the Master Template (Students / Teachers / Accounts / Results), fill existing school data, upload & sync.
+2. **Order matters:** Students first (Admission No.), then Teachers, then Accounts & Results (linked by Admission No.).
+3. **Mobile apps** auto-create accounts on first login from migrated records:
+   - Student/Parent: Admission No. + registered mobile (default password = mobile)
+   - Staff: Employee Code + registered mobile (default password = mobile)
+4. Point both apps at production API: set `EXPO_PUBLIC_API_URL` in each package `.env`.
+
+---
+
 ## Confirmed implementation steps
 
 Work in this order. **Do not build app screens until Phase A (mobile auth) is done** — existing `/api/academic/*` and `/api/examination/*` routes require admin JWT today.

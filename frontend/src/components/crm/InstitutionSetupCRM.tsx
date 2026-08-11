@@ -24,6 +24,9 @@ const ExpressSetupView = lazy(() =>
 const ModuleConfigView = lazy(() =>
   import('./InstitutionSetup/ModuleConfigView').then((m) => ({ default: m.ModuleConfigView })),
 );
+const DataMigrationView = lazy(() =>
+  import('./InstitutionSetup/DataMigrationView').then((m) => ({ default: m.DataMigrationView })),
+);
 
 function wrap(node: ReactNode) {
   return (
@@ -82,6 +85,10 @@ export function InstitutionSetupCRM({ currentView: externalView }: { currentView
     return wrap(<ExpressSetupView onBack={() => setOverride('Overview')} />);
   }
 
+  if (view === 'Data Migration') {
+    return wrap(<DataMigrationView onBack={() => setOverride('Overview')} />);
+  }
+
   const activeModule = setupModules.find((m) => m.title === view);
   if (activeModule) {
     return wrap(<ModuleConfigView module={activeModule} onBack={() => setOverride('Overview')} />);
@@ -101,6 +108,12 @@ export function InstitutionSetupCRM({ currentView: externalView }: { currentView
             className="bg-indigo-600 text-white hover:bg-indigo-700 font-bold text-xs px-4 py-2 rounded flex items-center gap-2 shadow-sm transition-colors">
             <Zap size={14} />
             <span>Express Setup Engine</span>
+          </button>
+          <button
+            onClick={() => setOverride('Data Migration')}
+            className="bg-amber-400 text-slate-900 hover:bg-amber-500 font-bold text-xs px-4 py-2 rounded flex items-center gap-2 shadow-sm transition-colors">
+            <Database size={14} />
+            <span>Data Migration (Excel)</span>
           </button>
           <button className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs px-4 py-2 rounded flex items-center gap-2 shadow-sm transition-colors">
             <Eye size={14} className="text-blue-600" />
