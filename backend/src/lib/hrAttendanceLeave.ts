@@ -484,6 +484,15 @@ export async function saveHrDailyAttendance(
     });
   }
 
+  try {
+    const { syncAttendanceLeaveToApplications } = await import('./hrLeaveManagement.js');
+    const { getInstitutionFilterMeta } = await import('./students.js');
+    const filters = await getInstitutionFilterMeta(institutionId);
+    await syncAttendanceLeaveToApplications(institutionId, filters.defaultAcademicYear);
+  } catch {
+    /* leave sync is best-effort so attendance save still succeeds */
+  }
+
   return getHrDailyAttendance(institutionId, { date: dateStr });
 }
 

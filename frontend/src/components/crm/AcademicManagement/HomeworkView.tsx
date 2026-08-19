@@ -4,8 +4,8 @@ import {
   Upload, Link2, FileText, Image as ImageIcon, Video, Trash2, Download,
 } from 'lucide-react';
 import {
-  bulkUploadHomework, createHomework, fetchAcademicMeta, fetchHomeworkDashboard, fetchHomeworkDetail,
-  fetchTeacherAllocationMeta, uploadHomeworkAttachment,
+  bulkDeleteHomework, bulkUploadHomework, createHomework, deleteHomework, fetchAcademicMeta,
+  fetchHomeworkDashboard, fetchHomeworkDetail, fetchTeacherAllocationMeta, uploadHomeworkAttachment,
   type Homework, type HomeworkAttachment, type HomeworkDashboardRow, type TeacherAllocationMeta,
 } from '../../../lib/academicServices';
 import {
@@ -30,6 +30,16 @@ const EMPTY_FORM = {
 
 const btnExcel =
   'inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 disabled:opacity-60';
+const btnDanger =
+  'inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold shadow-sm transition-colors disabled:opacity-60';
+
+type StatusTab = 'ALL' | 'ASSIGNED' | 'NOT_ASSIGNED';
+
+const STATUS_TABS: { id: StatusTab; label: string }[] = [
+  { id: 'ALL', label: 'All' },
+  { id: 'ASSIGNED', label: 'Assigned' },
+  { id: 'NOT_ASSIGNED', label: 'Not Assigned' },
+];
 
 
 function fileToBase64(file: File): Promise<string> {
@@ -46,11 +56,13 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 function HomeworkDetailPopup({
-  row, onClose, onAssign,
+  row, onClose, onAssign, onDelete, busyDelete,
 }: {
   row: HomeworkDashboardRow;
   onClose: () => void;
   onAssign: () => void;
+  onDelete: (id: string, title: string) => void;
+  busyDelete: boolean;
 }) {
   const [detail, setDetail] = useState<Homework | null>(row.homework);
   const [loading, setLoading] = useState(false);
@@ -147,6 +159,16 @@ function HomeworkDetailPopup({
       </div>
 
       <div className="flex justify-end gap-2 pt-2 border-t">
+        {detail.id && (
+          <button
+            type="button"
+            disabled={busyDelete}
+            onClick={() => onDelete(detail.id, detail.title)}
+            className={btnDanger}
+          >
+            <Trash2 size={14} /> Delete Homework
+          </button>
+        )}
         <button type="button" onClick={onClose} className={am.btnSecondary}>Close</button>
       </div>
     </div>
@@ -161,7 +183,7 @@ export function HomeworkView() {
   const [className, setClassName] = useState('');
   const [sectionName, setSectionName] = useState('');
   const [teacherFilter, setTeacherFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ASSIGNED' | 'NOT_ASSIGNED'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<StatusTab>('ALL');
   const [meta, setMeta] = useState<{ academicYears: string[]; classes: string[]; sectionsByClass: Record<string, string[]> } | null>(null);
   const [allocMeta, setAllocMeta] = useState<TeacherAllocationMeta | null>(null);
   const [popupRow, setPopupRow] = useState<HomeworkDashboardRow | null>(null);
@@ -173,6 +195,8 @@ export function HomeworkView() {
   const [message, setMessage] = useState('');
   const [formError, setFormError] = useState('');
   const [uploadingExcel, setUploadingExcel] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [busyDelete, setBusyDelete] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const excelFileRef = useRef<HTMLInputElement>(null);
 
@@ -193,6 +217,7 @@ export function HomeworkView() {
       setMeta(m);
       setAllocMeta(alloc);
       setDashboard(d);
+      setSelectedIds(new Set());
     } finally { setLoading(false); }
   }, [date, academicYear, className, sectionName, teacherFilter]);
 
@@ -256,6 +281,72 @@ export function HomeworkView() {
     if (statusFilter === 'ALL') return dashboard.rows;
     return dashboard.rows.filter((r) => r.assignmentStatus === statusFilter);
   }, [dashboard, statusFilter]);
+
+  const deletableIds = useMemo(
+    () => rows.map((r) => r.homeworkId).filter((id): id is string => Boolean(id)),
+    [rows],
+  );
+  const allDeletableSelected = deletableIds.length > 0 && deletableIds.every((id) => selectedIds.has(id));
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      if (allDeletableSelected) {
+        const next = new Set(prev);
+        deletableIds.forEach((id) => next.delete(id));
+        return next;
+      }
+      const next = new Set(prev);
+      deletableIds.forEach((id) => next.add(id));
+      return next;
+    });
+  };
+
+  const deleteOne = async (id: string, title: string) => {
+    if (!window.confirm(`Delete homework "${title}"? This cannot be undone.`)) return;
+    setBusyDelete(true);
+    try {
+      await deleteHomework(id);
+      setPopupRow(null);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      setMessage(`Deleted "${title}"`);
+      void load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      setBusyDelete(false);
+    }
+  };
+
+  const deleteSelected = async () => {
+    const ids = deletableIds.filter((id) => selectedIds.has(id));
+    if (!ids.length) return;
+    if (!window.confirm(`Delete ${ids.length} assigned homework record(s)? This cannot be undone.`)) return;
+    setBusyDelete(true);
+    try {
+      const res = await bulkDeleteHomework(ids);
+      setSelectedIds(new Set());
+      setPopupRow(null);
+      setMessage(`Deleted ${res.deleted} homework record(s)`);
+      void load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Bulk delete failed');
+    } finally {
+      setBusyDelete(false);
+    }
+  };
 
   const openView = (row: HomeworkDashboardRow) => setPopupRow(row);
 
@@ -452,11 +543,34 @@ export function HomeworkView() {
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={am.select} />
           </label>
           <input placeholder="Filter by teacher" value={teacherFilter} onChange={(e) => setTeacherFilter(e.target.value)} className={`${am.input} max-w-[180px]`} />
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)} className={am.select}>
-            <option value="ALL">All Status</option>
-            <option value="ASSIGNED">Assigned</option>
-            <option value="NOT_ASSIGNED">Not Assigned</option>
-          </select>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-1 border-b border-slate-200 pb-1">
+            {STATUS_TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => { setStatusFilter(t.id); setSelectedIds(new Set()); }}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-t-lg border-b-2 transition-colors ${
+                  statusFilter === t.id ? 'border-amber-400 text-amber-900 bg-amber-50' : 'border-transparent text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {t.label}
+                {t.id === 'ALL' && summary ? ` (${summary.totalSlots})` : ''}
+                {t.id === 'ASSIGNED' && summary ? ` (${summary.assigned})` : ''}
+                {t.id === 'NOT_ASSIGNED' && summary ? ` (${summary.notAssigned})` : ''}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            disabled={!selectedIds.size || busyDelete}
+            onClick={() => void deleteSelected()}
+            className={btnDanger}
+          >
+            <Trash2 size={14} /> Delete Selected{selectedIds.size ? ` (${selectedIds.size})` : ''}
+          </button>
         </div>
 
         {summary && (
@@ -481,6 +595,15 @@ export function HomeworkView() {
         <div className={am.tableWrap}>
           <table className="w-full">
             <thead><tr>
+              <th className={`${am.th} w-10`}>
+                <input
+                  type="checkbox"
+                  checked={allDeletableSelected}
+                  onChange={toggleSelectAll}
+                  disabled={!deletableIds.length}
+                  title="Select assigned homework"
+                />
+              </th>
               <th className={am.th}>Date</th>
               <th className={am.th}>Class</th>
               <th className={am.th}>Section</th>
@@ -489,11 +612,20 @@ export function HomeworkView() {
               <th className={am.th}>Assignment Status</th>
               <th className={am.th}>Homework Title</th>
               <th className={am.th}>Submissions</th>
-              <th className={am.th} />
+              <th className={am.th}>Actions</th>
             </tr></thead>
             <tbody>
-              {rows.map((r, i) => (
-                <tr key={`${r.teacherName}-${r.classGroup}-${r.subjectName}-${i}`} className={r.assignmentStatus === 'NOT_ASSIGNED' ? 'bg-amber-50/40' : ''}>
+              {rows.map((r, i) => {
+                const hwId = r.homeworkId;
+                return (
+                <tr key={`${r.teacherName}-${r.classGroup}-${r.subjectName}-${hwId || i}`} className={hwId && selectedIds.has(hwId) ? 'bg-amber-50/40' : r.assignmentStatus === 'NOT_ASSIGNED' ? 'bg-amber-50/20' : ''}>
+                  <td className={am.td}>
+                    {hwId ? (
+                      <input type="checkbox" checked={selectedIds.has(hwId)} onChange={() => toggleSelect(hwId)} />
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )}
+                  </td>
                   <td className={`${am.td} text-xs whitespace-nowrap`}>{new Date(r.date).toLocaleDateString('en-IN')}</td>
                   <td className={am.td}>{r.className}</td>
                   <td className={am.td}>{r.sectionName}</td>
@@ -511,18 +643,38 @@ export function HomeworkView() {
                     {r.homework ? `${r.homework.submittedCount}/${r.homework.totalStudents} (${r.homework.submissionRate}%)` : '—'}
                   </td>
                   <td className={am.td}>
-                    <button
-                      type="button"
-                      onClick={() => openView(r)}
-                      className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800"
-                    >
-                      <Eye size={14} /> View
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openView(r)}
+                        className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800"
+                      >
+                        <Eye size={14} /> View
+                      </button>
+                      {hwId && (
+                        <button
+                          type="button"
+                          disabled={busyDelete}
+                          onClick={() => void deleteOne(hwId, r.homework?.title || 'homework')}
+                          className="inline-flex items-center gap-1 text-xs font-bold text-red-600 hover:text-red-800"
+                          title="Delete homework"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {rows.length === 0 && (
-                <tr><td colSpan={9} className={`${am.td} text-center text-slate-400 py-8`}>No teacher slots found. Seed academic data or add teacher allocations.</td></tr>
+                <tr><td colSpan={10} className={`${am.td} text-center text-slate-400 py-8`}>
+                  {statusFilter === 'ASSIGNED'
+                    ? 'No assigned homework for this date.'
+                    : statusFilter === 'NOT_ASSIGNED'
+                      ? 'All slots have homework assigned.'
+                      : 'No teacher slots found. Seed academic data or add teacher allocations.'}
+                </td></tr>
               )}
             </tbody>
           </table>
@@ -544,6 +696,8 @@ export function HomeworkView() {
             row={popupRow}
             onClose={() => setPopupRow(null)}
             onAssign={() => openAssignFromRow(popupRow)}
+            onDelete={(id, title) => void deleteOne(id, title)}
+            busyDelete={busyDelete}
           />
         )}
       </AcademicModal>

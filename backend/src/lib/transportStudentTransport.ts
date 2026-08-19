@@ -127,7 +127,7 @@ function serializeEnrollment(e: {
   specialAssistance: boolean; medicalAlerts: unknown;
   transportCardId: string; qrCode: string; rfidTag: string;
   geoValidated: boolean; siblingGroupId: string; photoUrl: string;
-  route?: { routeCode: string; routeName: string } | null;
+  route?: { id: string; routeCode: string; routeName: string } | null;
   vehicle?: { vehicleNumber: string; capacity: number } | null;
   driver?: { name: string; mobile: string } | null;
   attendant?: { name: string } | null;
@@ -146,6 +146,7 @@ function serializeEnrollment(e: {
     pickupLatitude: e.pickupLatitude, pickupLongitude: e.pickupLongitude,
     dropLatitude: e.dropLatitude, dropLongitude: e.dropLongitude,
     pickupStopName: e.pickupStopName, dropStopName: e.dropStopName,
+    routeId: e.route?.id ?? '',
     routeCode: e.route?.routeCode ?? '', routeName: e.route?.routeName ?? '',
     vehicleNumber: e.vehicle?.vehicleNumber ?? '',
     driverName: e.driver?.name ?? '', driverMobile: e.driver?.mobile ?? '',
@@ -167,7 +168,7 @@ function serializeEnrollment(e: {
 }
 
 const enrollmentInclude = {
-  route: { select: { routeCode: true, routeName: true } },
+  route: { select: { id: true, routeCode: true, routeName: true } },
   vehicle: { select: { vehicleNumber: true, capacity: true } },
   driver: { select: { name: true, mobile: true } },
   attendant: { select: { name: true } },
@@ -180,7 +181,7 @@ export async function getTransportStudentTransport(institutionId: string, academ
   await ensureSettings(institutionId);
   const tripDate = todayDate();
 
-  const [enrollments, routes, vehicles, settings, auditLogs, requests, boardingToday] = await Promise.all([
+  const [enrollments, routes, vehicles, settings, auditLogs, requests, boardingToday, dbStudents, routesWithStops] = await Promise.all([
     prisma.transportStudentEnrollment.findMany({
       where: { institutionId, academicYear },
       include: enrollmentInclude,
@@ -208,6 +209,26 @@ export async function getTransportStudentTransport(institutionId: string, academ
       where: { institutionId, logDate: tripDate },
       include: { enrollment: { select: { studentName: true, className: true, route: { select: { routeName: true } } } } },
     }),
+    prisma.student.findMany({
+      where: { institutionId, academicYear, status: 'ACTIVE' },
+      select: {
+        id: true, firstName: true, lastName: true, admissionNumber: true,
+        className: true, sectionName: true, category: true, address: true,
+        fatherName: true, fatherMobile: true, motherName: true, motherMobile: true,
+      },
+      orderBy: [{ className: 'asc' }, { sectionName: 'asc' }, { firstName: 'asc' }],
+    }),
+    prisma.transportRoute.findMany({
+      where: { institutionId, isArchived: false, academicYear },
+      select: {
+        id: true, routeCode: true, routeName: true,
+        stops: {
+          orderBy: { sequenceOrder: 'asc' },
+          select: { id: true, stopName: true, stopType: true, sequenceOrder: true, estimatedArrival: true },
+        },
+      },
+      orderBy: { routeCode: 'asc' },
+    }),
   ]);
 
   const serialized = enrollments.map(serializeEnrollment);
@@ -232,6 +253,48 @@ export async function getTransportStudentTransport(institutionId: string, academ
       assigned, capacity: cap, occupancyPct: cap > 0 ? Math.round((assigned / cap) * 100) : 0,
     };
   });
+
+  const enrolledStudentIds = new Set(
+    enrollments
+      .filter((e) => ['ACTIVE', 'PENDING', 'WAITING_LIST'].includes(e.status) && e.studentId)
+      .map((e) => e.studentId as string),
+  );
+
+  const classes = [...new Set(dbStudents.map((s) => s.className))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const sectionsByClass: Record<string, string[]> = {};
+  for (const s of dbStudents) {
+    if (!sectionsByClass[s.className]) sectionsByClass[s.className] = [];
+    if (s.sectionName && !sectionsByClass[s.className].includes(s.sectionName)) {
+      sectionsByClass[s.className].push(s.sectionName);
+    }
+  }
+  for (const cls of Object.keys(sectionsByClass)) {
+    sectionsByClass[cls].sort();
+  }
+
+  const studentPicker = {
+    classes,
+    sectionsByClass,
+    students: dbStudents.map((s) => ({
+      id: s.id,
+      name: `${s.firstName} ${s.lastName}`.trim(),
+      admissionNumber: s.admissionNumber,
+      className: s.className,
+      sectionName: s.sectionName,
+      category: s.category,
+      address: s.address,
+      guardianName: s.fatherName || s.motherName || '',
+      guardianMobile: s.fatherMobile || s.motherMobile || '',
+      hasTransport: enrolledStudentIds.has(s.id),
+    })),
+  };
+
+  const routeOptions = routesWithStops.map((r) => ({
+    id: r.id,
+    routeCode: r.routeCode,
+    routeName: r.routeName,
+    stops: r.stops,
+  }));
 
   return {
     academicYear,
@@ -270,6 +333,8 @@ export async function getTransportStudentTransport(institutionId: string, academ
     })),
     vehicleOccupancy,
     routes,
+    routeOptions,
+    studentPicker,
     vehicles,
     auditLogs: auditLogs.map((l) => ({
       id: l.id, entityType: l.entityType, action: l.action, details: l.details,
@@ -283,21 +348,82 @@ export async function getTransportStudentTransport(institutionId: string, academ
 
 export async function createStudentTransportApplication(institutionId: string, body: Record<string, unknown>) {
   const applicationNumber = await nextApplicationNumber(institutionId);
+  const academicYear = String(body.academicYear ?? '2025-26');
+
+  let studentId: string | null = body.studentId ? String(body.studentId) : null;
+  let studentName = String(body.studentName ?? 'Student');
+  let admissionNumber = String(body.admissionNumber ?? '');
+  let className = String(body.className ?? '');
+  let sectionName = String(body.sectionName ?? '');
+  let pickupAddress = String(body.pickupAddress ?? '');
+  let category = String(body.category ?? 'Day Scholar');
+  let guardianName = String(body.guardianName ?? '');
+  let guardianMobile = String(body.guardianMobile ?? '');
+
+  if (studentId) {
+    const student = await prisma.student.findFirst({
+      where: { id: studentId, institutionId, status: 'ACTIVE', academicYear },
+    });
+    if (!student) throw new Error('Student not found for selected class/section');
+
+    const existing = await prisma.transportStudentEnrollment.findFirst({
+      where: {
+        institutionId, studentId,
+        status: { in: ['ACTIVE', 'PENDING', 'WAITING_LIST'] },
+      },
+    });
+    if (existing) throw new Error(`${student.firstName} already has a transport application`);
+
+    studentName = `${student.firstName} ${student.lastName}`.trim();
+    admissionNumber = student.admissionNumber;
+    className = student.className;
+    sectionName = student.sectionName;
+    pickupAddress = pickupAddress || student.address;
+    if (!body.category) category = student.category || category;
+    guardianName = guardianName || student.fatherName || student.motherName;
+    guardianMobile = guardianMobile || student.fatherMobile || student.motherMobile;
+  } else if (!studentName.trim()) {
+    throw new Error('Please select a student');
+  }
+
+  const routeId = body.routeId ? String(body.routeId) : null;
+  if (!routeId) throw new Error('Please select a route');
+
+  const route = await prisma.transportRoute.findFirst({
+    where: { id: routeId, institutionId },
+    include: { stops: { orderBy: { sequenceOrder: 'asc' } } },
+  });
+  if (!route) throw new Error('Route not found');
+
+  const stopId = body.pickupStopId ? String(body.pickupStopId) : null;
+  const stop = stopId
+    ? route.stops.find((s) => s.id === stopId)
+    : body.pickupStopName
+      ? route.stops.find((s) => s.stopName === String(body.pickupStopName))
+      : null;
+  if (!stop) throw new Error('Please select a pickup stop');
+
+  const dropStop = [...route.stops].reverse().find((s) => s.stopType === 'DROP' || s.stopType === 'BOTH')
+    ?? route.stops[route.stops.length - 1];
+
   const enrollment = await prisma.transportStudentEnrollment.create({
     data: {
-      institutionId, applicationNumber,
-      studentName: String(body.studentName ?? 'Student'),
-      admissionNumber: String(body.admissionNumber ?? ''),
-      className: String(body.className ?? ''),
-      sectionName: String(body.sectionName ?? ''),
-      academicYear: String(body.academicYear ?? '2025-26'),
+      institutionId, applicationNumber, studentId,
+      studentName, admissionNumber, className, sectionName, academicYear,
       branch: String(body.branch ?? 'Main Campus'),
-      category: String(body.category ?? 'Day Scholar'),
-      pickupAddress: String(body.pickupAddress ?? ''),
-      dropAddress: String(body.dropAddress ?? ''),
-      pickupLatitude: body.pickupLatitude ? Number(body.pickupLatitude) : null,
-      pickupLongitude: body.pickupLongitude ? Number(body.pickupLongitude) : null,
-      status: 'PENDING', workflowStage: 'APPLICATION',
+      category,
+      pickupAddress,
+      dropAddress: String(body.dropAddress ?? 'Main Campus'),
+      pickupLatitude: body.pickupLatitude ? Number(body.pickupLatitude) : stop.latitude || null,
+      pickupLongitude: body.pickupLongitude ? Number(body.pickupLongitude) : stop.longitude || null,
+      routeId,
+      pickupStopName: stop.stopName,
+      dropStopName: dropStop?.stopName ?? 'Main Campus',
+      pickupTime: stop.estimatedArrival || String(body.pickupTime ?? '07:15'),
+      dropTime: String(body.dropTime ?? '15:45'),
+      status: 'PENDING',
+      workflowStage: 'ROUTE_ALLOCATION',
+      geoValidated: true,
     },
   });
 
@@ -318,7 +444,12 @@ export async function createStudentTransportApplication(institutionId: string, b
 export async function allocateStudentTransport(
   institutionId: string, enrollmentId: string, body: Record<string, unknown>,
 ) {
-  const routeId = body.routeId ? String(body.routeId) : null;
+  const enrollment = await prisma.transportStudentEnrollment.findFirst({
+    where: { id: enrollmentId, institutionId },
+  });
+  if (!enrollment) throw new Error('Enrollment not found');
+
+  const routeId = body.routeId ? String(body.routeId) : enrollment.routeId;
   const vehicleId = body.vehicleId ? String(body.vehicleId) : null;
   let seatNumber = body.seatNumber ? Number(body.seatNumber) : null;
   let capacityValid = true;
@@ -358,9 +489,9 @@ export async function allocateStudentTransport(
       driverId: body.driverId ? String(body.driverId) : driver?.id,
       attendantId: body.attendantId ? String(body.attendantId) : undefined,
       seatNumber, geoValidated: true,
-      pickupStopName: String(body.pickupStopName ?? route?.stops[0]?.stopName ?? ''),
-      dropStopName: String(body.dropStopName ?? 'Main Campus'),
-      pickupTime: String(body.pickupTime ?? '07:15'),
+      pickupStopName: String(body.pickupStopName ?? enrollment.pickupStopName ?? route?.stops[0]?.stopName ?? ''),
+      dropStopName: String(body.dropStopName ?? enrollment.dropStopName ?? 'Main Campus'),
+      pickupTime: String(body.pickupTime ?? enrollment.pickupTime ?? '07:15'),
       dropTime: String(body.dropTime ?? '15:45'),
       workflowStage: capacityValid ? 'VEHICLE_ASSIGNMENT' : 'SEAT_CHECK',
       effectiveDate: body.effectiveDate ? new Date(String(body.effectiveDate)) : new Date(),

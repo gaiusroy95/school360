@@ -185,6 +185,7 @@ export async function getEdomsDashboard(institutionId: string) {
       workflowStage: o.workflowStage, verificationStage: o.verificationStage,
       status: o.status, employeeCode: o.employeeCode || o.employee?.employeeCode || '',
       joiningDate: formatDate(o.joiningDate), preOnboardingActive: o.preOnboardingActive,
+      reportingManager: o.reportingManager,
       documentsCount: o.documents.length,
       verifiedCount: o.documents.filter((d) => d.status === 'VERIFIED').length,
       checklistDone: o.checklists.filter((c) => c.completed).length,
@@ -197,41 +198,43 @@ export async function getEdomsDashboard(institutionId: string) {
       expiryDate: formatDate(d.expiryDate), version: d.version,
     }))),
     qualifications: onboardings.flatMap((o) => o.qualifications.map((q) => ({
-      id: q.id, candidateName: o.candidateName, qualification: q.qualification,
+      id: q.id, onboardingId: o.id, candidateName: o.candidateName, qualification: q.qualification,
       boardUniversity: q.boardUniversity, yearOfPassing: q.yearOfPassing,
-      percentage: q.percentage, verificationStatus: q.verificationStatus,
+      percentage: q.percentage, majorSubject: q.majorSubject, verificationStatus: q.verificationStatus,
     }))),
     employmentHistory: onboardings.flatMap((o) => o.employmentHistory.map((e) => ({
-      id: e.id, candidateName: o.candidateName, organization: e.organization,
-      designation: e.designation, periodFrom: e.periodFrom, periodTo: e.periodTo,
+      id: e.id, onboardingId: o.id, candidateName: o.candidateName, organization: e.organization,
+      designation: e.designation, department: e.department, periodFrom: e.periodFrom, periodTo: e.periodTo,
+      lastSalary: e.lastSalary,
     }))),
     verifications: onboardings.flatMap((o) => o.verifications.map((v) => ({
-      id: v.id, candidateName: o.candidateName, checkType: v.checkType, status: v.status,
+      id: v.id, onboardingId: o.id, candidateName: o.candidateName, checkType: v.checkType,
+      status: v.status, remarks: v.remarks,
     }))),
     checklists: onboardings.flatMap((o) => o.checklists.map((c) => ({
       id: c.id, candidateName: o.candidateName, department: c.department,
       item: c.item, completed: c.completed, completedBy: c.completedBy,
     }))),
     assets: onboardings.flatMap((o) => o.assets.map((a) => ({
-      id: a.id, candidateName: o.candidateName, assetType: a.assetType,
-      assetId: a.assetId, serialNumber: a.serialNumber, status: a.status,
+      id: a.id, onboardingId: o.id, candidateName: o.candidateName, assetType: a.assetType,
+      assetId: a.assetId, serialNumber: a.serialNumber, status: a.status, agreementSigned: a.agreementSigned,
     }))),
     systemAccesses: onboardings.flatMap((o) => o.systemAccesses.map((s) => ({
-      id: s.id, candidateName: o.candidateName, systemName: s.systemName,
-      role: s.role, emailAddress: s.emailAddress, status: s.status,
+      id: s.id, onboardingId: o.id, candidateName: o.candidateName, systemName: s.systemName,
+      role: s.role, emailAddress: s.emailAddress, erpLogin: s.erpLogin, status: s.status,
     }))),
     inductions: onboardings.flatMap((o) => o.inductions.map((i) => ({
-      id: i.id, candidateName: o.candidateName, sessionName: i.sessionName,
+      id: i.id, onboardingId: o.id, candidateName: o.candidateName, sessionName: i.sessionName,
       attended: i.attended, sessionDate: formatDate(i.sessionDate),
     }))),
     probations: onboardings.filter((o) => o.probation).map((o) => ({
-      id: o.probation!.id, candidateName: o.candidateName,
+      id: o.probation!.id, onboardingId: o.id, candidateName: o.candidateName,
       startDate: formatDate(o.probation!.startDate), endDate: formatDate(o.probation!.endDate),
-      mentorName: o.probation!.mentorName, status: o.probation!.status,
+      mentorName: o.probation!.mentorName, status: o.probation!.status, action: o.probation!.action,
     })),
     employmentLetters: onboardings.flatMap((o) => o.employmentLetters.map((l) => ({
-      id: l.id, candidateName: o.candidateName, letterType: l.letterType,
-      acknowledged: l.acknowledged, qrVerified: l.qrVerified,
+      id: l.id, onboardingId: o.id, candidateName: o.candidateName, letterType: l.letterType,
+      fileName: l.fileName, acknowledged: l.acknowledged, qrVerified: l.qrVerified,
     }))),
     expiringDocuments: expiringDocs.map((d) => ({
       id: d.id, candidateName: d.onboarding.candidateName, caseNumber: d.onboarding.caseNumber,
@@ -490,6 +493,258 @@ export async function confirmProbation(institutionId: string, onboardingId: stri
     data: { workflowStage: 'CONFIRMATION', status: 'CONFIRMED', confirmedAt: new Date() },
   });
   await auditLog(institutionId, onboardingId, 'Probation confirmed — employee confirmed');
+}
+
+export async function updateOnboardingCase(institutionId: string, id: string, body: Record<string, unknown>) {
+  const row = await prisma.hrEdomsOnboarding.findFirst({ where: { id, institutionId } });
+  if (!row) throw new Error('Onboarding case not found');
+  const updated = await prisma.hrEdomsOnboarding.update({
+    where: { id },
+    data: {
+      candidateName: body.candidateName !== undefined ? String(body.candidateName) : undefined,
+      candidateEmail: body.candidateEmail !== undefined ? String(body.candidateEmail) : undefined,
+      candidateMobile: body.candidateMobile !== undefined ? String(body.candidateMobile) : undefined,
+      department: body.department !== undefined ? String(body.department) : undefined,
+      designation: body.designation !== undefined ? String(body.designation) : undefined,
+      reportingManager: body.reportingManager !== undefined ? String(body.reportingManager) : undefined,
+      joiningDate: body.joiningDate !== undefined ? (body.joiningDate ? new Date(String(body.joiningDate)) : null) : undefined,
+      personalInfo: body.personalInfo !== undefined ? (body.personalInfo as Prisma.InputJsonValue) : undefined,
+    },
+  });
+  await auditLog(institutionId, id, 'Onboarding case updated', 'HR Executive');
+  return updated;
+}
+
+export async function createEdomsDocument(institutionId: string, onboardingId: string, body: Record<string, unknown>) {
+  const doc = await prisma.hrEdomsDocument.create({
+    data: {
+      institutionId, onboardingId,
+      category: String(body.category ?? 'Personal'),
+      documentType: String(body.documentType),
+      documentNumber: String(body.documentNumber ?? ''),
+      status: 'PENDING',
+    },
+  });
+  await auditLog(institutionId, onboardingId, `Document requirement added: ${doc.documentType}`);
+  return doc;
+}
+
+export async function updateVerification(institutionId: string, id: string, action: 'complete' | 'fail', remarks = '') {
+  const status = action === 'complete' ? 'COMPLETED' : 'FAILED';
+  const row = await prisma.hrEdomsVerification.update({
+    where: { id },
+    data: { status, remarks, completedAt: action === 'complete' ? new Date() : null },
+  });
+  await auditLog(institutionId, row.onboardingId, `BGV ${row.checkType}: ${status}`, 'HR Executive');
+  return row;
+}
+
+export async function createQualification(institutionId: string, onboardingId: string, body: Record<string, unknown>) {
+  const row = await prisma.hrEdomsQualification.create({
+    data: {
+      institutionId, onboardingId,
+      qualification: String(body.qualification),
+      boardUniversity: String(body.boardUniversity ?? ''),
+      institutionName: String(body.institutionName ?? ''),
+      yearOfPassing: Number(body.yearOfPassing ?? 0),
+      percentage: String(body.percentage ?? ''),
+      majorSubject: String(body.majorSubject ?? ''),
+      verificationStatus: 'PENDING',
+    },
+  });
+  await auditLog(institutionId, onboardingId, `Qualification added: ${row.qualification}`);
+  return row;
+}
+
+export async function verifyQualification(institutionId: string, id: string, status: 'VERIFIED' | 'REJECTED') {
+  const row = await prisma.hrEdomsQualification.update({
+    where: { id },
+    data: { verificationStatus: status },
+  });
+  await auditLog(institutionId, row.onboardingId, `Qualification ${status.toLowerCase()}: ${row.qualification}`, 'HR Executive');
+  return row;
+}
+
+export async function createEmploymentHistoryRecord(institutionId: string, onboardingId: string, body: Record<string, unknown>) {
+  const row = await prisma.hrEdomsEmploymentHistory.create({
+    data: {
+      institutionId, onboardingId,
+      organization: String(body.organization),
+      designation: String(body.designation ?? ''),
+      department: String(body.department ?? ''),
+      periodFrom: String(body.periodFrom ?? ''),
+      periodTo: String(body.periodTo ?? ''),
+      lastSalary: Number(body.lastSalary ?? 0),
+      reportingManager: String(body.reportingManager ?? ''),
+    },
+  });
+  await auditLog(institutionId, onboardingId, `Employment history added: ${row.organization}`);
+  return row;
+}
+
+export async function addChecklistItem(institutionId: string, onboardingId: string, body: Record<string, unknown>) {
+  const row = await prisma.hrEdomsChecklist.create({
+    data: {
+      institutionId, onboardingId,
+      department: String(body.department ?? 'HR'),
+      item: String(body.item),
+    },
+  });
+  await auditLog(institutionId, onboardingId, `Checklist item added: ${row.item} (${row.department})`);
+  return row;
+}
+
+export async function createAsset(institutionId: string, onboardingId: string, body: Record<string, unknown>) {
+  const row = await prisma.hrEdomsAsset.create({
+    data: {
+      institutionId, onboardingId,
+      assetType: String(body.assetType),
+      assetId: String(body.assetId ?? ''),
+      serialNumber: String(body.serialNumber ?? ''),
+      issueDate: body.issueDate ? new Date(String(body.issueDate)) : new Date(),
+      agreementSigned: Boolean(body.agreementSigned),
+      status: 'ISSUED',
+    },
+  });
+  await auditLog(institutionId, onboardingId, `Asset allocated: ${row.assetType} (${row.assetId})`);
+  return row;
+}
+
+export async function updateAssetStatus(institutionId: string, id: string, status: 'ISSUED' | 'RETURNED' | 'LOST') {
+  const row = await prisma.hrEdomsAsset.update({
+    where: { id },
+    data: {
+      status,
+      returnDate: status === 'RETURNED' ? new Date() : undefined,
+    },
+  });
+  await auditLog(institutionId, row.onboardingId, `Asset ${row.assetType} marked ${status}`);
+  return row;
+}
+
+export async function createSystemAccess(institutionId: string, onboardingId: string, body: Record<string, unknown>) {
+  const row = await prisma.hrEdomsSystemAccess.create({
+    data: {
+      institutionId, onboardingId,
+      systemName: String(body.systemName),
+      role: String(body.role ?? ''),
+      emailAddress: String(body.emailAddress ?? ''),
+      erpLogin: String(body.erpLogin ?? ''),
+      mobileAppAccess: Boolean(body.mobileAppAccess),
+      status: 'PENDING',
+    },
+  });
+  await auditLog(institutionId, onboardingId, `System access requested: ${row.systemName}`);
+  return row;
+}
+
+export async function activateSystemAccess(institutionId: string, id: string) {
+  const row = await prisma.hrEdomsSystemAccess.update({
+    where: { id },
+    data: { status: 'PROVISIONED', provisionedAt: new Date() },
+  });
+  await auditLog(institutionId, row.onboardingId, `System access provisioned: ${row.systemName}`, 'IT Administrator');
+  return row;
+}
+
+export async function updateInduction(institutionId: string, id: string, body: Record<string, unknown>) {
+  const row = await prisma.hrEdomsInduction.update({
+    where: { id },
+    data: {
+      attended: body.attended !== undefined ? Boolean(body.attended) : undefined,
+      sessionDate: body.sessionDate !== undefined ? (body.sessionDate ? new Date(String(body.sessionDate)) : null) : undefined,
+      completedAt: body.attended ? new Date() : undefined,
+    },
+  });
+  await auditLog(institutionId, row.onboardingId, `Induction ${row.sessionName}: ${row.attended ? 'attended' : 'scheduled'}`);
+  return row;
+}
+
+export async function updateProbation(institutionId: string, onboardingId: string, body: Record<string, unknown>) {
+  const probation = await prisma.hrEdomsProbation.findUnique({ where: { onboardingId } });
+  if (!probation) throw new Error('Probation record not found');
+
+  const action = String(body.action ?? 'review');
+  const data: Prisma.HrEdomsProbationUpdateInput = {};
+
+  if (body.mentorName !== undefined) data.mentorName = String(body.mentorName);
+  if (body.endDate !== undefined) data.endDate = new Date(String(body.endDate));
+
+  if (action === 'extend') {
+    const months = Number(body.extendMonths ?? 3);
+    const newEnd = new Date(probation.endDate);
+    newEnd.setMonth(newEnd.getMonth() + months);
+    data.endDate = newEnd;
+    data.action = 'EXTENDED';
+    data.status = 'IN_PROGRESS';
+  } else if (action === 'complete') {
+    data.status = 'COMPLETED';
+    data.action = 'CONFIRM';
+  } else if (body.feedback) {
+    const reviews = parseJson<Array<Record<string, unknown>>>(probation.monthlyReviews, []);
+    reviews.push({ date: new Date().toISOString().slice(0, 10), feedback: String(body.feedback), rating: Number(body.rating ?? 4) });
+    data.monthlyReviews = reviews as Prisma.InputJsonValue;
+  }
+
+  const updated = await prisma.hrEdomsProbation.update({ where: { onboardingId }, data });
+  await auditLog(institutionId, onboardingId, `Probation ${action}: ${updated.status}`);
+  return updated;
+}
+
+export async function acknowledgeEmploymentLetter(institutionId: string, id: string) {
+  const row = await prisma.hrEdomsEmploymentLetter.update({
+    where: { id },
+    data: { acknowledged: true, acknowledgedAt: new Date() },
+  });
+  await auditLog(institutionId, row.onboardingId, `Employment letter acknowledged: ${row.letterType}`, 'Employee');
+  return row;
+}
+
+export async function renewDocumentExpiry(institutionId: string, id: string, body: Record<string, unknown>) {
+  const existing = await prisma.hrEdomsDocument.findUnique({ where: { id } });
+  if (!existing) throw new Error('Document not found');
+
+  const doc = await prisma.hrEdomsDocument.create({
+    data: {
+      institutionId,
+      onboardingId: existing.onboardingId,
+      category: existing.category,
+      documentType: existing.documentType,
+      documentNumber: String(body.documentNumber ?? existing.documentNumber),
+      fileName: String(body.fileName ?? `renewed_${existing.fileName || existing.documentType.replace(/\s/g, '_')}.pdf`),
+      issueDate: body.issueDate ? new Date(String(body.issueDate)) : new Date(),
+      expiryDate: body.expiryDate ? new Date(String(body.expiryDate)) : undefined,
+      status: 'SUBMITTED',
+      version: existing.version + 1,
+      previousVersionId: existing.id,
+    },
+  });
+  await auditLog(institutionId, existing.onboardingId, `Document renewed: ${doc.documentType} (v${doc.version})`);
+  return doc;
+}
+
+export async function sendExpiryAlert(institutionId: string, documentId: string) {
+  const doc = await prisma.hrEdomsDocument.findUnique({
+    where: { id: documentId },
+    include: { onboarding: { select: { candidateName: true, caseNumber: true } } },
+  });
+  if (!doc) throw new Error('Document not found');
+  await auditLog(
+    institutionId, doc.onboardingId,
+    `Expiry alert sent: ${doc.documentType} for ${doc.onboarding.candidateName} (expires ${formatDate(doc.expiryDate)})`,
+    'System',
+  );
+  return { sent: true, documentType: doc.documentType, candidateName: doc.onboarding.candidateName };
+}
+
+export async function updateEdomsSettings(institutionId: string, body: Record<string, unknown>) {
+  await ensureSettings(institutionId);
+  const data: Prisma.HrEdomsSettingsUpdateInput = {};
+  if (body.retentionPolicy !== undefined) data.retentionPolicy = String(body.retentionPolicy);
+  if (body.expiryAlertDays !== undefined) data.expiryAlertDays = body.expiryAlertDays as Prisma.InputJsonValue;
+  if (body.automationRules !== undefined) data.automationRules = body.automationRules as Prisma.InputJsonValue;
+  if (body.documentTypes !== undefined) data.documentTypes = body.documentTypes as Prisma.InputJsonValue;
+  return prisma.hrEdomsSettings.update({ where: { institutionId }, data });
 }
 
 export async function seedEdomsDemo(institutionId: string) {

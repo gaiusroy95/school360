@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from './prisma.js';
 import { seedHrAttendanceLeaveDemo } from './hrAttendanceLeave.js';
+import { EVAL_DIMENSIONS } from './teacherEvaluation.js';
 
 export const QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4'] as const;
 export const WORKFLOW_STAGES = ['SELF', 'MANAGER', 'HOD', 'PRINCIPAL', 'HR', 'MANAGEMENT', 'FINAL'] as const;
@@ -213,7 +214,7 @@ export async function getPerformanceAppraisalDashboard(
   const academicYear = opts.academicYear ?? '2025-26';
   const quarter = opts.quarter ?? 'Q1';
 
-  const [settings, cycles, kpis, payGrades, employees] = await Promise.all([
+  const [settings, cycles, kpis, payGrades, employees, designations] = await Promise.all([
     ensureSettings(institutionId),
     ensurePerformanceCycles(institutionId, academicYear),
     ensureKpis(institutionId),
@@ -222,6 +223,11 @@ export async function getPerformanceAppraisalDashboard(
       where: { institutionId, status: 'ACTIVE' },
       select: { id: true, employeeCode: true, fullName: true, department: true, designation: true, employmentType: true },
       orderBy: { fullName: 'asc' },
+    }),
+    prisma.hrDesignation.findMany({
+      where: { institutionId, status: 'ACTIVE' },
+      select: { name: true, department: true },
+      orderBy: [{ department: 'asc' }, { name: 'asc' }],
     }),
   ]);
 
@@ -354,7 +360,8 @@ export async function getPerformanceAppraisalDashboard(
     })),
     kpiLibrary: kpis.map((k) => ({
       id: k.id, category: k.category, code: k.code, name: k.name,
-      staffType: k.staffType, weight: k.weight, status: k.status,
+      staffType: k.staffType, department: k.department, designation: k.designation,
+      weight: k.weight, status: k.status, description: k.description,
     })),
     payGrades: payGrades.map((g) => ({
       id: g.id, code: g.code, name: g.name, level: g.level,
@@ -374,6 +381,10 @@ export async function getPerformanceAppraisalDashboard(
     employees,
     workflowStages: WORKFLOW_STAGES,
     kpiCategories: KPI_CATEGORIES,
+    filterOptions: {
+      departments: [...new Set(designations.map((d) => d.department))].sort(),
+      designations: [...new Set(designations.map((d) => d.name))].sort(),
+    },
   };
 }
 
@@ -729,11 +740,216 @@ export async function createPerformanceKpi(institutionId: string, body: Record<s
       name: String(body.name),
       description: String(body.description ?? ''),
       staffType: String(body.staffType ?? 'ALL'),
+      department: String(body.department ?? ''),
+      designation: String(body.designation ?? ''),
       weight: Number(body.weight ?? 0),
       status: String(body.status ?? 'ACTIVE'),
     },
   });
   return row;
+}
+
+function slugCode(input: string): string {
+  return input.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toUpperCase().slice(0, 12);
+}
+
+function staffTypeFromDesignationType(designationType: string): string {
+  const t = designationType.toLowerCase();
+  if (t.includes('teach')) return 'TEACHING';
+  return 'NON_TEACHING';
+}
+
+export async function updatePayGrade(institutionId: string, id: string, body: Record<string, unknown>) {
+  const existing = await prisma.hrPayGrade.findFirst({ where: { id, institutionId } });
+  if (!existing) throw Object.assign(new Error('Pay grade not found'), { status: 404 });
+
+  const minSalary = body.minSalary !== undefined ? Number(body.minSalary) : existing.minSalary;
+  const maxSalary = body.maxSalary !== undefined ? Number(body.maxSalary) : existing.maxSalary;
+  if (minSalary > maxSalary) {
+    throw Object.assign(new Error('Minimum salary cannot exceed maximum salary'), { status: 400 });
+  }
+
+  const data: Prisma.HrPayGradeUpdateInput = {};
+  if (body.level !== undefined) data.level = Number(body.level);
+  if (body.minSalary !== undefined) data.minSalary = minSalary;
+  if (body.maxSalary !== undefined) data.maxSalary = maxSalary;
+  if (body.name !== undefined) data.name = String(body.name);
+
+  return prisma.hrPayGrade.update({ where: { id }, data });
+}
+
+export async function syncPayGradesFromDesignations(institutionId: string) {
+  const designationRows = await prisma.hrDesignation.findMany({
+    where: { institutionId, status: 'ACTIVE' },
+    orderBy: [{ department: 'asc' }, { name: 'asc' }],
+    select: { name: true },
+  });
+
+  const seen = new Set<string>();
+  const uniqueNames: string[] = [];
+  for (const row of designationRows) {
+    const key = row.name.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      uniqueNames.push(row.name);
+    }
+  }
+
+  const payGrades = await ensurePayGrades(institutionId);
+  let updated = 0;
+  let created = 0;
+
+  for (let i = 0; i < uniqueNames.length; i++) {
+    const name = uniqueNames[i];
+    const level = i + 1;
+    const existing = payGrades.find((g) => g.level === level) ?? payGrades[i];
+
+    if (existing) {
+      await prisma.hrPayGrade.update({
+        where: { id: existing.id },
+        data: {
+          name,
+          description: `${name} pay grade (synced from designations)`,
+        },
+      });
+      updated++;
+    } else {
+      const template = DEFAULT_PAY_GRADES[Math.min(i, DEFAULT_PAY_GRADES.length - 1)];
+      const code = `PG-${String(level).padStart(2, '0')}`;
+      await prisma.hrPayGrade.create({
+        data: {
+          institutionId,
+          code,
+          name,
+          level,
+          minSalary: template.minSalary,
+          maxSalary: template.maxSalary,
+          description: `${name} pay grade (synced from designations)`,
+        },
+      });
+      created++;
+    }
+  }
+
+  return { updated, created, totalDesignations: uniqueNames.length };
+}
+
+export async function updatePerformanceKpi(institutionId: string, id: string, body: Record<string, unknown>) {
+  const existing = await prisma.hrPerformanceKpi.findFirst({ where: { id, institutionId } });
+  if (!existing) throw Object.assign(new Error('KPI not found'), { status: 404 });
+
+  const data: Prisma.HrPerformanceKpiUpdateInput = {};
+  if (body.category !== undefined) data.category = String(body.category);
+  if (body.name !== undefined) data.name = String(body.name);
+  if (body.description !== undefined) data.description = String(body.description);
+  if (body.staffType !== undefined) data.staffType = String(body.staffType);
+  if (body.department !== undefined) data.department = String(body.department);
+  if (body.designation !== undefined) data.designation = String(body.designation);
+  if (body.weight !== undefined) data.weight = Number(body.weight);
+  if (body.status !== undefined) data.status = String(body.status);
+
+  return prisma.hrPerformanceKpi.update({ where: { id }, data });
+}
+
+export async function syncKpisFromDepartmentsDesignations(institutionId: string) {
+  await ensureKpis(institutionId);
+
+  const designations = await prisma.hrDesignation.findMany({
+    where: { institutionId, status: 'ACTIVE' },
+    orderBy: [{ department: 'asc' }, { name: 'asc' }],
+  });
+
+  let upserted = 0;
+
+  for (const desig of designations) {
+    const staffType = staffTypeFromDesignationType(desig.designationType);
+    const applicable = DEFAULT_KPIS.filter((t) => t.staffType === 'ALL' || t.staffType === staffType);
+    const desigSlug = slugCode(desig.name);
+
+    for (const tmpl of applicable) {
+      const code = `${tmpl.code}-${slugCode(desig.department)}-${desigSlug}`.slice(0, 48);
+      await prisma.hrPerformanceKpi.upsert({
+        where: { institutionId_code: { institutionId, code } },
+        create: {
+          institutionId,
+          category: tmpl.category,
+          code,
+          name: tmpl.name,
+          description: `Synced for ${desig.department} · ${desig.name}`,
+          staffType: tmpl.staffType === 'ALL' ? staffType : tmpl.staffType,
+          department: desig.department,
+          designation: desig.name,
+          weight: tmpl.weight,
+          status: 'ACTIVE',
+        },
+        update: {
+          category: tmpl.category,
+          name: tmpl.name,
+          department: desig.department,
+          designation: desig.name,
+          staffType: tmpl.staffType === 'ALL' ? staffType : tmpl.staffType,
+          weight: tmpl.weight,
+          status: 'ACTIVE',
+        },
+      });
+      upserted++;
+    }
+  }
+
+  return { upserted, designations: designations.length };
+}
+
+const CE_KPI_CATEGORY: Record<string, string> = {
+  taskAction: 'Academic',
+  improvementPlan: 'Student Development',
+  parentEngagement: 'Parent Satisfaction',
+  parentFeedback: 'Parent Satisfaction',
+  studentFeedback: 'Student Development',
+};
+
+const CE_KPI_CODE: Record<string, string> = {
+  taskAction: 'KPI-CE-TASK',
+  improvementPlan: 'KPI-CE-IMPROVE',
+  parentEngagement: 'KPI-CE-PENG',
+  parentFeedback: 'KPI-CE-PFB',
+  studentFeedback: 'KPI-CE-SFB',
+};
+
+export async function syncTeachingKpisFromContinuousEvaluation(institutionId: string) {
+  let upserted = 0;
+
+  for (const dim of EVAL_DIMENSIONS) {
+    const code = CE_KPI_CODE[dim.key];
+    const category = CE_KPI_CATEGORY[dim.key] ?? 'Academic';
+    const weight = Math.round(dim.weight * 100);
+
+    await prisma.hrPerformanceKpi.upsert({
+      where: { institutionId_code: { institutionId, code } },
+      create: {
+        institutionId,
+        category,
+        code,
+        name: dim.label,
+        description: 'Synced from Academic Management › Continuous Evaluation performance parameters',
+        staffType: 'TEACHING',
+        department: '',
+        designation: '',
+        weight,
+        status: 'ACTIVE',
+      },
+      update: {
+        name: dim.label,
+        category,
+        weight,
+        staffType: 'TEACHING',
+        description: 'Synced from Academic Management › Continuous Evaluation performance parameters',
+        status: 'ACTIVE',
+      },
+    });
+    upserted++;
+  }
+
+  return { upserted };
 }
 
 export async function seedPerformanceAppraisalDemo(institutionId: string) {

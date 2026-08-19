@@ -30,6 +30,7 @@ import {
   markPayrollSlipPaid,
 } from '../../../lib/feeFinanceServices';
 import { toViewKey } from '../../../lib/navigation';
+import { downloadPayslipPdf } from '../../../lib/payslipPdf';
 import {
   am,
   AcademicLoading,
@@ -82,6 +83,7 @@ type SalaryComponent = { name: string; amount: number; type?: string; taxable?: 
 type LeaveCard = { code: string; label: string; color: string; entitled: number; available: number };
 type PayRunRow = {
   id: string;
+  employeeId?: string;
   employeeCode: string;
   employeeName: string;
   netPay: number;
@@ -94,11 +96,21 @@ type PayRunRow = {
 };
 type PayslipPreview = {
   schoolName: string;
+  schoolAddress?: string;
+  schoolPhone?: string;
+  schoolEmail?: string;
+  affiliationNo?: string;
+  registrationNo?: string;
   payPeriod: string;
+  slipNumber?: string;
   employeeName: string;
   employeeCode: string;
   department: string;
   designation: string;
+  panNumber?: string;
+  bankAccount?: string;
+  uanNumber?: string;
+  pfNumber?: string;
   workingDays: number;
   presentDays: number;
   leaveDays: number;
@@ -108,6 +120,14 @@ type PayslipPreview = {
   totalDeductions: number;
   netPay: number;
   status: string;
+  leaveSummary?: LeaveCard[];
+};
+type PayslipOptions = {
+  includeEarnings: boolean;
+  includeDeductions: boolean;
+  includeLeaveSummary: boolean;
+  includeAttendanceSummary: boolean;
+  includeCompanyDetails: boolean;
 };
 type SelectedEmployeeMaster = {
   employee: {
@@ -148,7 +168,28 @@ type SelectedEmployeeMaster = {
     netPay: number;
   };
   leaveSummary: LeaveCard[];
-  currentSlip: { id: string; slipNumber: string; netPay: number; status: string } | null;
+  currentSlip: {
+    id: string;
+    slipNumber: string;
+    netPay: number;
+    status: string;
+    workingDays?: number;
+    presentDays?: number;
+    leaveDays?: number;
+    basicSalary?: number;
+    hra?: number;
+    da?: number;
+    specialAllowance?: number;
+    conveyanceAllowance?: number;
+    otherAllowances?: number;
+    grossEarnings?: number;
+    epfEmployee?: number;
+    esicEmployee?: number;
+    professionalTax?: number;
+    tds?: number;
+    otherDeductions?: number;
+    totalDeductions?: number;
+  } | null;
 };
 
 function currentPayPeriod() {
@@ -253,11 +294,31 @@ function LeaveMiniCard({ card }: { card: LeaveCard }) {
   );
 }
 
-function PayslipPreviewCard({ preview }: { preview: PayslipPreview }) {
+function PayslipPreviewCard({
+  preview,
+  options,
+}: {
+  preview: PayslipPreview;
+  options: PayslipOptions;
+}) {
   return (
     <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm text-[10px]">
       <div className="bg-gradient-to-r from-blue-700 to-indigo-800 text-white px-3 py-2 text-center">
-        <p className="font-bold text-xs tracking-wide">{preview.schoolName}</p>
+        {options.includeCompanyDetails ? (
+          <>
+            <p className="font-bold text-xs tracking-wide">{preview.schoolName}</p>
+            {preview.schoolAddress && (
+              <p className="text-[8px] opacity-80 mt-0.5 leading-snug">{preview.schoolAddress}</p>
+            )}
+            {(preview.schoolPhone || preview.schoolEmail) && (
+              <p className="text-[8px] opacity-75 mt-0.5">
+                {[preview.schoolPhone, preview.schoolEmail].filter(Boolean).join(' · ')}
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="font-bold text-xs tracking-wide">Salary Slip</p>
+        )}
         <p className="text-[9px] opacity-90 mt-0.5">Salary Slip — {preview.payPeriod}</p>
       </div>
       <div className="px-3 py-2 border-b border-slate-100 bg-slate-50">
@@ -267,35 +328,49 @@ function PayslipPreviewCard({ preview }: { preview: PayslipPreview }) {
           <p><span className="text-slate-500">Dept:</span> {preview.department}</p>
           <p><span className="text-slate-500">Desig:</span> {preview.designation}</p>
         </div>
-        <div className="flex gap-3 mt-1.5 text-[9px] text-slate-500">
-          <span>WD: {preview.workingDays}</span>
-          <span>Present: {preview.presentDays}</span>
-          <span>Leave: {preview.leaveDays}</span>
-        </div>
+        {options.includeAttendanceSummary && (
+          <div className="flex gap-3 mt-1.5 text-[9px] text-slate-500">
+            <span>WD: {preview.workingDays}</span>
+            <span>Present: {preview.presentDays}</span>
+            <span>Leave: {preview.leaveDays}</span>
+          </div>
+        )}
       </div>
       <div className="grid grid-cols-2 divide-x divide-slate-100">
         <div className="p-2">
           <p className="font-bold text-green-700 mb-1">Earnings</p>
-          {preview.earnings.slice(0, 4).map((e) => (
-            <div key={e.name} className="flex justify-between gap-1 py-0.5">
-              <span className="text-slate-600 truncate">{e.name}</span>
-              <span className="font-semibold tabular-nums shrink-0">{formatInr(e.amount)}</span>
-            </div>
-          ))}
-          {preview.earnings.length > 4 && (
-            <p className="text-[9px] text-slate-400 mt-0.5">+{preview.earnings.length - 4} more</p>
+          {options.includeEarnings ? (
+            <>
+              {preview.earnings.slice(0, 4).map((e) => (
+                <div key={e.name} className="flex justify-between gap-1 py-0.5">
+                  <span className="text-slate-600 truncate">{e.name}</span>
+                  <span className="font-semibold tabular-nums shrink-0">{formatInr(e.amount)}</span>
+                </div>
+              ))}
+              {preview.earnings.length > 4 && (
+                <p className="text-[9px] text-slate-400 mt-0.5">+{preview.earnings.length - 4} more</p>
+              )}
+            </>
+          ) : (
+            <p className="text-slate-400">Hidden</p>
           )}
         </div>
         <div className="p-2">
           <p className="font-bold text-red-700 mb-1">Deductions</p>
-          {preview.deductions.slice(0, 4).map((d) => (
-            <div key={d.name} className="flex justify-between gap-1 py-0.5">
-              <span className="text-slate-600 truncate">{d.name}</span>
-              <span className="font-semibold tabular-nums shrink-0">{formatInr(d.amount)}</span>
-            </div>
-          ))}
-          {preview.deductions.length === 0 && (
-            <p className="text-slate-400">—</p>
+          {options.includeDeductions ? (
+            <>
+              {preview.deductions.slice(0, 4).map((d) => (
+                <div key={d.name} className="flex justify-between gap-1 py-0.5">
+                  <span className="text-slate-600 truncate">{d.name}</span>
+                  <span className="font-semibold tabular-nums shrink-0">{formatInr(d.amount)}</span>
+                </div>
+              ))}
+              {preview.deductions.length === 0 && (
+                <p className="text-slate-400">—</p>
+              )}
+            </>
+          ) : (
+            <p className="text-slate-400">Hidden</p>
           )}
         </div>
       </div>
@@ -303,6 +378,15 @@ function PayslipPreviewCard({ preview }: { preview: PayslipPreview }) {
         <span className="font-bold text-green-800">Net Pay</span>
         <span className="font-bold text-green-700 tabular-nums">{formatInr(preview.netPay)}</span>
       </div>
+      {options.includeLeaveSummary && preview.leaveSummary && preview.leaveSummary.length > 0 && (
+        <div className="px-3 py-1.5 border-t border-slate-100 bg-white flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] text-slate-500">
+          {preview.leaveSummary.map((leave) => (
+            <span key={leave.code}>
+              {leave.code}: {leave.available}/{leave.entitled}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -509,7 +593,7 @@ export function PayrollManagementView({ onNavigate }: Props) {
         ...payslipOptions,
       });
       setMessage(result.message || 'Payslip generated successfully');
-      void loadDashboard();
+      void loadDashboard({ employeeId: payslipEmployeeId });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to generate payslip');
     } finally {
@@ -532,7 +616,17 @@ export function PayrollManagementView({ onNavigate }: Props) {
   };
 
   const handleDownloadPdf = () => {
-    setMessage('Payslip PDF download queued — check Documents module for the generated file.');
+    if (!preview) {
+      setError('Select an employee first so a payslip preview is available to download.');
+      return;
+    }
+    try {
+      downloadPayslipPdf(preview, payslipOptions);
+      setError('');
+      setMessage(`Payslip PDF downloaded for ${preview.employeeName} — ${preview.payPeriod}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to download payslip PDF');
+    }
   };
 
   if (loading && !data) {
@@ -1028,9 +1122,15 @@ export function PayrollManagementView({ onNavigate }: Props) {
                                     type="button"
                                     className="p-1 text-slate-400 hover:text-blue-600 rounded"
                                     title="View slip"
-                                    onClick={() => handleEmployeeSelect(
-                                      data?.employees.find((e) => e.employeeCode === row.employeeCode)?.id ?? selectedEmployeeId ?? '',
-                                    )}
+                                    onClick={() => {
+                                      const id = row.employeeId
+                                        || data?.employees.find((e) => e.employeeCode === row.employeeCode)?.id
+                                        || payslipGen?.employees?.find((e) => e.label.includes(row.employeeCode))?.id;
+                                      if (id) {
+                                        setPayslipEmployeeId(id);
+                                        handleEmployeeSelect(id);
+                                      }
+                                    }}
                                   >
                                     <Eye size={14} />
                                   </button>
@@ -1099,7 +1199,11 @@ export function PayrollManagementView({ onNavigate }: Props) {
                           <label className="text-[10px] font-medium text-slate-500 uppercase">Pay Run</label>
                           <select
                             value={selectedPayRun || payPeriod}
-                            onChange={(e) => setSelectedPayRun(e.target.value)}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setSelectedPayRun(value);
+                              setPayPeriod(value);
+                            }}
                             className={`${am.select} w-full mt-1 !text-xs`}
                           >
                             {(payslipGen?.payRuns ?? [{ value: payPeriod, label: data?.payPeriodLabel ?? payPeriod }]).map(
@@ -1115,7 +1219,11 @@ export function PayrollManagementView({ onNavigate }: Props) {
                           <label className="text-[10px] font-medium text-slate-500 uppercase">Employee</label>
                           <select
                             value={payslipEmployeeId}
-                            onChange={(e) => setPayslipEmployeeId(e.target.value)}
+                            onChange={(e) => {
+                              const id = e.target.value;
+                              setPayslipEmployeeId(id);
+                              if (id) handleEmployeeSelect(id);
+                            }}
                             className={`${am.select} w-full mt-1 !text-xs`}
                           >
                             <option value="">Select employee…</option>
@@ -1199,7 +1307,7 @@ export function PayrollManagementView({ onNavigate }: Props) {
                     <div>
                       <p className="text-[10px] font-bold text-slate-600 uppercase mb-2">Preview</p>
                       {preview ? (
-                        <PayslipPreviewCard preview={preview} />
+                        <PayslipPreviewCard preview={preview} options={payslipOptions} />
                       ) : (
                         <div className="border border-dashed border-slate-200 rounded-lg p-8 text-center bg-slate-50/50">
                           <IndianRupee size={28} className="mx-auto text-slate-300 mb-2" />

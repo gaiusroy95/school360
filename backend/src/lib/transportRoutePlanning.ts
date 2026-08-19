@@ -73,7 +73,8 @@ function serializePlan(p: {
   versionLabel: string; optimizationNotes: string; weatherAlert: string; trafficAlternate: string;
   simulationResult: unknown; publishedAt: Date | null; pausedAt: Date | null;
   cancelledAt: Date | null; cancelReason: string; archivedAt: Date | null;
-  route?: { routeCode: string; routeName: string } | null;
+  routeId?: string | null;
+  route?: { id: string; routeCode: string; routeName: string } | null;
   vehicle?: { vehicleNumber: string; capacity: number } | null;
   driver?: { name: string } | null;
   backupDriver?: { name: string } | null;
@@ -111,7 +112,9 @@ function serializePlan(p: {
     cancelledAt: p.cancelledAt?.toISOString() ?? null,
     cancelReason: p.cancelReason,
     archivedAt: p.archivedAt?.toISOString() ?? null,
-    routeCode: p.route?.routeCode ?? '', routeName: p.route?.routeName ?? '',
+    routeId: p.routeId ?? p.route?.id ?? '',
+    routeCode: p.route?.routeCode ?? '',
+    routeName: p.route?.routeName ?? '',
     vehicleNumber: p.vehicle?.vehicleNumber ?? '',
     driverName: p.driver?.name ?? '', backupDriverName: p.backupDriver?.name ?? '',
     attendantName: p.attendant?.name ?? '',
@@ -133,7 +136,7 @@ function serializePlan(p: {
 }
 
 const planInclude = {
-  route: { select: { routeCode: true, routeName: true } },
+  route: { select: { id: true, routeCode: true, routeName: true } },
   vehicle: { select: { vehicleNumber: true, capacity: true } },
   driver: { select: { name: true } },
   backupDriver: { select: { name: true } },
@@ -575,6 +578,143 @@ export async function cloneRoutePlan(institutionId: string, planId: string) {
   }
   await createApprovalChain(institutionId, clone.id);
   return clone;
+}
+
+async function refreshMasterRouteStopCount(routeId: string) {
+  const count = await prisma.transportRouteStop.count({ where: { routeId } });
+  await prisma.transportRoute.update({ where: { id: routeId }, data: { stopCount: count } });
+}
+
+async function syncAddMasterStop(
+  institutionId: string, routeId: string,
+  stop: { stopName: string; sequenceOrder: number; stopType: string; pickupTime: string; dropTime: string; latitude: number | null; longitude: number | null },
+) {
+  await prisma.transportRouteStop.create({
+    data: {
+      institutionId, routeId,
+      stopName: stop.stopName, sequenceOrder: stop.sequenceOrder, stopType: stop.stopType,
+      latitude: stop.latitude ?? 26.9124, longitude: stop.longitude ?? 75.7873,
+      estimatedArrival: stop.pickupTime || stop.dropTime || '',
+    },
+  });
+  await refreshMasterRouteStopCount(routeId);
+}
+
+async function syncRemoveMasterStop(routeId: string, stopName: string, sequenceOrder: number) {
+  const masterStop = await prisma.transportRouteStop.findFirst({
+    where: { routeId, stopName, sequenceOrder },
+  });
+  if (masterStop) {
+    await prisma.transportRouteStop.delete({ where: { id: masterStop.id } });
+    await refreshMasterRouteStopCount(routeId);
+  }
+}
+
+async function syncUpdateMasterStop(
+  routeId: string, prevName: string, prevSeq: number,
+  stop: { stopName: string; sequenceOrder: number; stopType: string; pickupTime: string; dropTime: string },
+) {
+  const masterStop = await prisma.transportRouteStop.findFirst({
+    where: { routeId, stopName: prevName, sequenceOrder: prevSeq },
+  });
+  if (masterStop) {
+    await prisma.transportRouteStop.update({
+      where: { id: masterStop.id },
+      data: {
+        stopName: stop.stopName, sequenceOrder: stop.sequenceOrder, stopType: stop.stopType,
+        estimatedArrival: stop.pickupTime || stop.dropTime || masterStop.estimatedArrival,
+      },
+    });
+  }
+}
+
+export async function addPlanStop(institutionId: string, planId: string, body: Record<string, unknown>) {
+  const plan = await prisma.transportRoutePlan.findFirst({ where: { id: planId, institutionId } });
+  if (!plan) throw new Error('Plan not found');
+
+  const maxSeq = await prisma.transportRoutePlanStop.aggregate({
+    where: { planId }, _max: { sequenceOrder: true },
+  });
+  const sequenceOrder = body.sequenceOrder !== undefined
+    ? Number(body.sequenceOrder)
+    : (maxSeq._max.sequenceOrder ?? 0) + 1;
+
+  const stop = await prisma.transportRoutePlanStop.create({
+    data: {
+      institutionId, planId,
+      stopName: String(body.stopName),
+      sequenceOrder,
+      stopType: String(body.stopType ?? 'PICKUP'),
+      pickupTime: String(body.pickupTime ?? ''),
+      dropTime: String(body.dropTime ?? ''),
+      waitMinutes: Number(body.waitMinutes ?? 2),
+      bufferMinutes: Number(body.bufferMinutes ?? 3),
+      latitude: body.latitude !== undefined ? Number(body.latitude) : null,
+      longitude: body.longitude !== undefined ? Number(body.longitude) : null,
+      studentCount: Number(body.studentCount ?? 0),
+      geoValidated: Boolean(body.geoValidated),
+    },
+  });
+
+  if (plan.routeId) {
+    await syncAddMasterStop(institutionId, plan.routeId, stop);
+  }
+  return stop;
+}
+
+export async function updatePlanStop(institutionId: string, stopId: string, body: Record<string, unknown>) {
+  const existing = await prisma.transportRoutePlanStop.findFirst({
+    where: { id: stopId, institutionId },
+    include: { plan: { select: { routeId: true } } },
+  });
+  if (!existing) throw new Error('Plan stop not found');
+
+  const stop = await prisma.transportRoutePlanStop.update({
+    where: { id: stopId },
+    data: {
+      stopName: body.stopName !== undefined ? String(body.stopName) : undefined,
+      sequenceOrder: body.sequenceOrder !== undefined ? Number(body.sequenceOrder) : undefined,
+      stopType: body.stopType !== undefined ? String(body.stopType) : undefined,
+      pickupTime: body.pickupTime !== undefined ? String(body.pickupTime) : undefined,
+      dropTime: body.dropTime !== undefined ? String(body.dropTime) : undefined,
+      waitMinutes: body.waitMinutes !== undefined ? Number(body.waitMinutes) : undefined,
+      bufferMinutes: body.bufferMinutes !== undefined ? Number(body.bufferMinutes) : undefined,
+      latitude: body.latitude !== undefined ? Number(body.latitude) : undefined,
+      longitude: body.longitude !== undefined ? Number(body.longitude) : undefined,
+      studentCount: body.studentCount !== undefined ? Number(body.studentCount) : undefined,
+      geoValidated: body.geoValidated !== undefined ? Boolean(body.geoValidated) : undefined,
+    },
+  });
+
+  if (existing.plan.routeId) {
+    await syncUpdateMasterStop(existing.plan.routeId, existing.stopName, existing.sequenceOrder, stop);
+  }
+  return stop;
+}
+
+export async function deletePlanStop(institutionId: string, stopId: string) {
+  const existing = await prisma.transportRoutePlanStop.findFirst({
+    where: { id: stopId, institutionId },
+    include: { plan: { select: { routeId: true } } },
+  });
+  if (!existing) throw new Error('Plan stop not found');
+
+  await prisma.transportRoutePlanStop.delete({ where: { id: stopId } });
+
+  if (existing.plan.routeId) {
+    await syncRemoveMasterStop(existing.plan.routeId, existing.stopName, existing.sequenceOrder);
+  }
+}
+
+export async function deleteRoutePlan(institutionId: string, planId: string) {
+  const plan = await prisma.transportRoutePlan.findFirst({ where: { id: planId, institutionId } });
+  if (!plan) throw new Error('Plan not found');
+
+  if (plan.status === 'DRAFT' || plan.status === 'PENDING') {
+    await prisma.transportRoutePlan.delete({ where: { id: planId } });
+    return;
+  }
+  await archiveRoutePlan(institutionId, planId);
 }
 
 export async function seedTransportRoutePlanning(institutionId: string) {

@@ -9,6 +9,7 @@ import {
 import { seedHrLeaveManagementDemo } from './hrLeaveManagement.js';
 import { seedHrAttendanceLeaveDemo } from './hrAttendanceLeave.js';
 import { getInstitutionFilterMeta } from './students.js';
+import { loadFeeCollectionContext } from './feeConfig.js';
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -46,6 +47,38 @@ function parsePayPeriod(payPeriod: string) {
   const m = payPeriod.match(/^(\d{4})-(\d{2})$/);
   if (!m) throw new Error('Invalid pay period');
   return { payYear: Number(m[1]), payMonth: Number(m[2]) };
+}
+
+export type SchoolPayslipProfile = {
+  schoolName: string;
+  affiliationNo: string;
+  registrationNo: string;
+  address: string;
+  phone: string;
+  email: string;
+  website: string;
+  logoUrl: string;
+};
+
+async function loadSchoolPayslipProfile(institutionId: string): Promise<SchoolPayslipProfile> {
+  const ctx = await loadFeeCollectionContext(institutionId);
+  const p = ctx.institutionProfile;
+  const address = [
+    p.addressLine1,
+    p.addressLine2,
+    [p.city, p.state, p.pincode].filter(Boolean).join(', '),
+    p.country,
+  ].filter(Boolean).join(', ');
+  return {
+    schoolName: p.name?.trim() || 'School',
+    affiliationNo: p.affiliationNo || '',
+    registrationNo: p.registrationNo || '',
+    address,
+    phone: p.phone || '',
+    email: p.email || '',
+    website: p.website || '',
+    logoUrl: p.logoUrl || '',
+  };
 }
 
 export async function getHrPayrollEmployeeMaster(
@@ -183,6 +216,19 @@ export async function getHrPayrollEmployeeMaster(
           workingDays: slip.workingDays,
           presentDays: slip.presentDays,
           leaveDays: slip.leaveDays,
+          basicSalary: slip.basicSalary,
+          hra: slip.hra,
+          da: slip.da,
+          specialAllowance: slip.specialAllowance,
+          conveyanceAllowance: slip.conveyanceAllowance,
+          otherAllowances: slip.otherAllowances,
+          grossEarnings: slip.grossEarnings,
+          epfEmployee: slip.epfEmployee,
+          esicEmployee: slip.esicEmployee,
+          professionalTax: slip.professionalTax,
+          tds: slip.tds,
+          otherDeductions: slip.otherDeductions,
+          totalDeductions: slip.totalDeductions,
         }
       : null,
   };
@@ -209,7 +255,7 @@ export async function getHrPayrollDashboard(
   const page = Math.max(1, opts.page ?? 1);
   const pageSize = Math.min(50, Math.max(1, opts.pageSize ?? 10));
 
-  const [allEmployees, summary, slips, holidays, draftCount] = await Promise.all([
+  const [allEmployees, summary, slips, holidays, draftCount, school] = await Promise.all([
     listPayrollEmployees(institutionId, { status: FeeMasterStatus.ACTIVE, q: opts.q }),
     getPayrollSummary(institutionId, payPeriod),
     listPayrollSlips(institutionId, { payPeriod }),
@@ -224,6 +270,16 @@ export async function getHrPayrollDashboard(
     prisma.payrollSlip.count({
       where: { institutionId, payPeriod, status: PayrollSlipStatus.DRAFT },
     }),
+    loadSchoolPayslipProfile(institutionId).catch((): SchoolPayslipProfile => ({
+      schoolName: 'School',
+      affiliationNo: '',
+      registrationNo: '',
+      address: '',
+      phone: '',
+      email: '',
+      website: '',
+      logoUrl: '',
+    })),
   ]);
 
   const total = allEmployees.length;
@@ -242,6 +298,7 @@ export async function getHrPayrollDashboard(
 
   const payRunRows = slips.map((s) => ({
     id: s.id,
+    employeeId: s.employeeId,
     employeeCode: s.employeeCode,
     employeeName: s.employeeName,
     netPay: s.netPay,
@@ -254,9 +311,9 @@ export async function getHrPayrollDashboard(
   }));
 
   const payslipPreview = selectedMaster?.currentSlip
-    ? buildPayslipPreview(selectedMaster, payPeriod, payYear, payMonth)
+    ? buildPayslipPreview(selectedMaster, payPeriod, payYear, payMonth, school)
     : selectedMaster
-      ? buildPayslipPreviewFromStructure(selectedMaster, payPeriod, payYear, payMonth)
+      ? buildPayslipPreviewFromStructure(selectedMaster, payPeriod, payYear, payMonth, school)
       : null;
 
   return {
@@ -305,6 +362,7 @@ export async function getHrPayrollDashboard(
         totalNet: payRunRows.reduce((s, r) => s + r.netPay, 0),
       },
     },
+    school,
     payslipGeneration: {
       payPeriod,
       employees: allEmployees.map((e) => ({ id: e.id, label: `${e.fullName} (${e.employeeCode})` })),
@@ -340,28 +398,78 @@ export async function getHrPayrollDashboard(
   };
 }
 
-function buildPayslipPreview(
+function slipAmountLines(slip: NonNullable<Awaited<ReturnType<typeof getHrPayrollEmployeeMaster>>['currentSlip']>) {
+  const earnings = [
+    { name: 'Basic Salary', amount: slip.basicSalary },
+    { name: 'HRA', amount: slip.hra },
+    { name: 'DA', amount: slip.da },
+    { name: 'Special Allowance', amount: slip.specialAllowance },
+    { name: 'Conveyance', amount: slip.conveyanceAllowance },
+    { name: 'Other Allowances', amount: slip.otherAllowances },
+  ].filter((row) => row.amount > 0);
+  const deductions = [
+    { name: 'PF (Employee)', amount: slip.epfEmployee },
+    { name: 'ESI (Employee)', amount: slip.esicEmployee },
+    { name: 'Professional Tax', amount: slip.professionalTax },
+    { name: 'TDS', amount: slip.tds },
+    { name: 'Other Deductions', amount: slip.otherDeductions },
+  ].filter((row) => row.amount > 0);
+  return {
+    earnings,
+    deductions,
+    grossEarnings: slip.grossEarnings,
+    totalDeductions: slip.totalDeductions,
+    netPay: slip.netPay,
+  };
+}
+
+function basePayslipPreview(
   master: Awaited<ReturnType<typeof getHrPayrollEmployeeMaster>>,
-  payPeriod: string,
   payYear: number,
   payMonth: number,
+  school: SchoolPayslipProfile,
 ) {
-  const slip = master.currentSlip!;
   return {
-    schoolName: 'Sunrise Public School',
+    schoolName: school.schoolName,
+    schoolAddress: school.address,
+    schoolPhone: school.phone,
+    schoolEmail: school.email,
+    affiliationNo: school.affiliationNo,
+    registrationNo: school.registrationNo,
+    logoUrl: school.logoUrl,
     payPeriod: `${MONTH_NAMES[payMonth - 1]} ${payYear}`,
     employeeName: master.employee.fullName,
     employeeCode: master.employee.employeeCode,
     department: master.employee.department,
     designation: master.employee.designation,
+    panNumber: master.employee.panNumber,
+    bankAccount: master.employee.bankAccount,
+    uanNumber: master.employee.uanNumber,
+    pfNumber: master.employee.pfNumber,
+    leaveSummary: master.leaveSummary,
+  };
+}
+
+function buildPayslipPreview(
+  master: Awaited<ReturnType<typeof getHrPayrollEmployeeMaster>>,
+  _payPeriod: string,
+  payYear: number,
+  payMonth: number,
+  school: SchoolPayslipProfile,
+) {
+  const slip = master.currentSlip!;
+  const amounts = slipAmountLines(slip);
+  return {
+    ...basePayslipPreview(master, payYear, payMonth, school),
+    slipNumber: slip.slipNumber,
     workingDays: slip.workingDays,
     presentDays: slip.presentDays,
     leaveDays: slip.leaveDays,
-    earnings: master.salaryStructure.earnings,
-    deductions: master.salaryStructure.deductions,
-    grossEarnings: master.salaryStructure.totalEarnings,
-    totalDeductions: master.salaryStructure.totalDeductions,
-    netPay: slip.netPay,
+    earnings: amounts.earnings.length ? amounts.earnings : master.salaryStructure.earnings,
+    deductions: amounts.deductions.length ? amounts.deductions : master.salaryStructure.deductions,
+    grossEarnings: amounts.grossEarnings || master.salaryStructure.totalEarnings,
+    totalDeductions: amounts.totalDeductions || master.salaryStructure.totalDeductions,
+    netPay: amounts.netPay || slip.netPay,
     status: slip.status,
   };
 }
@@ -371,14 +479,11 @@ function buildPayslipPreviewFromStructure(
   _payPeriod: string,
   payYear: number,
   payMonth: number,
+  school: SchoolPayslipProfile,
 ) {
   return {
-    schoolName: 'Sunrise Public School',
-    payPeriod: `${MONTH_NAMES[payMonth - 1]} ${payYear}`,
-    employeeName: master.employee.fullName,
-    employeeCode: master.employee.employeeCode,
-    department: master.employee.department,
-    designation: master.employee.designation,
+    ...basePayslipPreview(master, payYear, payMonth, school),
+    slipNumber: '',
     workingDays: 30,
     presentDays: 30,
     leaveDays: 0,

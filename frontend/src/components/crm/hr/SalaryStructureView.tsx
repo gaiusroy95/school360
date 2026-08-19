@@ -433,19 +433,20 @@ export function SalaryStructureView() {
         }
       />
 
+      <div className={`${am.content} min-h-0`}>
       {error && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{error}</div>
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{error}</div>
       )}
       {message && (
-        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
           {message}
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-4 items-start pb-8">
         {/* Template list */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-3 border-b border-slate-100">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden xl:sticky xl:top-0 flex flex-col xl:max-h-[calc(100vh-180px)]">
+          <div className="p-3 border-b border-slate-100 shrink-0">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
               <input
@@ -456,7 +457,7 @@ export function SalaryStructureView() {
               />
             </div>
           </div>
-          <div className="max-h-[calc(100vh-220px)] overflow-y-auto divide-y divide-slate-50">
+          <div className="overflow-y-auto divide-y divide-slate-50 min-h-0 flex-1">
             {filteredTemplates.map((t) => (
               <button
                 key={t.id}
@@ -877,6 +878,7 @@ export function SalaryStructureView() {
             )}
           </div>
         </div>
+      </div>
       </div>
 
       {/* Preview modal */}

@@ -96,7 +96,7 @@ export async function getRecruitmentDashboard(institutionId: string, academicYea
 
   const [
     manpowerPlans, requisitions, postings, candidates, applications,
-    interviews, offers, bgvChecks, references, onboardings, settings,
+    interviews, offers, bgvChecks, references, onboardings, settings, employees,
   ] = await Promise.all([
     prisma.hrManpowerPlan.findMany({ where: { institutionId, academicYear }, orderBy: { department: 'asc' } }),
     prisma.hrJobRequisition.findMany({ where: { institutionId, academicYear }, orderBy: { createdAt: 'desc' } }),
@@ -126,12 +126,20 @@ export async function getRecruitmentDashboard(institutionId: string, academicYea
       orderBy: { createdAt: 'desc' },
     }),
     prisma.hrBackgroundVerification.findMany({ where: { institutionId } }),
-    prisma.hrReferenceCheck.findMany({ where: { institutionId } }),
+    prisma.hrReferenceCheck.findMany({
+      where: { institutionId },
+      include: { application: { include: { candidate: { select: { fullName: true } } } } },
+    }),
     prisma.hrRecruitmentOnboarding.findMany({
       where: { institutionId },
       include: { application: { include: { candidate: { select: { fullName: true } } } } },
     }),
     prisma.hrRecruitmentSettings.findUnique({ where: { institutionId } }),
+    prisma.payrollEmployee.findMany({
+      where: { institutionId, status: 'ACTIVE' },
+      select: { id: true, fullName: true, employeeCode: true, department: true, designation: true, email: true },
+      orderBy: { fullName: 'asc' },
+    }),
   ]);
 
   const openVacancies = postings.filter((p) => p.status === 'PUBLISHED').length;
@@ -200,8 +208,10 @@ export async function getRecruitmentDashboard(institutionId: string, academicYea
     applications: applications.map((a) => ({
       id: a.id, applicationNumber: a.applicationNumber,
       candidateName: a.candidate.fullName, candidateId: a.candidateId,
+      candidateEmail: a.candidate.email, candidateMobile: a.candidate.mobile,
       jobTitle: a.posting.jobTitle, department: a.posting.department,
-      pipelineStage: a.pipelineStage, status: a.status,
+      postingId: a.postingId, pipelineStage: a.pipelineStage, status: a.status,
+      reviewStatus: a.reviewStatus,
       resumeMatchPct: a.resumeMatchPct, skillMatchPct: a.skillMatchPct,
       experienceMatchPct: a.experienceMatchPct, shortlistStatus: a.shortlistStatus,
       appliedAt: a.appliedAt.toISOString(),
@@ -209,36 +219,53 @@ export async function getRecruitmentDashboard(institutionId: string, academicYea
     interviews: interviews.map((i) => ({
       id: i.id, applicationId: i.applicationId,
       candidateName: i.application.candidate.fullName,
-      interviewType: i.interviewType, interviewerName: i.interviewerName,
+      interviewType: i.interviewType, interviewRoundName: i.interviewRoundName,
+      interviewerName: i.interviewerName,
+      interviewerDepartment: i.interviewerDepartment,
+      interviewerDesignation: i.interviewerDesignation,
       scheduledAt: i.scheduledAt?.toISOString() ?? '', rating: i.rating,
       recommendation: i.recommendation, status: i.status,
+      comments: i.comments, strengths: i.strengths, weaknesses: i.weaknesses,
       scorecard: parseJson(i.scorecard, {}),
     })),
     offers: offers.map((o) => ({
       id: o.id, applicationId: o.applicationId,
       candidateName: o.application.candidate.fullName,
+      candidateEmail: o.application.candidate.email,
       proposedCtc: o.proposedCtc, grade: o.grade, payBand: o.payBand,
       joiningBonus: o.joiningBonus, probationSalary: o.probationSalary,
+      variablePay: o.variablePay,
+      salaryComponents: parseJson(o.salaryComponents, {}),
+      emailSubject: o.emailSubject, emailBody: o.emailBody,
+      ccEmails: parseJson<string[]>(o.ccEmails, []),
+      emailSentLog: parseJson(o.emailSentLog, []),
       workflowStage: o.workflowStage, status: o.status,
       acceptedAt: o.acceptedAt?.toISOString() ?? '',
+      offerLetterSentAt: o.offerLetterSentAt?.toISOString() ?? '',
     })),
     backgroundVerifications: bgvChecks.map((b) => ({
       id: b.id, applicationId: b.applicationId, checkType: b.checkType,
       status: b.status, remarks: b.remarks, completedAt: b.completedAt?.toISOString() ?? '',
     })),
     referenceChecks: references.map((r) => ({
-      id: r.id, applicationId: r.applicationId, refereeName: r.refereeName,
+      id: r.id, applicationId: r.applicationId,
+      candidateName: r.application.candidate.fullName,
+      refereeName: r.refereeName,
       organization: r.organization, designation: r.designation,
       feedback: r.feedback, recommendation: r.recommendation,
+      feedbackType: r.feedbackType, approvalStatus: r.approvalStatus,
+      contactNumber: r.contactNumber, relationship: r.relationship,
     })),
     onboardings: onboardings.map((o) => ({
       id: o.id, applicationId: o.applicationId,
       candidateName: o.application.candidate.fullName,
       employeeCode: o.employeeCode, joiningDate: formatDate(o.joiningDate),
       probationStart: formatDate(o.probationStart), probationEnd: formatDate(o.probationEnd),
+      extendedProbationEnd: formatDate(o.extendedProbationEnd),
       probationStatus: o.probationStatus, confirmationStatus: o.confirmationStatus,
       mentorName: o.mentorName,
       checklist: parseJson<unknown[]>(o.checklist, []),
+      probationFeedback: parseJson<unknown[]>(o.probationFeedback, []),
     })),
     settings: {
       approvalMatrix: parseJson(settings?.approvalMatrix, []),
@@ -258,6 +285,7 @@ export async function getRecruitmentDashboard(institutionId: string, academicYea
       { role: 'Principal', permissions: 'Final hiring approval' },
       { role: 'Finance', permissions: 'Budget and salary approval' },
     ],
+    employees,
   };
 }
 
@@ -322,7 +350,8 @@ export async function advanceRequisitionWorkflow(
   if (!row) throw new Error('Requisition not found');
 
   const stages = [...REQUISITION_WORKFLOW];
-  const idx = stages.indexOf(row.workflowStage as typeof stages[number]);
+  let idx = stages.indexOf(row.workflowStage as typeof stages[number]);
+  if (idx < 0) idx = Math.max(0, stages.indexOf('DEPARTMENT_HEAD'));
   const history = parseJson<Array<{ stage: string; action: string; at: string }>>(row.approvalHistory, []);
   history.push({ stage: row.workflowStage, action, at: new Date().toISOString() });
 
@@ -439,7 +468,8 @@ export async function createApplication(institutionId: string, body: { candidate
       postingId: body.postingId,
       requisitionId: posting.requisitionId,
       applicationNumber: appNum,
-      pipelineStage: 'APPLICATION_RECEIVED',
+      pipelineStage: 'RECEIVE_APPLICATIONS',
+      reviewStatus: 'PENDING',
       resumeMatchPct: resumeMatch,
       skillMatchPct: skillMatch,
       experienceMatchPct: expMatch,
@@ -657,6 +687,479 @@ export async function updateRecruitmentSettings(institutionId: string, body: Rec
   if (body.screeningFilters !== undefined) data.screeningFilters = body.screeningFilters as Prisma.InputJsonValue;
   if (body.automationRules !== undefined) data.automationRules = body.automationRules as Prisma.InputJsonValue;
   return prisma.hrRecruitmentSettings.update({ where: { id: existing.id }, data });
+}
+
+function defaultSalaryComponents(ctc: number) {
+  const basic = Math.round(ctc * 0.4 / 12);
+  const hra = Math.round(basic * 0.4);
+  const special = Math.round(ctc / 12 - basic - hra);
+  return {
+    basic, hra, specialAllowance: special,
+    pf: Math.round(basic * 0.12),
+    grossMonthly: Math.round(ctc / 12),
+    annualCtc: ctc,
+  };
+}
+
+function defaultSelectionLetter(candidateName: string, position: string, ctc: number, components: Record<string, number>) {
+  return {
+    subject: `Selection Letter — ${position}`,
+    body: `Dear ${candidateName},\n\nWe are pleased to inform you that you have been selected for the position of ${position}.\n\nProposed Annual CTC: ₹${ctc.toLocaleString('en-IN')}\nBasic: ₹${components.basic}/month | HRA: ₹${components.hra}/month | Special: ₹${components.specialAllowance}/month\n\nPlease submit the following documents within 7 days:\n1. Educational certificates\n2. Experience letters\n3. Aadhaar & PAN\n4. Bank account details\n5. Passport-size photographs\n\nWe look forward to welcoming you to our team.\n\nRegards,\nHR Department`,
+  };
+}
+
+function appendEmailLog(existing: unknown, entry: Record<string, unknown>) {
+  const log = parseJson<unknown[]>(existing, []);
+  return [...log, { ...entry, sentAt: new Date().toISOString() }];
+}
+
+export async function updateCandidate(institutionId: string, id: string, body: Record<string, unknown>) {
+  const row = await prisma.hrCandidate.findFirst({ where: { id, institutionId } });
+  if (!row) throw Object.assign(new Error('Candidate not found'), { status: 404 });
+  return prisma.hrCandidate.update({
+    where: { id },
+    data: {
+      fullName: body.fullName !== undefined ? String(body.fullName) : undefined,
+      email: body.email !== undefined ? String(body.email) : undefined,
+      mobile: body.mobile !== undefined ? String(body.mobile) : undefined,
+      qualification: body.qualification !== undefined ? String(body.qualification) : undefined,
+      experienceYears: body.experienceYears !== undefined ? Number(body.experienceYears) : undefined,
+      currentEmployer: body.currentEmployer !== undefined ? String(body.currentEmployer) : undefined,
+      expectedSalary: body.expectedSalary !== undefined ? Number(body.expectedSalary) : undefined,
+      noticePeriod: body.noticePeriod !== undefined ? String(body.noticePeriod) : undefined,
+      subjectExpertise: body.subjectExpertise !== undefined ? String(body.subjectExpertise) : undefined,
+      source: body.source !== undefined ? String(body.source) : undefined,
+    },
+  });
+}
+
+export async function bulkUploadCandidates(
+  institutionId: string,
+  postingId: string,
+  rows: Array<Record<string, unknown>>,
+) {
+  const posting = await prisma.hrJobPosting.findFirst({ where: { id: postingId, institutionId } });
+  if (!posting) throw Object.assign(new Error('Job posting not found'), { status: 404 });
+
+  let created = 0;
+  let updated = 0;
+
+  for (const row of rows) {
+    const fullName = String(row.fullName ?? row.name ?? '').trim();
+    if (!fullName) continue;
+
+    const email = String(row.email ?? '').trim();
+    let candidate = email
+      ? await prisma.hrCandidate.findFirst({ where: { institutionId, email } })
+      : null;
+
+    if (candidate) {
+      candidate = await prisma.hrCandidate.update({
+        where: { id: candidate.id },
+        data: {
+          fullName,
+          mobile: String(row.mobile ?? candidate.mobile),
+          qualification: String(row.qualification ?? candidate.qualification),
+          experienceYears: Number(row.experienceYears ?? row.experience ?? candidate.experienceYears),
+          currentEmployer: String(row.currentEmployer ?? candidate.currentEmployer),
+          expectedSalary: Number(row.expectedSalary ?? candidate.expectedSalary),
+          noticePeriod: String(row.noticePeriod ?? candidate.noticePeriod),
+          subjectExpertise: String(row.subjectExpertise ?? row.subject ?? candidate.subjectExpertise),
+          source: String(row.source ?? 'Excel Upload'),
+        },
+      });
+      updated++;
+    } else {
+      const code = await nextCandidateCode(institutionId);
+      candidate = await prisma.hrCandidate.create({
+        data: {
+          institutionId,
+          candidateCode: code,
+          fullName,
+          email,
+          mobile: String(row.mobile ?? ''),
+          qualification: String(row.qualification ?? ''),
+          experienceYears: Number(row.experienceYears ?? row.experience ?? 0),
+          currentEmployer: String(row.currentEmployer ?? ''),
+          expectedSalary: Number(row.expectedSalary ?? 0),
+          noticePeriod: String(row.noticePeriod ?? ''),
+          subjectExpertise: String(row.subjectExpertise ?? row.subject ?? ''),
+          source: String(row.source ?? 'Excel Upload'),
+        },
+      });
+      created++;
+    }
+
+    const appExists = await prisma.hrCandidateApplication.findFirst({
+      where: { candidateId: candidate.id, postingId },
+    });
+    if (!appExists) {
+      const appNum = await nextApplicationNumber(institutionId);
+      await prisma.hrCandidateApplication.create({
+        data: {
+          institutionId,
+          candidateId: candidate.id,
+          postingId,
+          requisitionId: posting.requisitionId,
+          applicationNumber: appNum,
+          pipelineStage: 'RESUME_SCREENING',
+          reviewStatus: 'PENDING',
+          resumeMatchPct: Number(row.resumeMatchPct ?? 70),
+          skillMatchPct: Number(row.skillMatchPct ?? 65),
+          experienceMatchPct: Number(row.experienceMatchPct ?? 60),
+        },
+      });
+      await prisma.hrJobPosting.update({
+        where: { id: postingId },
+        data: { applicationCount: { increment: 1 } },
+      });
+    }
+  }
+
+  return { created, updated, total: rows.length };
+}
+
+export async function reviewCandidateApplication(
+  institutionId: string,
+  applicationId: string,
+  action: 'approve' | 'reject',
+) {
+  const app = await prisma.hrCandidateApplication.findFirst({ where: { id: applicationId, institutionId } });
+  if (!app) throw Object.assign(new Error('Application not found'), { status: 404 });
+
+  return prisma.hrCandidateApplication.update({
+    where: { id: applicationId },
+    data: {
+      reviewStatus: action === 'approve' ? 'APPROVED' : 'REJECTED',
+      status: action === 'reject' ? 'REJECTED' : app.status,
+      shortlistStatus: action === 'approve' ? 'APPROVED' : 'REJECTED',
+      pipelineStage: action === 'approve' ? 'SHORTLISTING' : app.pipelineStage,
+    },
+  });
+}
+
+export async function selectCandidateForInterview(institutionId: string, applicationId: string) {
+  const app = await prisma.hrCandidateApplication.findFirst({ where: { id: applicationId, institutionId } });
+  if (!app) throw Object.assign(new Error('Application not found'), { status: 404 });
+  if (app.reviewStatus !== 'APPROVED') {
+    throw Object.assign(new Error('Candidate must be approved first'), { status: 400 });
+  }
+
+  return prisma.hrCandidateApplication.update({
+    where: { id: applicationId },
+    data: {
+      shortlistStatus: 'SELECTED_FOR_INTERVIEW',
+      pipelineStage: 'HR_INTERVIEW',
+    },
+  });
+}
+
+export async function assignInterview(
+  institutionId: string,
+  body: Record<string, unknown>,
+) {
+  const applicationId = String(body.applicationId);
+  const app = await prisma.hrCandidateApplication.findFirst({ where: { id: applicationId, institutionId } });
+  if (!app) throw Object.assign(new Error('Application not found'), { status: 404 });
+
+  return prisma.hrInterviewFeedback.create({
+    data: {
+      institutionId,
+      applicationId,
+      interviewType: String(body.interviewType ?? 'HR Interview'),
+      interviewRoundName: String(body.interviewRoundName ?? body.interviewName ?? 'Round 1'),
+      interviewerName: String(body.interviewerName ?? ''),
+      interviewerDepartment: String(body.interviewerDepartment ?? ''),
+      interviewerDesignation: String(body.interviewerDesignation ?? ''),
+      scheduledAt: body.scheduledAt ? new Date(String(body.scheduledAt)) : new Date(),
+      status: 'SCHEDULED',
+      recommendation: 'PENDING',
+    },
+  });
+}
+
+export async function updateInterviewFeedback(
+  institutionId: string,
+  id: string,
+  body: Record<string, unknown>,
+) {
+  const existing = await prisma.hrInterviewFeedback.findFirst({ where: { id, institutionId } });
+  if (!existing) throw Object.assign(new Error('Interview not found'), { status: 404 });
+
+  const data: Prisma.HrInterviewFeedbackUpdateInput = {};
+  if (body.comments !== undefined) data.comments = String(body.comments);
+  if (body.strengths !== undefined) data.strengths = String(body.strengths);
+  if (body.weaknesses !== undefined) data.weaknesses = String(body.weaknesses);
+  if (body.recommendation !== undefined) data.recommendation = String(body.recommendation);
+  if (body.rating !== undefined) {
+    data.rating = Number(body.rating);
+    data.status = 'COMPLETED';
+  }
+
+  return prisma.hrInterviewFeedback.update({ where: { id }, data });
+}
+
+export async function passInterviewAndCreateOffer(institutionId: string, applicationId: string) {
+  const app = await prisma.hrCandidateApplication.findFirst({
+    where: { id: applicationId, institutionId },
+    include: { candidate: true, requisition: true, posting: true },
+  });
+  if (!app) throw Object.assign(new Error('Application not found'), { status: 404 });
+
+  await prisma.hrInterviewFeedback.updateMany({
+    where: { applicationId, institutionId, status: 'COMPLETED' },
+    data: { recommendation: 'HIRE' },
+  });
+
+  const ctc = app.candidate.expectedSalary > 0 ? app.candidate.expectedSalary * 12 : app.requisition.salaryMax * 12;
+  const components = defaultSalaryComponents(ctc);
+  const letter = defaultSelectionLetter(app.candidate.fullName, app.posting.jobTitle, ctc, components);
+
+  const existingOffer = await prisma.hrRecruitmentOffer.findFirst({ where: { applicationId } });
+  const offer = existingOffer ?? await prisma.hrRecruitmentOffer.create({
+    data: {
+      institutionId,
+      applicationId,
+      proposedCtc: ctc,
+      grade: app.requisition.grade || 'PG-05',
+      payBand: app.requisition.designation,
+      probationSalary: Math.round(ctc / 12 * 0.85),
+      salaryComponents: components as Prisma.InputJsonValue,
+      emailSubject: letter.subject,
+      emailBody: letter.body,
+      ccEmails: ['hr@school.edu', 'finance@school.edu'] as Prisma.InputJsonValue,
+      workflowStage: 'HR',
+      status: 'DRAFT',
+    },
+  });
+
+  await prisma.hrCandidateApplication.update({
+    where: { id: applicationId },
+    data: { pipelineStage: 'OFFER_APPROVAL', shortlistStatus: 'INTERVIEW_PASSED' },
+  });
+
+  return offer;
+}
+
+export async function generateSelectionLetterEmail(institutionId: string, offerId: string) {
+  const offer = await prisma.hrRecruitmentOffer.findFirst({
+    where: { id: offerId, institutionId },
+    include: { application: { include: { candidate: true, posting: true } } },
+  });
+  if (!offer) throw Object.assign(new Error('Offer not found'), { status: 404 });
+
+  const candidateEmail = offer.application.candidate.email;
+  const logEntry = {
+    type: 'SELECTION_LETTER',
+    to: candidateEmail,
+    cc: parseJson<string[]>(offer.ccEmails, []),
+    subject: offer.emailSubject || `Selection Letter — ${offer.application.posting.jobTitle}`,
+  };
+
+  return prisma.hrRecruitmentOffer.update({
+    where: { id: offerId },
+    data: {
+      status: 'SENT',
+      offerLetterSentAt: new Date(),
+      emailSentLog: appendEmailLog(offer.emailSentLog, logEntry) as Prisma.InputJsonValue,
+    },
+  });
+}
+
+export async function updateRecruitmentOffer(institutionId: string, id: string, body: Record<string, unknown>) {
+  const existing = await prisma.hrRecruitmentOffer.findFirst({ where: { id, institutionId } });
+  if (!existing) throw Object.assign(new Error('Offer not found'), { status: 404 });
+
+  const data: Prisma.HrRecruitmentOfferUpdateInput = {};
+  if (body.proposedCtc !== undefined) data.proposedCtc = Number(body.proposedCtc);
+  if (body.grade !== undefined) data.grade = String(body.grade);
+  if (body.payBand !== undefined) data.payBand = String(body.payBand);
+  if (body.joiningBonus !== undefined) data.joiningBonus = Number(body.joiningBonus);
+  if (body.probationSalary !== undefined) data.probationSalary = Number(body.probationSalary);
+  if (body.variablePay !== undefined) data.variablePay = Number(body.variablePay);
+  if (body.salaryComponents !== undefined) data.salaryComponents = body.salaryComponents as Prisma.InputJsonValue;
+  if (body.emailSubject !== undefined) data.emailSubject = String(body.emailSubject);
+  if (body.emailBody !== undefined) data.emailBody = String(body.emailBody);
+  if (body.ccEmails !== undefined) data.ccEmails = body.ccEmails as Prisma.InputJsonValue;
+
+  return prisma.hrRecruitmentOffer.update({ where: { id }, data });
+}
+
+export async function sendOfferEmail(institutionId: string, offerId: string, body: Record<string, unknown> = {}) {
+  const offer = await prisma.hrRecruitmentOffer.findFirst({
+    where: { id: offerId, institutionId },
+    include: { application: { include: { candidate: true } } },
+  });
+  if (!offer) throw Object.assign(new Error('Offer not found'), { status: 404 });
+
+  const ccEmails = body.ccEmails
+    ? (body.ccEmails as string[])
+    : parseJson<string[]>(offer.ccEmails, []);
+
+  const logEntry = {
+    type: 'OFFER_LETTER',
+    to: offer.application.candidate.email,
+    cc: ccEmails,
+    subject: String(body.emailSubject ?? offer.emailSubject),
+  };
+
+  const updated = await prisma.hrRecruitmentOffer.update({
+    where: { id: offerId },
+    data: {
+      status: 'SENT',
+      offerLetterSentAt: new Date(),
+      ccEmails: ccEmails as Prisma.InputJsonValue,
+      emailSubject: body.emailSubject !== undefined ? String(body.emailSubject) : offer.emailSubject,
+      emailBody: body.emailBody !== undefined ? String(body.emailBody) : offer.emailBody,
+      emailSentLog: appendEmailLog(offer.emailSentLog, logEntry) as Prisma.InputJsonValue,
+      workflowStage: 'APPROVED',
+    },
+  });
+
+  await prisma.hrCandidateApplication.update({
+    where: { id: offer.applicationId },
+    data: { pipelineStage: 'OFFER_LETTER' },
+  });
+
+  return updated;
+}
+
+export async function createReferenceCheck(institutionId: string, body: Record<string, unknown>) {
+  return prisma.hrReferenceCheck.create({
+    data: {
+      institutionId,
+      applicationId: String(body.applicationId),
+      refereeName: String(body.refereeName),
+      organization: String(body.organization ?? ''),
+      designation: String(body.designation ?? ''),
+      contactNumber: String(body.contactNumber ?? ''),
+      relationship: String(body.relationship ?? ''),
+      feedback: String(body.feedback ?? ''),
+      feedbackType: String(body.feedbackType ?? ''),
+      approvalStatus: String(body.feedbackType) === 'NEGATIVE' ? 'PENDING' : 'AUTO_APPROVED',
+    },
+  });
+}
+
+export async function submitReferenceFeedback(
+  institutionId: string,
+  id: string,
+  body: { feedbackType: 'POSITIVE' | 'NEGATIVE'; feedback?: string },
+) {
+  const ref = await prisma.hrReferenceCheck.findFirst({ where: { id, institutionId } });
+  if (!ref) throw Object.assign(new Error('Reference check not found'), { status: 404 });
+
+  const updated = await prisma.hrReferenceCheck.update({
+    where: { id },
+    data: {
+      feedbackType: body.feedbackType,
+      feedback: body.feedback ?? ref.feedback,
+      recommendation: body.feedbackType,
+      approvalStatus: body.feedbackType === 'NEGATIVE' ? 'PENDING' : 'AUTO_APPROVED',
+    },
+  });
+
+  if (body.feedbackType === 'POSITIVE') {
+    await enqueueOnboardingFromReference(institutionId, ref.applicationId);
+  }
+
+  return updated;
+}
+
+export async function approveReferenceHire(institutionId: string, referenceId: string) {
+  const ref = await prisma.hrReferenceCheck.update({
+    where: { id: referenceId },
+    data: { approvalStatus: 'APPROVED' },
+  });
+  await enqueueOnboardingFromReference(institutionId, ref.applicationId);
+  await prisma.hrCandidateApplication.update({
+    where: { id: ref.applicationId },
+    data: { pipelineStage: 'JOINING' },
+  });
+  return ref;
+}
+
+async function enqueueOnboardingFromReference(institutionId: string, applicationId: string) {
+  const exists = await prisma.hrRecruitmentOnboarding.findUnique({ where: { applicationId } });
+  if (exists) return exists;
+
+  const start = new Date();
+  const end = new Date();
+  end.setMonth(end.getMonth() + 6);
+
+  return prisma.hrRecruitmentOnboarding.create({
+    data: {
+      institutionId,
+      applicationId,
+      joiningDate: start,
+      probationStart: start,
+      probationEnd: end,
+      checklist: [
+        { item: 'Aadhaar', done: false }, { item: 'PAN', done: false },
+        { item: 'Bank Details', done: false }, { item: 'Educational Certificates', done: false },
+        { item: 'Medical Certificate', done: false },
+      ],
+      mentorName: 'Assigned HOD',
+    },
+  });
+}
+
+export async function updateProbationPeriod(
+  institutionId: string,
+  onboardingId: string,
+  body: Record<string, unknown>,
+) {
+  const data: Prisma.HrRecruitmentOnboardingUpdateInput = {};
+  if (body.probationEnd) data.probationEnd = new Date(String(body.probationEnd));
+  if (body.probationStart) data.probationStart = new Date(String(body.probationStart));
+  if (body.mentorName !== undefined) data.mentorName = String(body.mentorName);
+  return prisma.hrRecruitmentOnboarding.update({ where: { id: onboardingId }, data });
+}
+
+export async function extendProbation(
+  institutionId: string,
+  onboardingId: string,
+  body: { extendedEnd: string; feedback: string },
+) {
+  const existing = await prisma.hrRecruitmentOnboarding.findFirst({ where: { id: onboardingId, institutionId } });
+  if (!existing) throw Object.assign(new Error('Onboarding not found'), { status: 404 });
+
+  const feedbackLog = parseJson<Array<Record<string, unknown>>>(existing.probationFeedback, []);
+  feedbackLog.push({ type: 'EXTENSION', feedback: body.feedback, at: new Date().toISOString() });
+
+  return prisma.hrRecruitmentOnboarding.update({
+    where: { id: onboardingId },
+    data: {
+      extendedProbationEnd: new Date(body.extendedEnd),
+      probationEnd: new Date(body.extendedEnd),
+      probationStatus: 'EXTENDED',
+      probationFeedback: feedbackLog as Prisma.InputJsonValue,
+    },
+  });
+}
+
+export async function completeProbationWithFeedback(
+  institutionId: string,
+  onboardingId: string,
+  feedback: string,
+) {
+  const existing = await prisma.hrRecruitmentOnboarding.findFirst({ where: { id: onboardingId, institutionId } });
+  if (!existing) throw Object.assign(new Error('Onboarding not found'), { status: 404 });
+
+  const feedbackLog = parseJson<Array<Record<string, unknown>>>(existing.probationFeedback, []);
+  feedbackLog.push({ type: 'COMPLETION', feedback, at: new Date().toISOString() });
+
+  const row = await prisma.hrRecruitmentOnboarding.update({
+    where: { id: onboardingId },
+    data: {
+      probationStatus: 'COMPLETED',
+      confirmationStatus: 'CONFIRMED',
+      probationFeedback: feedbackLog as Prisma.InputJsonValue,
+    },
+  });
+
+  await confirmProbation(institutionId, onboardingId);
+  return row;
 }
 
 export async function seedRecruitmentDemo(institutionId: string) {

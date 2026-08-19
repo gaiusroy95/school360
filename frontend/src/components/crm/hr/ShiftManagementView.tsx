@@ -1,10 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Check,
+  ChevronDown,
+  Edit2,
   Loader2,
   MapPin,
   Plus,
   RefreshCcw,
   Save,
+  Search,
+  UserPlus,
+  X,
 } from 'lucide-react';
 import {
   advanceShiftChangeRequest,
@@ -13,6 +19,7 @@ import {
   createHrShiftMaster,
   fetchShiftManagement,
   mapDepartmentShift,
+  updateEmployeeShiftAssignment,
   updateHrShiftMaster,
   updateShiftSettings,
   updateShiftWorkingHours,
@@ -62,6 +69,123 @@ function Kpi({ label, value, sub }: { label: string; value: string | number; sub
   );
 }
 
+function EmployeeMultiSelect({
+  employees,
+  selectedIds,
+  onChange,
+}: {
+  employees: Array<{ id: string; employeeCode: string; fullName: string; department: string }>;
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
+
+  useEffect(() => {
+    const onDoc = (event: MouseEvent) => {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return employees;
+    return employees.filter(
+      (e) =>
+        e.fullName.toLowerCase().includes(q) ||
+        e.employeeCode.toLowerCase().includes(q) ||
+        e.department.toLowerCase().includes(q),
+    );
+  }, [employees, query]);
+
+  const toggle = (id: string) => {
+    onChange(selected.has(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id]);
+  };
+
+  const allVisibleSelected = filtered.length > 0 && filtered.every((e) => selected.has(e.id));
+  const label =
+    selectedIds.length === 0
+      ? 'Select employees…'
+      : selectedIds.length === 1
+        ? (employees.find((e) => e.id === selectedIds[0])?.fullName ?? '1 employee selected')
+        : `${selectedIds.length} employees selected`;
+
+  return (
+    <div ref={wrapRef} className="relative min-w-[220px]">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`${am.input} w-full text-xs text-left flex items-center justify-between gap-2 ${
+          selectedIds.length ? 'text-slate-800' : 'text-slate-400'
+        }`}
+      >
+        <span className="truncate">{label}</span>
+        <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+      </button>
+      {open && (
+        <div className="absolute z-30 mt-1 w-[min(100vw-2rem,22rem)] left-0 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+          <div className="p-2 border-b border-slate-100 space-y-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search name, code or department…"
+                className={`${am.input} pl-8 text-xs py-1.5`}
+                autoFocus
+              />
+            </div>
+            <div className="flex items-center justify-between text-[10px]">
+              <button
+                type="button"
+                className="font-semibold text-blue-600 hover:underline"
+                onClick={() => {
+                  const ids = filtered.map((e) => e.id);
+                  if (allVisibleSelected) {
+                    onChange(selectedIds.filter((id) => !ids.includes(id)));
+                  } else {
+                    onChange([...new Set([...selectedIds, ...ids])]);
+                  }
+                }}
+              >
+                {allVisibleSelected ? 'Clear visible' : 'Select all visible'}
+              </button>
+              <span className="text-slate-400">{selectedIds.length} selected</span>
+            </div>
+          </div>
+          <div className="max-h-56 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <p className="px-3 py-6 text-center text-xs text-slate-400">No employees match</p>
+            ) : (
+              filtered.map((emp) => {
+                const checked = selected.has(emp.id);
+                return (
+                  <label key={emp.id} className="flex items-start gap-2 px-3 py-2 text-xs hover:bg-slate-50 cursor-pointer">
+                    <input type="checkbox" checked={checked} onChange={() => toggle(emp.id)} className="mt-0.5 rounded border-slate-300" />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1 font-semibold text-slate-800">
+                        {emp.fullName}
+                        {checked && <Check className="w-3 h-3 text-blue-600 shrink-0" />}
+                      </span>
+                      <span className="block text-[10px] text-slate-400">
+                        {emp.employeeCode} · {emp.department || '—'}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ShiftManagementView() {
   const [data, setData] = useState<ShiftManagementDashboard | null>(null);
   const [tab, setTab] = useState<TabId>('Dashboard');
@@ -78,8 +202,11 @@ export function ShiftManagementView() {
   });
 
   const [whForm, setWhForm] = useState<Record<string, unknown>>({});
-  const [assignForm, setAssignForm] = useState({ employeeId: '', shiftId: '', effectiveDate: new Date().toISOString().slice(0, 10), remarks: '' });
+  const [assignEmployeeIds, setAssignEmployeeIds] = useState<string[]>([]);
+  const [assignForm, setAssignForm] = useState({ shiftId: '', effectiveDate: new Date().toISOString().slice(0, 10), remarks: '' });
   const [deptMapForm, setDeptMapForm] = useState({ department: '', shiftId: '' });
+  const [editAssignment, setEditAssignment] = useState<Record<string, unknown> | null>(null);
+  const [editForm, setEditForm] = useState({ shiftId: '', effectiveDate: '', status: 'ACTIVE', remarks: '' });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -144,15 +271,51 @@ export function ShiftManagementView() {
   };
 
   const handleAssign = async () => {
-    if (!assignForm.employeeId || !assignForm.shiftId) return;
+    if (!assignEmployeeIds.length || !assignForm.shiftId) {
+      setError('Select at least one employee and a shift');
+      return;
+    }
     setSaving(true);
+    setError('');
     try {
-      const res = await assignEmployeeShift(assignForm);
+      const res = await assignEmployeeShift({
+        employeeIds: assignEmployeeIds,
+        shiftId: assignForm.shiftId,
+        effectiveDate: assignForm.effectiveDate,
+        remarks: assignForm.remarks,
+      });
       setData(res);
-      setMessage('Shift assigned');
-      setAssignForm({ ...assignForm, employeeId: '' });
+      const count = assignEmployeeIds.length;
+      setMessage(count === 1 ? 'Shift assigned' : `Shift assigned to ${count} employees`);
+      setAssignEmployeeIds([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Assign failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openEditAssignment = (row: Record<string, unknown>) => {
+    setEditAssignment(row);
+    setEditForm({
+      shiftId: String(row.shiftId ?? ''),
+      effectiveDate: String(row.effectiveDate ?? new Date().toISOString().slice(0, 10)),
+      status: String(row.status ?? 'ACTIVE'),
+      remarks: String(row.remarks ?? ''),
+    });
+  };
+
+  const handleSaveAssignmentEdit = async () => {
+    if (!editAssignment?.id || !editForm.shiftId) return;
+    setSaving(true);
+    setError('');
+    try {
+      const res = await updateEmployeeShiftAssignment(String(editAssignment.id), editForm);
+      setData(res);
+      setEditAssignment(null);
+      setMessage('Shift assignment updated');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Update failed');
     } finally {
       setSaving(false);
     }
@@ -351,17 +514,59 @@ export function ShiftManagementView() {
 
             {tab === 'Assignments' && (
               <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 p-3 bg-slate-50 rounded-lg">
-                  <select value={assignForm.employeeId} onChange={(e) => setAssignForm({ ...assignForm, employeeId: e.target.value })} className={am.input}>
-                    <option value="">Employee…</option>
-                    {data?.employees.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
-                  </select>
-                  <select value={assignForm.shiftId} onChange={(e) => setAssignForm({ ...assignForm, shiftId: e.target.value })} className={am.input}>
-                    <option value="">Shift…</option>
-                    {data?.shifts.map((s) => <option key={String(s.id)} value={String(s.id)}>{String(s.code)} — {String(s.name)}</option>)}
-                  </select>
-                  <input type="date" value={assignForm.effectiveDate} onChange={(e) => setAssignForm({ ...assignForm, effectiveDate: e.target.value })} className={am.input} />
-                  <button type="button" onClick={() => void handleAssign()} className={am.btnPrimary}>Assign Shift</button>
+                <div className="p-3 bg-slate-50 rounded-lg space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-[minmax(220px,1fr)_minmax(180px,1fr)_auto_auto] gap-3 items-start">
+                    <EmployeeMultiSelect
+                      employees={data?.employees ?? []}
+                      selectedIds={assignEmployeeIds}
+                      onChange={setAssignEmployeeIds}
+                    />
+                    <select value={assignForm.shiftId} onChange={(e) => setAssignForm({ ...assignForm, shiftId: e.target.value })} className={am.input}>
+                      <option value="">Shift…</option>
+                      {data?.shifts.map((s) => <option key={String(s.id)} value={String(s.id)}>{String(s.code)} — {String(s.name)}</option>)}
+                    </select>
+                    <input type="date" value={assignForm.effectiveDate} onChange={(e) => setAssignForm({ ...assignForm, effectiveDate: e.target.value })} className={am.input} />
+                    <button
+                      type="button"
+                      onClick={() => void handleAssign()}
+                      disabled={saving || assignEmployeeIds.length === 0 || !assignForm.shiftId}
+                      className={am.btnPrimary}
+                    >
+                      {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
+                      Assign Shift{assignEmployeeIds.length ? ` (${assignEmployeeIds.length})` : ''}
+                    </button>
+                  </div>
+                  {assignEmployeeIds.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {assignEmployeeIds.map((id) => {
+                        const emp = data?.employees.find((e) => e.id === id);
+                        if (!emp) return null;
+                        return (
+                          <span
+                            key={id}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 text-[10px] font-semibold border border-blue-100"
+                          >
+                            {emp.fullName}
+                            <button
+                              type="button"
+                              onClick={() => setAssignEmployeeIds((prev) => prev.filter((x) => x !== id))}
+                              className="text-blue-500 hover:text-blue-800"
+                              aria-label={`Remove ${emp.fullName}`}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => setAssignEmployeeIds([])}
+                        className="text-[10px] font-semibold text-slate-500 hover:text-slate-800 ml-1"
+                      >
+                        Clear all
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-slate-700 mb-2">Department Shift Mapping</h4>
@@ -382,18 +587,33 @@ export function ShiftManagementView() {
                         <th className="text-left px-3 py-2">Employee</th><th className="text-left px-3 py-2">Department</th>
                         <th className="text-left px-3 py-2">Shift</th><th className="text-left px-3 py-2">Type</th>
                         <th className="text-left px-3 py-2">Effective</th><th className="text-left px-3 py-2">Status</th>
+                        <th className="text-center px-3 py-2 w-20">Actions</th>
                       </tr></thead>
                       <tbody className="divide-y divide-slate-50">
                         {data?.assignments.map((a) => (
-                          <tr key={String(a.id)}>
+                          <tr key={String(a.id)} className="hover:bg-slate-50/60">
                             <td className="px-3 py-2"><p className="font-semibold">{String(a.employeeName)}</p><p className="text-[10px] text-slate-400">{String(a.employeeCode)}</p></td>
                             <td className="px-3 py-2">{String(a.department)}</td>
                             <td className="px-3 py-2">{String(a.shiftName)}</td>
                             <td className="px-3 py-2">{String(a.employmentType)}</td>
                             <td className="px-3 py-2">{String(a.effectiveDate)}</td>
                             <td className="px-3 py-2"><StatusBadge status={String(a.status)} /></td>
+                            <td className="px-3 py-2 text-center">
+                              <button
+                                type="button"
+                                onClick={() => openEditAssignment(a)}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-50 rounded"
+                                title="Edit shift assignment"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                                Edit
+                              </button>
+                            </td>
                           </tr>
                         ))}
+                        {!data?.assignments.length && (
+                          <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-400">No shift assignments yet</td></tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -575,6 +795,65 @@ export function ShiftManagementView() {
           <button type="button" onClick={() => setShiftModal(false)} className={am.btnSecondary}>Cancel</button>
           <button type="button" onClick={() => void handleSaveShift()} disabled={saving} className={am.btnPrimary}>Save</button>
         </div>
+      </AcademicModal>
+
+      <AcademicModal
+        open={Boolean(editAssignment)}
+        onClose={() => setEditAssignment(null)}
+        title="Edit Shift Assignment"
+      >
+        {editAssignment && (
+          <div className="space-y-3 mt-2">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+              <p className="font-bold text-slate-800">{String(editAssignment.employeeName)}</p>
+              <p className="text-slate-500">{String(editAssignment.employeeCode)} · {String(editAssignment.department)}</p>
+            </div>
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold text-slate-600">Shift</span>
+              <select value={editForm.shiftId} onChange={(e) => setEditForm({ ...editForm, shiftId: e.target.value })} className={am.input}>
+                <option value="">Select shift…</option>
+                {data?.shifts.map((s) => (
+                  <option key={String(s.id)} value={String(s.id)}>
+                    {String(s.code)} — {String(s.name)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold text-slate-600">Effective Date</span>
+              <input
+                type="date"
+                value={editForm.effectiveDate}
+                onChange={(e) => setEditForm({ ...editForm, effectiveDate: e.target.value })}
+                className={am.input}
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold text-slate-600">Status</span>
+              <select value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} className={am.input}>
+                <option value="ACTIVE">Active</option>
+                <option value="INACTIVE">Inactive</option>
+              </select>
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold text-slate-600">Remarks</span>
+              <textarea
+                value={editForm.remarks}
+                onChange={(e) => setEditForm({ ...editForm, remarks: e.target.value })}
+                className={am.input}
+                rows={2}
+                placeholder="Optional notes"
+              />
+            </label>
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setEditAssignment(null)} className={am.btnSecondary}>Cancel</button>
+              <button type="button" onClick={() => void handleSaveAssignmentEdit()} disabled={saving || !editForm.shiftId} className={am.btnPrimary}>
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                Save Changes
+              </button>
+            </div>
+          </div>
+        )}
       </AcademicModal>
     </AcademicPageShell>
   );

@@ -20,12 +20,19 @@ import {
   listDepartmentEmployeeOptions,
   listHrDepartments,
   seedHrDepartmentsDemo,
+  syncAllEmployeesToDepartments,
   updateHrDepartment,
 } from '../lib/hrDepartments.js';
 import {
+  assignEmployeesToDepartment,
+  unassignEmployeesFromDepartment,
+} from '../lib/employeeDepartmentSync.js';
+import {
   createHrDesignation,
   deleteHrDesignation,
+  bulkUpsertHrDesignations,
   getDesignationsDashboard,
+  listHrDesignationsExport,
   REFERENCE_DESIGNATIONS,
   seedHrDesignationsDemo,
   updateHrDesignation,
@@ -58,6 +65,7 @@ import {
   LEAVE_TYPE_DEFS,
   listHrLeavePolicies,
   seedHrLeaveManagementDemo,
+  syncAttendanceLeaveToApplications,
   updateHrLeaveApplicationStatus,
   updateHrLeaveSettings,
 } from '../lib/hrLeaveManagement.js';
@@ -80,6 +88,7 @@ import {
   advanceShiftChangeRequest,
   assignDuty,
   assignEmployeeShift,
+  updateEmployeeShiftAssignment,
   assignSubstitute,
   createHrShift,
   createOvertimeRecord,
@@ -100,7 +109,12 @@ import {
   getPerformanceAppraisalDashboard,
   publishAppraisalsToMobile,
   seedPerformanceAppraisalDemo,
+  syncKpisFromDepartmentsDesignations,
+  syncPayGradesFromDesignations,
+  syncTeachingKpisFromContinuousEvaluation,
+  updatePayGrade,
   updatePerformanceAppraisal,
+  updatePerformanceKpi,
   updatePerformanceSettings,
 } from '../lib/hrPerformanceAppraisal.js';
 import {
@@ -108,7 +122,11 @@ import {
   advanceApplicationPipeline,
   advanceOfferWorkflow,
   advanceRequisitionWorkflow,
+  approveReferenceHire,
+  assignInterview,
+  bulkUploadCandidates,
   completeOnboardingAndCreateEmployee,
+  completeProbationWithFeedback,
   confirmProbation,
   createApplication,
   createCandidate,
@@ -117,9 +135,21 @@ import {
   createJobRequisition,
   createManpowerPlan,
   createOffer,
+  createReferenceCheck,
+  extendProbation,
+  generateSelectionLetterEmail,
   getRecruitmentDashboard,
+  passInterviewAndCreateOffer,
   publishJobPosting,
+  reviewCandidateApplication,
   seedRecruitmentDemo,
+  selectCandidateForInterview,
+  sendOfferEmail,
+  submitReferenceFeedback,
+  updateCandidate,
+  updateInterviewFeedback,
+  updateProbationPeriod,
+  updateRecruitmentOffer,
   updateRecruitmentSettings,
 } from '../lib/hrRecruitment.js';
 import {
@@ -127,39 +157,89 @@ import {
   completeAssessment,
   confirmNominationWorkflow,
   createAnnualPlan,
+  createTrainingAssignment,
   createTrainingBatch,
+  createTrainingBudget,
+  createTrainingCategory,
+  createTrainingCompetency,
   createTrainingCourse,
+  createTrainingExternal,
+  createTrainingIdp,
   createTrainingNeed,
+  createTrainingTrainer,
+  createTrainingVenue,
   getTrainingDashboard,
+  gradeTrainingAssignment,
+  issueTrainingCertificate,
   markTrainingAttendance,
   nominateEmployee,
   seedTrainingDemo,
+  submitTrainingFeedback,
+  updateTrainingBudget,
+  updateTrainingCourse,
+  updateTrainingIdp,
+  updateTrainingNeed,
   updateTrainingSettings,
 } from '../lib/hrTrainingDevelopment.js';
 import {
   activatePreOnboardingPortal,
+  activateSystemAccess,
+  acknowledgeEmploymentLetter,
+  addChecklistItem,
   advanceOnboardingWorkflow,
   completeChecklistItem,
   confirmProbation as confirmEdomsProbation,
+  createAsset,
+  createEdomsDocument,
+  createEmploymentHistoryRecord,
   createEmployeeFromOnboarding,
   createOnboardingCase,
+  createQualification,
+  createSystemAccess,
+  generateEmploymentLetters,
   getEdomsDashboard,
+  renewDocumentExpiry,
   seedEdomsDemo,
+  sendExpiryAlert,
   submitDocument,
+  updateAssetStatus,
+  updateEdomsSettings,
+  updateInduction,
+  updateOnboardingCase,
+  updateProbation,
+  updateVerification,
   verifyDocument,
+  verifyQualification,
 } from '../lib/hrEdoms.js';
 import {
+  addHandoverTask,
+  addKnowledgeTransfer,
   advanceExitWorkflow,
   approveClearance,
   approveFnf,
+  closeRetention,
   completeHandover,
+  completeKnowledgeTransfer,
   createResignationCase,
+  extendNoticePeriod,
+  generateExitDocuments,
   getExitDashboard,
   initiateRetention,
+  markFnfPaid,
   processApproval,
+  recalculateFnf,
   recoverAsset,
+  rejectClearance,
   seedExitDemo,
+  sendExitDocument,
   submitResignation,
+  updateAlumniRecord,
+  updateAssetRecovery,
+  updateExitInterview,
+  updateExitSettings,
+  updateHandover,
+  updateLeaveSettlement,
+  updateResignationCase,
 } from '../lib/hrExitManagement.js';
 import {
   generateHrReport,
@@ -218,8 +298,10 @@ hrRouter.get(
     const q = typeof req.query.q === 'string' ? req.query.q : undefined;
     const status =
       typeof req.query.status === 'string' ? (req.query.status as FeeMasterStatus) : undefined;
+    const department = typeof req.query.department === 'string' ? req.query.department : undefined;
+    const classGroup = typeof req.query.classGroup === 'string' ? req.query.classGroup : undefined;
     const seed = false;
-    let records = await listEmployeeDirectory(institutionId, { q, status });
+    let records = await listEmployeeDirectory(institutionId, { q, status, department, classGroup });
     if (records.length === 0 && seed) {
       await seedEmployeeDirectoryDemo(institutionId);
       records = await listEmployeeDirectory(institutionId, { q, status });
@@ -308,7 +390,7 @@ const createEmployeeSchema = z.object({
   classGroup: z.string().optional(),
   mobile: z.string().optional(),
   email: z.string().optional(),
-  joinDate: z.string().optional(),
+  joinDate: z.string().nullable().optional(),
   profile: z.record(z.unknown()).optional(),
 });
 
@@ -329,6 +411,7 @@ hrRouter.post(
 );
 
 const updateEmployeeSchema = createEmployeeSchema.partial().extend({
+  employeeCode: z.string().optional(),
   status: statusSchema.optional(),
   bankAccount: z.string().optional(),
   bankIfsc: z.string().optional(),
@@ -463,6 +546,50 @@ hrRouter.delete(
   }),
 );
 
+hrRouter.post(
+  '/departments/:id/assign-employees',
+  asyncHandler(async (req, res) => {
+    const parsed = z.object({ employeeIds: z.array(z.string().min(1)).min(1).max(500) }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const institutionId = await getDefaultInstitutionId();
+    try {
+      const result = await assignEmployeesToDepartment(institutionId, req.params.id, parsed.data.employeeIds);
+      const record = await getHrDepartment(institutionId, req.params.id);
+      return res.json({ ...result, record });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to assign employees';
+      return res.status(400).json({ error: message });
+    }
+  }),
+);
+
+hrRouter.post(
+  '/departments/:id/unassign-employees',
+  asyncHandler(async (req, res) => {
+    const parsed = z.object({ employeeIds: z.array(z.string().min(1)).min(1).max(500) }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const institutionId = await getDefaultInstitutionId();
+    try {
+      const result = await unassignEmployeesFromDepartment(institutionId, req.params.id, parsed.data.employeeIds);
+      const record = await getHrDepartment(institutionId, req.params.id);
+      return res.json({ ...result, record });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to unassign employees';
+      return res.status(400).json({ error: message });
+    }
+  }),
+);
+
+hrRouter.post(
+  '/departments/sync-employees',
+  asyncHandler(async (_req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const result = await syncAllEmployeesToDepartments(institutionId);
+    const records = await listHrDepartments(institutionId);
+    return res.json({ ...result, records });
+  }),
+);
+
 // ─── Designations ────────────────────────────────────────────────────────────
 
 hrRouter.get(
@@ -497,6 +624,20 @@ hrRouter.get(
   }),
 );
 
+hrRouter.get(
+  '/designations/export',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const records = await listHrDesignationsExport(institutionId, {
+      q: typeof req.query.q === 'string' ? req.query.q : undefined,
+      department: typeof req.query.department === 'string' ? req.query.department : undefined,
+      designationType: typeof req.query.designationType === 'string' ? req.query.designationType : undefined,
+      status: typeof req.query.status === 'string' ? req.query.status : undefined,
+    });
+    return res.json({ records, total: records.length });
+  }),
+);
+
 const designationSchema = z.object({
   name: z.string().min(1),
   department: z.string().min(1),
@@ -519,6 +660,28 @@ hrRouter.post(
       const message = err instanceof Error ? err.message : 'Failed to create designation';
       return res.status(400).json({ error: message });
     }
+  }),
+);
+
+const bulkDesignationSchema = z.object({
+  rows: z.array(z.object({
+    name: z.string().min(1),
+    department: z.string().optional(),
+    departmentCode: z.string().optional(),
+    designationType: z.string().optional(),
+    totalPositions: z.coerce.number().optional(),
+    filledPositions: z.coerce.number().optional(),
+    status: z.string().optional(),
+  })).min(1).max(2000),
+});
+
+hrRouter.post(
+  '/designations/bulk',
+  asyncHandler(async (req, res) => {
+    const parsed = bulkDesignationSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'rows array with designation data is required' });
+    const institutionId = await getDefaultInstitutionId();
+    return res.json(await bulkUpsertHrDesignations(institutionId, parsed.data.rows));
   }),
 );
 
@@ -794,6 +957,22 @@ hrRouter.get(
       month: typeof req.query.month === 'string' ? Number(req.query.month) : undefined,
     });
     return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/leave/sync-attendance',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const filters = await getInstitutionFilterMeta(institutionId);
+    const academicYear =
+      typeof req.body?.academicYear === 'string' ? req.body.academicYear : filters.defaultAcademicYear;
+    const result = await syncAttendanceLeaveToApplications(institutionId, academicYear);
+    const data = await getHrLeaveDashboard(institutionId, { academicYear });
+    return res.json({
+      ...data,
+      message: `Synced ${result.created} leave record(s) from Attendance & Leave`,
+    });
   }),
 );
 
@@ -1352,11 +1531,16 @@ hrRouter.patch(
   }),
 );
 
-const policyAssignmentSchema = z.object({
-  policyId: z.string(),
-  employeeId: z.string(),
-  effectiveDate: z.string(),
-});
+const policyAssignmentSchema = z
+  .object({
+    policyId: z.string().min(1),
+    employeeId: z.string().min(1).optional(),
+    employeeIds: z.array(z.string().min(1)).max(500).optional(),
+    effectiveDate: z.string().min(1),
+  })
+  .refine((d) => Boolean(d.employeeId) || (d.employeeIds?.length ?? 0) > 0, {
+    message: 'Select at least one employee',
+  });
 
 hrRouter.post(
   '/attendance-policy/assign',
@@ -1365,8 +1549,8 @@ hrRouter.post(
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const institutionId = await getDefaultInstitutionId();
     try {
-      const assignment = await assignLeavePolicy(institutionId, parsed.data);
-      return res.status(201).json({ assignment });
+      const result = await assignLeavePolicy(institutionId, parsed.data);
+      return res.status(201).json(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Assignment failed';
       return res.status(400).json({ error: message });
@@ -1436,13 +1620,68 @@ hrRouter.patch(
   }),
 );
 
+const shiftAssignmentSchema = z
+  .object({
+    employeeId: z.string().min(1).optional(),
+    employeeIds: z.array(z.string().min(1)).max(500).optional(),
+    shiftId: z.string().min(1),
+    effectiveDate: z.string().min(1),
+    employmentType: z.string().optional(),
+    branch: z.string().optional(),
+    workingDays: z.array(z.string()).optional(),
+    weeklyOff: z.array(z.string()).optional(),
+    attendanceRule: z.string().optional(),
+    payrollRule: z.string().optional(),
+    remarks: z.string().optional(),
+  })
+  .refine((d) => Boolean(d.employeeId) || (d.employeeIds?.length ?? 0) > 0, {
+    message: 'Select at least one employee',
+  });
+
+const shiftAssignmentUpdateSchema = z.object({
+  shiftId: z.string().min(1).optional(),
+  effectiveDate: z.string().min(1).optional(),
+  employmentType: z.string().optional(),
+  branch: z.string().optional(),
+  workingDays: z.array(z.string()).optional(),
+  weeklyOff: z.array(z.string()).optional(),
+  attendanceRule: z.string().optional(),
+  payrollRule: z.string().optional(),
+  remarks: z.string().optional(),
+  status: z.string().optional(),
+});
+
 hrRouter.post(
   '/shift-management/assignments',
   asyncHandler(async (req, res) => {
+    const parsed = shiftAssignmentSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const institutionId = await getDefaultInstitutionId();
-    await assignEmployeeShift(institutionId, req.body);
-    const data = await getShiftManagementDashboard(institutionId);
-    return res.json(data);
+    try {
+      await assignEmployeeShift(institutionId, parsed.data);
+      const data = await getShiftManagementDashboard(institutionId);
+      return res.json(data);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Assignment failed';
+      return res.status(400).json({ error: message });
+    }
+  }),
+);
+
+hrRouter.patch(
+  '/shift-management/assignments/:id',
+  asyncHandler(async (req, res) => {
+    const parsed = shiftAssignmentUpdateSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const institutionId = await getDefaultInstitutionId();
+    try {
+      await updateEmployeeShiftAssignment(institutionId, req.params.id, parsed.data);
+      const data = await getShiftManagementDashboard(institutionId);
+      return res.json(data);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Update failed';
+      return res.status(400).json({ error: message });
+    }
   }),
 );
 
@@ -1629,6 +1868,58 @@ hrRouter.post(
   }),
 );
 
+hrRouter.patch(
+  '/performance-appraisal/kpis/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const kpi = await updatePerformanceKpi(institutionId, String(req.params.id), req.body);
+    const data = await getPerformanceAppraisalDashboard(institutionId);
+    return res.json({ kpi, data });
+  }),
+);
+
+hrRouter.post(
+  '/performance-appraisal/kpis/sync-departments-designations',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const result = await syncKpisFromDepartmentsDesignations(institutionId);
+    const academicYear = typeof req.body.academicYear === 'string' ? req.body.academicYear : '2025-26';
+    const data = await getPerformanceAppraisalDashboard(institutionId, { academicYear });
+    return res.json({ ...result, data });
+  }),
+);
+
+hrRouter.post(
+  '/performance-appraisal/kpis/sync-continuous-evaluation',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const result = await syncTeachingKpisFromContinuousEvaluation(institutionId);
+    const academicYear = typeof req.body.academicYear === 'string' ? req.body.academicYear : '2025-26';
+    const data = await getPerformanceAppraisalDashboard(institutionId, { academicYear });
+    return res.json({ ...result, data });
+  }),
+);
+
+hrRouter.patch(
+  '/performance-appraisal/pay-grades/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const payGrade = await updatePayGrade(institutionId, String(req.params.id), req.body);
+    const data = await getPerformanceAppraisalDashboard(institutionId);
+    return res.json({ payGrade, data });
+  }),
+);
+
+hrRouter.post(
+  '/performance-appraisal/pay-grades/sync-designations',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const result = await syncPayGradesFromDesignations(institutionId);
+    const data = await getPerformanceAppraisalDashboard(institutionId);
+    return res.json({ ...result, data });
+  }),
+);
+
 hrRouter.post(
   '/performance-appraisal/seed-demo',
   asyncHandler(async (_req, res) => {
@@ -1803,6 +2094,180 @@ hrRouter.patch(
 );
 
 hrRouter.post(
+  '/recruitment/candidates/bulk-upload',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const postingId = String(req.body.postingId ?? '');
+    const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
+    const result = await bulkUploadCandidates(institutionId, postingId, rows);
+    const data = await getRecruitmentDashboard(institutionId);
+    return res.json({ ...result, data });
+  }),
+);
+
+hrRouter.patch(
+  '/recruitment/candidates/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const candidate = await updateCandidate(institutionId, String(req.params.id), req.body);
+    const data = await getRecruitmentDashboard(institutionId);
+    return res.json({ candidate, data });
+  }),
+);
+
+hrRouter.post(
+  '/recruitment/applications/:id/review',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const action = req.body.action === 'reject' ? 'reject' : 'approve';
+    await reviewCandidateApplication(institutionId, String(req.params.id), action);
+    const data = await getRecruitmentDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/recruitment/applications/:id/select-interview',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await selectCandidateForInterview(institutionId, String(req.params.id));
+    const data = await getRecruitmentDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/recruitment/interviews/assign',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const interview = await assignInterview(institutionId, req.body);
+    const data = await getRecruitmentDashboard(institutionId);
+    return res.status(201).json({ interview, data });
+  }),
+);
+
+hrRouter.patch(
+  '/recruitment/interviews/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const interview = await updateInterviewFeedback(institutionId, String(req.params.id), req.body);
+    const data = await getRecruitmentDashboard(institutionId);
+    return res.json({ interview, data });
+  }),
+);
+
+hrRouter.post(
+  '/recruitment/applications/:id/interview-passed',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const offer = await passInterviewAndCreateOffer(institutionId, String(req.params.id));
+    const data = await getRecruitmentDashboard(institutionId);
+    return res.json({ offer, data });
+  }),
+);
+
+hrRouter.post(
+  '/recruitment/offers/:id/generate-selection-letter',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const offer = await generateSelectionLetterEmail(institutionId, String(req.params.id));
+    const data = await getRecruitmentDashboard(institutionId);
+    return res.json({ offer, data });
+  }),
+);
+
+hrRouter.patch(
+  '/recruitment/offers/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const offer = await updateRecruitmentOffer(institutionId, String(req.params.id), req.body);
+    const data = await getRecruitmentDashboard(institutionId);
+    return res.json({ offer, data });
+  }),
+);
+
+hrRouter.post(
+  '/recruitment/offers/:id/send-email',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const offer = await sendOfferEmail(institutionId, String(req.params.id), req.body);
+    const data = await getRecruitmentDashboard(institutionId);
+    return res.json({ offer, data });
+  }),
+);
+
+hrRouter.post(
+  '/recruitment/references',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const reference = await createReferenceCheck(institutionId, req.body);
+    const data = await getRecruitmentDashboard(institutionId);
+    return res.status(201).json({ reference, data });
+  }),
+);
+
+hrRouter.post(
+  '/recruitment/references/:id/feedback',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const feedbackType = req.body.feedbackType === 'NEGATIVE' ? 'NEGATIVE' : 'POSITIVE';
+    const reference = await submitReferenceFeedback(institutionId, String(req.params.id), {
+      feedbackType,
+      feedback: typeof req.body.feedback === 'string' ? req.body.feedback : undefined,
+    });
+    const data = await getRecruitmentDashboard(institutionId);
+    return res.json({ reference, data });
+  }),
+);
+
+hrRouter.post(
+  '/recruitment/references/:id/approve-hire',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const reference = await approveReferenceHire(institutionId, String(req.params.id));
+    const data = await getRecruitmentDashboard(institutionId);
+    return res.json({ reference, data });
+  }),
+);
+
+hrRouter.patch(
+  '/recruitment/onboarding/:id/probation',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const onboarding = await updateProbationPeriod(institutionId, String(req.params.id), req.body);
+    const data = await getRecruitmentDashboard(institutionId);
+    return res.json({ onboarding, data });
+  }),
+);
+
+hrRouter.post(
+  '/recruitment/onboarding/:id/extend-probation',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const onboarding = await extendProbation(institutionId, String(req.params.id), {
+      extendedEnd: String(req.body.extendedEnd),
+      feedback: String(req.body.feedback ?? ''),
+    });
+    const data = await getRecruitmentDashboard(institutionId);
+    return res.json({ onboarding, data });
+  }),
+);
+
+hrRouter.post(
+  '/recruitment/onboarding/:id/complete-probation',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const onboarding = await completeProbationWithFeedback(
+      institutionId,
+      String(req.params.id),
+      String(req.body.feedback ?? ''),
+    );
+    const data = await getRecruitmentDashboard(institutionId);
+    return res.json({ onboarding, data });
+  }),
+);
+
+hrRouter.post(
   '/recruitment/seed-demo',
   asyncHandler(async (_req, res) => {
     const institutionId = await getDefaultInstitutionId();
@@ -1926,6 +2391,156 @@ hrRouter.patch(
 );
 
 hrRouter.post(
+  '/training/categories',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await createTrainingCategory(institutionId, req.body);
+    const data = await getTrainingDashboard(institutionId);
+    return res.status(201).json(data);
+  }),
+);
+
+hrRouter.patch(
+  '/training/needs/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await updateTrainingNeed(institutionId, String(req.params.id), req.body);
+    const data = await getTrainingDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.patch(
+  '/training/courses/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await updateTrainingCourse(institutionId, String(req.params.id), req.body);
+    const data = await getTrainingDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/training/trainers',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await createTrainingTrainer(institutionId, req.body);
+    const data = await getTrainingDashboard(institutionId);
+    return res.status(201).json(data);
+  }),
+);
+
+hrRouter.post(
+  '/training/venues',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await createTrainingVenue(institutionId, req.body);
+    const data = await getTrainingDashboard(institutionId);
+    return res.status(201).json(data);
+  }),
+);
+
+hrRouter.post(
+  '/training/assignments',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await createTrainingAssignment(institutionId, req.body);
+    const data = await getTrainingDashboard(institutionId);
+    return res.status(201).json(data);
+  }),
+);
+
+hrRouter.patch(
+  '/training/assignments/:id/grade',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await gradeTrainingAssignment(institutionId, String(req.params.id), String(req.body.status ?? 'APPROVED'));
+    const data = await getTrainingDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/training/feedback',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await submitTrainingFeedback(institutionId, req.body);
+    const data = await getTrainingDashboard(institutionId);
+    return res.status(201).json(data);
+  }),
+);
+
+hrRouter.post(
+  '/training/certificates/issue',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await issueTrainingCertificate(institutionId, String(req.body.nominationId));
+    const data = await getTrainingDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/training/competencies',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await createTrainingCompetency(institutionId, req.body);
+    const data = await getTrainingDashboard(institutionId);
+    return res.status(201).json(data);
+  }),
+);
+
+hrRouter.post(
+  '/training/idps',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await createTrainingIdp(institutionId, req.body);
+    const data = await getTrainingDashboard(institutionId);
+    return res.status(201).json(data);
+  }),
+);
+
+hrRouter.patch(
+  '/training/idps/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await updateTrainingIdp(institutionId, String(req.params.id), req.body);
+    const data = await getTrainingDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/training/budgets',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await createTrainingBudget(institutionId, req.body);
+    const data = await getTrainingDashboard(institutionId);
+    return res.status(201).json(data);
+  }),
+);
+
+hrRouter.patch(
+  '/training/budgets/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await updateTrainingBudget(institutionId, String(req.params.id), req.body);
+    const data = await getTrainingDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/training/external',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await createTrainingExternal(institutionId, req.body);
+    const data = await getTrainingDashboard(institutionId);
+    return res.status(201).json(data);
+  }),
+);
+
+hrRouter.post(
   '/training/seed-demo',
   asyncHandler(async (_req, res) => {
     const institutionId = await getDefaultInstitutionId();
@@ -2031,6 +2646,189 @@ hrRouter.post(
   asyncHandler(async (_req, res) => {
     const institutionId = await getDefaultInstitutionId();
     const data = await seedEdomsDemo(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.patch(
+  '/edoms/cases/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await updateOnboardingCase(institutionId, req.params.id, req.body);
+    const data = await getEdomsDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/edoms/cases/:id/documents',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await createEdomsDocument(institutionId, req.params.id, req.body);
+    const data = await getEdomsDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/edoms/cases/:id/qualifications',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await createQualification(institutionId, req.params.id, req.body);
+    const data = await getEdomsDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/edoms/qualifications/:id/verify',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const status = req.body.status === 'REJECTED' ? 'REJECTED' : 'VERIFIED';
+    await verifyQualification(institutionId, req.params.id, status);
+    const data = await getEdomsDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/edoms/cases/:id/employment-history',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await createEmploymentHistoryRecord(institutionId, req.params.id, req.body);
+    const data = await getEdomsDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/edoms/verifications/:id/update',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const action = req.body.action === 'fail' ? 'fail' : 'complete';
+    await updateVerification(institutionId, req.params.id, action, String(req.body.remarks ?? ''));
+    const data = await getEdomsDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/edoms/cases/:id/checklists',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await addChecklistItem(institutionId, req.params.id, req.body);
+    const data = await getEdomsDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/edoms/cases/:id/assets',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await createAsset(institutionId, req.params.id, req.body);
+    const data = await getEdomsDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/edoms/assets/:id/status',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const status = ['RETURNED', 'LOST'].includes(req.body.status) ? req.body.status : 'ISSUED';
+    await updateAssetStatus(institutionId, req.params.id, status);
+    const data = await getEdomsDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/edoms/cases/:id/system-access',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await createSystemAccess(institutionId, req.params.id, req.body);
+    const data = await getEdomsDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/edoms/system-access/:id/activate',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await activateSystemAccess(institutionId, req.params.id);
+    const data = await getEdomsDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.patch(
+  '/edoms/inductions/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await updateInduction(institutionId, req.params.id, req.body);
+    const data = await getEdomsDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.patch(
+  '/edoms/cases/:id/probation',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await updateProbation(institutionId, req.params.id, req.body);
+    const data = await getEdomsDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/edoms/cases/:id/generate-letters',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await generateEmploymentLetters(institutionId, req.params.id);
+    const data = await getEdomsDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/edoms/letters/:id/acknowledge',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await acknowledgeEmploymentLetter(institutionId, req.params.id);
+    const data = await getEdomsDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/edoms/documents/:id/renew',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await renewDocumentExpiry(institutionId, req.params.id, req.body);
+    const data = await getEdomsDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/edoms/documents/:id/expiry-alert',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await sendExpiryAlert(institutionId, req.params.id);
+    const data = await getEdomsDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.patch(
+  '/edoms/settings',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await updateEdomsSettings(institutionId, req.body);
+    const data = await getEdomsDashboard(institutionId);
     return res.json(data);
   }),
 );
@@ -2146,6 +2944,176 @@ hrRouter.post(
   }),
 );
 
+hrRouter.patch(
+  '/exit-management/cases/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await updateResignationCase(institutionId, req.params.id, req.body);
+    const data = await getExitDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/exit-management/cases/:id/extend-notice',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await extendNoticePeriod(institutionId, req.params.id, req.body);
+    const data = await getExitDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/exit-management/cases/:id/handovers',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await addHandoverTask(institutionId, req.params.id, req.body);
+    const data = await getExitDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.patch(
+  '/exit-management/handovers/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await updateHandover(institutionId, req.params.id, req.body);
+    const data = await getExitDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/exit-management/cases/:id/knowledge-transfer',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await addKnowledgeTransfer(institutionId, req.params.id, req.body);
+    const data = await getExitDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/exit-management/knowledge-transfer/:id/complete',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await completeKnowledgeTransfer(institutionId, req.params.id);
+    const data = await getExitDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/exit-management/clearances/:id/reject',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await rejectClearance(institutionId, req.params.id, String(req.body.remarks ?? ''));
+    const data = await getExitDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.patch(
+  '/exit-management/assets/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await updateAssetRecovery(institutionId, req.params.id, req.body);
+    const data = await getExitDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/exit-management/cases/:id/recalculate-fnf',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await recalculateFnf(institutionId, req.params.id, req.body);
+    const data = await getExitDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/exit-management/cases/:id/mark-fnf-paid',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await markFnfPaid(institutionId, req.params.id, req.body);
+    const data = await getExitDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.patch(
+  '/exit-management/cases/:id/leave-settlement',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await updateLeaveSettlement(institutionId, req.params.id, req.body);
+    const data = await getExitDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.patch(
+  '/exit-management/interviews/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await updateExitInterview(institutionId, req.params.id, req.body);
+    const data = await getExitDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/exit-management/cases/:id/generate-documents',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await generateExitDocuments(institutionId, req.params.id);
+    const data = await getExitDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.post(
+  '/exit-management/documents/:id/send',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await sendExitDocument(institutionId, req.params.id);
+    const data = await getExitDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.patch(
+  '/exit-management/alumni/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await updateAlumniRecord(institutionId, req.params.id, req.body);
+    const data = await getExitDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.patch(
+  '/exit-management/retentions/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await closeRetention(institutionId, req.params.id, req.body);
+    const data = await getExitDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
+hrRouter.patch(
+  '/exit-management/settings',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await updateExitSettings(institutionId, req.body);
+    const data = await getExitDashboard(institutionId);
+    return res.json(data);
+  }),
+);
+
 // ─── HR Reports ───────────────────────────────────────────────────────────
 
 hrRouter.get(
@@ -2180,6 +3148,63 @@ hrRouter.get(
     const institutionId = await getDefaultInstitutionId();
     const records = await listApprovalHierarchy(institutionId);
     return res.json({ records });
+  }),
+);
+
+hrRouter.get(
+  '/approval-hierarchy/department/:departmentId/prefill',
+  asyncHandler(async (req, res) => {
+    const { getDepartmentHierarchyPrefill } = await import('../lib/approvalHierarchy.js');
+    const institutionId = await getDefaultInstitutionId();
+    try {
+      const data = await getDepartmentHierarchyPrefill(institutionId, req.params.departmentId);
+      return res.json(data);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load department hierarchy';
+      return res.status(400).json({ error: message });
+    }
+  }),
+);
+
+const departmentHierarchySchema = z.object({
+  departmentId: z.string().min(1),
+  levels: z.array(z.object({
+    roleKey: z.string().optional(),
+    roleLabel: z.string().min(1),
+    employeeId: z.string().optional(),
+    sortOrder: z.number().int().optional(),
+  })).min(1).max(20),
+});
+
+hrRouter.post(
+  '/approval-hierarchy/department',
+  asyncHandler(async (req, res) => {
+    const parsed = departmentHierarchySchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const { upsertDepartmentApprovalHierarchy } = await import('../lib/approvalHierarchy.js');
+    const institutionId = await getDefaultInstitutionId();
+    try {
+      const data = await upsertDepartmentApprovalHierarchy(institutionId, parsed.data);
+      return res.json(data);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save department hierarchy';
+      return res.status(400).json({ error: message });
+    }
+  }),
+);
+
+hrRouter.delete(
+  '/approval-hierarchy/department/:departmentId',
+  asyncHandler(async (req, res) => {
+    const { deleteDepartmentApprovalHierarchy } = await import('../lib/approvalHierarchy.js');
+    const institutionId = await getDefaultInstitutionId();
+    try {
+      const data = await deleteDepartmentApprovalHierarchy(institutionId, req.params.departmentId);
+      return res.json(data);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Delete failed';
+      return res.status(400).json({ error: message });
+    }
   }),
 );
 

@@ -5,6 +5,20 @@ export const ROUTE_TYPES = ['Morning', 'Evening', 'Two-way', 'One-way', 'Special
 export const ROUTE_STATUSES = ['ACTIVE', 'INACTIVE', 'UNDER_MAINTENANCE', 'SEASONAL'];
 export const VEHICLE_TYPES = ['Bus', 'Van', 'Mini Bus', 'Car', 'Electric Vehicle', 'Contract Vehicle'];
 export const AVAILABILITY_STATUSES = ['AVAILABLE', 'ON_TRIP', 'BREAKDOWN', 'MAINTENANCE', 'RESERVED'];
+export const GPS_VENDORS = ['TrackPro', 'FleetSync', 'GeoTrack', 'SafeRide', 'NavTrack'];
+export const STOP_TYPES = ['PICKUP', 'DROP', 'BOTH'];
+export const STAFF_ROLES = ['Driver', 'Attendant'];
+
+async function refreshRouteStopCount(routeId: string) {
+  const count = await prisma.transportRouteStop.count({ where: { routeId } });
+  await prisma.transportRoute.update({ where: { id: routeId }, data: { stopCount: count } });
+}
+
+async function nextStaffCode(institutionId: string, role: string): Promise<string> {
+  const prefix = role === 'Attendant' ? 'ATT' : 'DRV';
+  const count = await prisma.transportStaffMember.count({ where: { institutionId, role } });
+  return `${prefix}-${String(count + 1).padStart(4, '0')}`;
+}
 
 function parseJson<T>(raw: unknown, fallback: T): T {
   if (raw === null || raw === undefined) return fallback;
@@ -124,7 +138,11 @@ export async function getTransportMaster(institutionId: string, academicYear = '
       orderBy: { vehicleNumber: 'asc' },
     }),
     prisma.transportGpsDevice.findMany({ where: { institutionId }, orderBy: { deviceId: 'asc' } }),
-    prisma.transportStaffMember.findMany({ where: { institutionId, isActive: true } }),
+    prisma.transportStaffMember.findMany({
+      where: { institutionId, isActive: true },
+      include: { assignedRoute: true, assignedVehicle: true },
+      orderBy: { name: 'asc' },
+    }),
     prisma.transportMasterAuditLog.findMany({
       where: { institutionId }, orderBy: { createdAt: 'desc' }, take: 30,
     }),
@@ -149,6 +167,9 @@ export async function getTransportMaster(institutionId: string, academicYear = '
     routeStatuses: ROUTE_STATUSES,
     vehicleTypes: VEHICLE_TYPES,
     availabilityStatuses: AVAILABILITY_STATUSES,
+    gpsVendors: GPS_VENDORS,
+    stopTypes: STOP_TYPES,
+    staffRoles: STAFF_ROLES,
     kpis: {
       totalRoutes: yearRoutes.filter((r) => r.status === 'ACTIVE').length,
       activeVehicles: vehicles.filter((v) => v.isActive && v.availabilityStatus !== 'MAINTENANCE').length,
@@ -160,19 +181,33 @@ export async function getTransportMaster(institutionId: string, academicYear = '
     },
     routes: yearRoutes.map(serializeRoute),
     vehicles: vehicles.map(serializeVehicle),
-    gpsDevices: gpsDevices.map((g) => ({
-      id: g.id, deviceId: g.deviceId, simNumber: g.simNumber, imei: g.imei,
-      vendor: g.vendor, connectivityStatus: g.connectivityStatus, batteryLevel: g.batteryLevel,
-      liveTrackingEnabled: g.liveTrackingEnabled, status: g.status,
-      linkedVehicle: vehicles.find((v) => v.gpsDeviceId === g.id)?.vehicleNumber ?? '—',
-    })),
+    gpsDevices: gpsDevices.map((g) => {
+      const linked = vehicles.find((v) => v.gpsDeviceId === g.id);
+      return {
+        id: g.id, deviceId: g.deviceId, simNumber: g.simNumber, imei: g.imei,
+        vendor: g.vendor, connectivityStatus: g.connectivityStatus, batteryLevel: g.batteryLevel,
+        liveTrackingEnabled: g.liveTrackingEnabled, status: g.status,
+        linkedVehicleId: linked?.id ?? '',
+        linkedVehicle: linked?.vehicleNumber ?? '—',
+        linkedRoute: linked?.routeName ?? '—',
+        linkedRouteCode: linked?.routeCode ?? '—',
+      };
+    }),
     staff: staff.map((s) => ({
-      id: s.id, name: s.name, role: s.role, mobile: s.mobile, onDuty: s.onDuty,
+      id: s.id, employeeCode: s.employeeCode, name: s.name, role: s.role, mobile: s.mobile,
+      email: s.email, onDuty: s.onDuty, staffStatus: s.staffStatus,
+      assignedRouteId: s.assignedRouteId ?? '',
+      assignedVehicleId: s.assignedVehicleId ?? '',
+      routeCode: s.assignedRoute?.routeCode ?? '',
+      routeName: s.assignedRoute?.routeName ?? '',
+      vehicleNumber: s.assignedVehicle?.vehicleNumber ?? '',
+      licenseNumber: s.licenseNumber,
     })),
     stops: allStops.map((s) => ({
-      id: s.id, routeCode: s.routeCode, routeName: s.routeName, stopType: s.stopType,
-      stopName: s.stopName, sequenceOrder: s.sequenceOrder,
+      id: s.id, routeId: s.routeId, routeCode: s.routeCode, routeName: s.routeName,
+      stopType: s.stopType, stopName: s.stopName, sequenceOrder: s.sequenceOrder,
       latitude: s.latitude, longitude: s.longitude, landmark: s.landmark,
+      estimatedArrival: s.estimatedArrival,
     })),
     auditLogs: auditLogs.map((a) => ({
       id: a.id, entityType: a.entityType, entityLabel: a.entityLabel, action: a.action,
@@ -304,6 +339,220 @@ export async function toggleLiveTracking(institutionId: string, vehicleId: strin
     where: { id: vehicleId },
     data: { liveTrackingEnabled: enabled },
   });
+}
+
+export async function createGpsDevice(institutionId: string, body: Record<string, unknown>) {
+  const count = await prisma.transportGpsDevice.count({ where: { institutionId } });
+  const deviceId = body.deviceId ? String(body.deviceId) : `GPS-${1000 + count}`;
+  const row = await prisma.transportGpsDevice.create({
+    data: {
+      institutionId, deviceId,
+      simNumber: String(body.simNumber ?? ''),
+      imei: String(body.imei ?? ''),
+      vendor: String(body.vendor ?? 'TrackPro'),
+      connectivityStatus: 'ONLINE',
+      batteryLevel: 100,
+      liveTrackingEnabled: true,
+      status: 'ACTIVE',
+    },
+  });
+  await audit(institutionId, 'GPS', row.id, deviceId, 'Created GPS device');
+  return row;
+}
+
+export async function updateGpsDevice(institutionId: string, id: string, body: Record<string, unknown>) {
+  const row = await prisma.transportGpsDevice.update({
+    where: { id },
+    data: {
+      simNumber: body.simNumber !== undefined ? String(body.simNumber) : undefined,
+      imei: body.imei !== undefined ? String(body.imei) : undefined,
+      vendor: body.vendor !== undefined ? String(body.vendor) : undefined,
+      connectivityStatus: body.connectivityStatus !== undefined ? String(body.connectivityStatus) : undefined,
+      status: body.status !== undefined ? String(body.status) : undefined,
+    },
+  });
+  await audit(institutionId, 'GPS', id, row.deviceId, 'Updated GPS device');
+  return row;
+}
+
+export async function linkGpsToVehicle(institutionId: string, gpsDeviceId: string, vehicleId: string) {
+  const device = await prisma.transportGpsDevice.findFirst({ where: { id: gpsDeviceId, institutionId } });
+  const vehicle = await prisma.transportVehicle.findFirst({ where: { id: vehicleId, institutionId } });
+  if (!device || !vehicle) throw new Error('GPS device or vehicle not found');
+
+  await prisma.transportVehicle.updateMany({
+    where: { institutionId, gpsDeviceId },
+    data: { gpsDeviceId: null },
+  });
+  await prisma.transportVehicle.update({
+    where: { id: vehicleId },
+    data: { gpsDeviceId, liveTrackingEnabled: true },
+  });
+  await audit(institutionId, 'GPS', gpsDeviceId, device.deviceId, 'Mapped to vehicle', '', vehicle.vehicleNumber);
+  return device;
+}
+
+export async function toggleGpsDeviceTracking(institutionId: string, id: string, enabled: boolean) {
+  const row = await prisma.transportGpsDevice.update({
+    where: { id },
+    data: { liveTrackingEnabled: enabled },
+  });
+  await audit(institutionId, 'GPS', id, row.deviceId, enabled ? 'Live tracking enabled' : 'Live tracking paused');
+  return row;
+}
+
+export async function addRouteStop(institutionId: string, routeId: string, body: Record<string, unknown>) {
+  const route = await prisma.transportRoute.findFirst({ where: { id: routeId, institutionId } });
+  if (!route) throw new Error('Route not found');
+
+  const maxSeq = await prisma.transportRouteStop.aggregate({
+    where: { routeId },
+    _max: { sequenceOrder: true },
+  });
+  const sequenceOrder = body.sequenceOrder !== undefined
+    ? Number(body.sequenceOrder)
+    : (maxSeq._max.sequenceOrder ?? 0) + 1;
+
+  const row = await prisma.transportRouteStop.create({
+    data: {
+      institutionId, routeId,
+      stopType: String(body.stopType ?? 'PICKUP'),
+      stopName: String(body.stopName),
+      sequenceOrder,
+      latitude: Number(body.latitude ?? 26.9124),
+      longitude: Number(body.longitude ?? 75.7873),
+      landmark: String(body.landmark ?? ''),
+      estimatedArrival: String(body.estimatedArrival ?? ''),
+    },
+  });
+  await refreshRouteStopCount(routeId);
+  await audit(institutionId, 'STOP', row.id, row.stopName, 'Added route stop', '', route.routeName);
+  return row;
+}
+
+export async function updateRouteStop(institutionId: string, stopId: string, body: Record<string, unknown>) {
+  const existing = await prisma.transportRouteStop.findFirst({ where: { id: stopId, institutionId } });
+  if (!existing) throw new Error('Stop not found');
+
+  const row = await prisma.transportRouteStop.update({
+    where: { id: stopId },
+    data: {
+      stopType: body.stopType !== undefined ? String(body.stopType) : undefined,
+      stopName: body.stopName !== undefined ? String(body.stopName) : undefined,
+      sequenceOrder: body.sequenceOrder !== undefined ? Number(body.sequenceOrder) : undefined,
+      latitude: body.latitude !== undefined ? Number(body.latitude) : undefined,
+      longitude: body.longitude !== undefined ? Number(body.longitude) : undefined,
+      landmark: body.landmark !== undefined ? String(body.landmark) : undefined,
+      estimatedArrival: body.estimatedArrival !== undefined ? String(body.estimatedArrival) : undefined,
+    },
+  });
+  await audit(institutionId, 'STOP', stopId, row.stopName, 'Updated route stop');
+  return row;
+}
+
+export async function deleteRouteStop(institutionId: string, stopId: string) {
+  const existing = await prisma.transportRouteStop.findFirst({ where: { id: stopId, institutionId } });
+  if (!existing) throw new Error('Stop not found');
+  await prisma.transportRouteStop.delete({ where: { id: stopId } });
+  await refreshRouteStopCount(existing.routeId);
+  await audit(institutionId, 'STOP', stopId, existing.stopName, 'Deleted route stop');
+}
+
+export async function createMasterStaff(institutionId: string, body: Record<string, unknown>) {
+  const role = String(body.role ?? 'Driver');
+  const employeeCode = await nextStaffCode(institutionId, role);
+  const row = await prisma.transportStaffMember.create({
+    data: {
+      institutionId, employeeCode,
+      name: String(body.name),
+      role,
+      mobile: String(body.mobile ?? ''),
+      email: String(body.email ?? ''),
+      employmentType: String(body.employmentType ?? 'Permanent'),
+      licenseNumber: String(body.licenseNumber ?? ''),
+      licenseCategory: String(body.licenseCategory ?? ''),
+      yearsExperience: Number(body.yearsExperience ?? 0),
+      workflowStage: 'ACTIVE',
+      staffStatus: 'ACTIVE',
+    },
+  });
+  await audit(institutionId, 'STAFF', row.id, row.name, `Registered ${role}`);
+  return row;
+}
+
+export async function updateMasterStaff(institutionId: string, id: string, body: Record<string, unknown>) {
+  const row = await prisma.transportStaffMember.update({
+    where: { id },
+    data: {
+      name: body.name !== undefined ? String(body.name) : undefined,
+      mobile: body.mobile !== undefined ? String(body.mobile) : undefined,
+      email: body.email !== undefined ? String(body.email) : undefined,
+      role: body.role !== undefined ? String(body.role) : undefined,
+      licenseNumber: body.licenseNumber !== undefined ? String(body.licenseNumber) : undefined,
+      licenseCategory: body.licenseCategory !== undefined ? String(body.licenseCategory) : undefined,
+      onDuty: body.onDuty !== undefined ? Boolean(body.onDuty) : undefined,
+      yearsExperience: body.yearsExperience !== undefined ? Number(body.yearsExperience) : undefined,
+    },
+  });
+  await audit(institutionId, 'STAFF', id, row.name, 'Updated staff');
+  return row;
+}
+
+export async function deleteMasterStaff(institutionId: string, id: string) {
+  const row = await prisma.transportStaffMember.update({
+    where: { id },
+    data: { isActive: false, onDuty: false, staffStatus: 'TERMINATED' },
+  });
+  await audit(institutionId, 'STAFF', id, row.name, 'Removed staff');
+  return row;
+}
+
+export async function assignMasterStaffToVehicle(institutionId: string, staffId: string, body: Record<string, unknown>) {
+  const staff = await prisma.transportStaffMember.findFirst({
+    where: { id: staffId, institutionId },
+    include: { assignedVehicle: true },
+  });
+  if (!staff) throw new Error('Staff not found');
+
+  const vehicleId = String(body.vehicleId ?? '');
+  const routeId = body.routeId ? String(body.routeId) : undefined;
+  const vehicle = vehicleId
+    ? await prisma.transportVehicle.findFirst({ where: { id: vehicleId, institutionId } })
+    : null;
+
+  let resolvedRouteId = routeId ?? staff.assignedRouteId ?? null;
+  if (!resolvedRouteId && vehicle?.routeCode) {
+    const route = await prisma.transportRoute.findFirst({
+      where: { institutionId, routeCode: vehicle.routeCode },
+    });
+    resolvedRouteId = route?.id ?? null;
+  }
+
+  await prisma.transportStaffMember.update({
+    where: { id: staffId },
+    data: {
+      assignedVehicleId: vehicleId || null,
+      assignedRouteId: resolvedRouteId,
+      workflowStage: 'ROUTE_ASSIGNMENT',
+      onDuty: true,
+    },
+  });
+
+  if (vehicle) {
+    const vehicleData: Record<string, string> = {};
+    if (staff.role === 'Driver') {
+      vehicleData.driverName = staff.name;
+      vehicleData.driverMobile = staff.mobile;
+    } else if (staff.role === 'Attendant') {
+      vehicleData.attendantName = staff.name;
+    }
+    if (Object.keys(vehicleData).length > 0) {
+      await prisma.transportVehicle.update({ where: { id: vehicleId }, data: vehicleData });
+    }
+  }
+
+  await audit(institutionId, 'STAFF', staffId, staff.name, 'Assigned to vehicle', '', vehicle?.vehicleNumber ?? '');
+  return staff;
 }
 
 export async function seedTransportMaster(institutionId: string) {

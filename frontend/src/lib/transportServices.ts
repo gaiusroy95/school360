@@ -62,6 +62,9 @@ export type TransportMaster = {
   routeStatuses: string[];
   vehicleTypes: string[];
   availabilityStatuses: string[];
+  gpsVendors?: string[];
+  stopTypes?: string[];
+  staffRoles?: string[];
   kpis: {
     totalRoutes: number; activeVehicles: number; gpsOnline: number; gpsTotal: number;
     routesRunning: number; vehiclesInMaintenance: number; routeOccupancy: number;
@@ -111,6 +114,58 @@ export async function toggleMasterVehicleTracking(vehicleId: string, enabled: bo
   return api<TransportMaster>(`/api/transport/master/vehicles/${vehicleId}/toggle-tracking`, {
     method: 'POST', body: JSON.stringify({ enabled }),
   });
+}
+
+export async function createMasterGpsDevice(body: Record<string, unknown>) {
+  return api<TransportMaster>('/api/transport/master/gps-devices', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function updateMasterGpsDevice(id: string, body: Record<string, unknown>) {
+  return api<TransportMaster>(`/api/transport/master/gps-devices/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function linkMasterGpsToVehicle(gpsId: string, vehicleId: string) {
+  return api<TransportMaster>(`/api/transport/master/gps-devices/${gpsId}/link-vehicle`, {
+    method: 'POST', body: JSON.stringify({ vehicleId }),
+  });
+}
+
+export async function toggleMasterGpsTracking(gpsId: string, enabled: boolean) {
+  return api<TransportMaster>(`/api/transport/master/gps-devices/${gpsId}/toggle-tracking`, {
+    method: 'POST', body: JSON.stringify({ enabled }),
+  });
+}
+
+export async function addMasterRouteStop(routeId: string, body: Record<string, unknown>) {
+  return api<TransportMaster>(`/api/transport/master/routes/${routeId}/stops`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function updateMasterRouteStop(stopId: string, body: Record<string, unknown>) {
+  return api<TransportMaster>(`/api/transport/master/stops/${stopId}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function deleteMasterRouteStop(stopId: string) {
+  return api<TransportMaster>(`/api/transport/master/stops/${stopId}`, { method: 'DELETE' });
+}
+
+export async function createMasterStaff(body: Record<string, unknown>) {
+  return api<TransportMaster>('/api/transport/master/staff', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function updateMasterStaff(id: string, body: Record<string, unknown>) {
+  return api<TransportMaster>(`/api/transport/master/staff/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function deleteMasterStaff(id: string) {
+  return api<TransportMaster>(`/api/transport/master/staff/${id}`, { method: 'DELETE' });
+}
+
+export async function assignMasterStaff(id: string, body: Record<string, unknown>) {
+  return api<TransportMaster>(`/api/transport/master/staff/${id}/assign`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function seedTransportMasterDemo() {
+  return api<TransportMaster>('/api/transport/master/seed-demo', { method: 'POST', body: '{}' });
 }
 
 export type TransportRoutePlanning = {
@@ -194,6 +249,22 @@ export async function clonePlan(id: string) {
   return api<TransportRoutePlanning>(`/api/transport/planning/plans/${id}/clone`, { method: 'POST', body: '{}' });
 }
 
+export async function deleteRoutePlan(id: string) {
+  return api<TransportRoutePlanning>(`/api/transport/planning/plans/${id}`, { method: 'DELETE' });
+}
+
+export async function addPlanStop(planId: string, body: Record<string, unknown>) {
+  return api<TransportRoutePlanning>(`/api/transport/planning/plans/${planId}/stops`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function updatePlanStop(stopId: string, body: Record<string, unknown>) {
+  return api<TransportRoutePlanning>(`/api/transport/planning/plans/stops/${stopId}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function deletePlanStop(stopId: string) {
+  return api<TransportRoutePlanning>(`/api/transport/planning/plans/stops/${stopId}`, { method: 'DELETE' });
+}
+
 export type TransportLiveTracking = {
   isLive: boolean;
   refreshIntervalSec: number;
@@ -273,6 +344,19 @@ export type TransportStudentTransport = {
   boardingToday: Record<string, unknown>[];
   vehicleOccupancy: Record<string, unknown>[];
   routes: Record<string, unknown>[];
+  routeOptions: {
+    id: string; routeCode: string; routeName: string;
+    stops: { id: string; stopName: string; stopType: string; sequenceOrder: number; estimatedArrival: string }[];
+  }[];
+  studentPicker: {
+    classes: string[];
+    sectionsByClass: Record<string, string[]>;
+    students: {
+      id: string; name: string; admissionNumber: string;
+      className: string; sectionName: string; category: string;
+      address: string; guardianName: string; guardianMobile: string; hasTransport: boolean;
+    }[];
+  };
   vehicles: Record<string, unknown>[];
   auditLogs: Record<string, unknown>[];
   settings: Record<string, unknown>;

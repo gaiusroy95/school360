@@ -1,6 +1,11 @@
 import { FeeMasterStatus, LeaveApplicationStatus, Prisma } from '@prisma/client';
 import { prisma } from './prisma.js';
 import { seedEmployeeDirectoryDemo } from './employeeDirectory.js';
+import {
+  departmentMatchFilter,
+  resolveEmployeeRef,
+  syncAllEmployeesToDepartments,
+} from './employeeDepartmentSync.js';
 
 export type DeptSettings = {
   leavePolicy?: string;
@@ -30,10 +35,7 @@ function parseSettings(raw: unknown): DeptSettings {
 
 async function employeeBrief(institutionId: string, employeeId: string) {
   if (!employeeId) return null;
-  const emp = await prisma.payrollEmployee.findFirst({
-    where: { institutionId, id: employeeId },
-    select: { id: true, employeeCode: true, fullName: true, designation: true },
-  });
+  const emp = await resolveEmployeeRef(institutionId, employeeId);
   return emp
     ? {
         id: emp.id,
@@ -155,18 +157,80 @@ export async function getHrDepartment(institutionId: string, id: string) {
   if (row.status === 'DELETED') throw new Error('Department was deleted');
 
   const dept = serializeDepartment(row);
+  const parent = row.parentId
+    ? await prisma.hrDepartment.findFirst({ where: { id: row.parentId, institutionId } })
+    : null;
+  const children = await prisma.hrDepartment.findMany({
+    where: { institutionId, parentId: row.id, NOT: { status: 'DELETED' } },
+    orderBy: { name: 'asc' },
+  });
+
+  let headId = dept.headEmployeeId;
+  let reportsToId = dept.reportsToEmployeeId;
+  if (!headId) {
+    const hod = await prisma.payrollEmployee.findFirst({
+      where: {
+        institutionId,
+        AND: [
+          departmentMatchFilter({ name: dept.name, code: dept.code }),
+          {
+            OR: [
+              { designation: { contains: 'Head', mode: 'insensitive' } },
+              { designation: { contains: 'HOD', mode: 'insensitive' } },
+              { designation: { contains: 'Principal', mode: 'insensitive' } },
+            ],
+          },
+        ],
+      },
+      select: { id: true },
+    });
+    if (hod) headId = hod.id;
+  }
+  if (!reportsToId && parent?.headEmployeeId) {
+    reportsToId = parent.headEmployeeId;
+  }
+
   const [head, reportsTo, employees, parents] = await Promise.all([
-    employeeBrief(institutionId, dept.headEmployeeId),
-    employeeBrief(institutionId, dept.reportsToEmployeeId),
-    listDepartmentEmployees(institutionId, dept.name),
+    employeeBrief(institutionId, headId),
+    employeeBrief(institutionId, reportsToId),
+    listDepartmentEmployees(institutionId, dept.name, undefined, dept.code),
     listHrDepartments(institutionId),
   ]);
 
+  if (
+    (headId && headId !== row.headEmployeeId) ||
+    (reportsToId && reportsToId !== row.reportsToEmployeeId)
+  ) {
+    await prisma.hrDepartment.update({
+      where: { id: row.id },
+      data: {
+        ...(headId && headId !== row.headEmployeeId ? { headEmployeeId: headId } : {}),
+        ...(reportsToId && reportsToId !== row.reportsToEmployeeId ? { reportsToEmployeeId: reportsToId } : {}),
+      },
+    });
+  }
+
+  const liveTree = [
+    ...(parent
+      ? [{ id: parent.id, label: `${parent.name} (${parent.code})`, children: [] as { id: string; label: string }[] }]
+      : []),
+    {
+      id: row.id,
+      label: `${dept.name} (${dept.code})`,
+      children: children.map((c) => ({ id: c.id, label: `${c.name} (${c.code})` })),
+    },
+  ];
+  const structureTree = parent || children.length ? liveTree : (dept.structureTree.length ? dept.structureTree : liveTree);
+
   return {
     ...dept,
+    headEmployeeId: headId,
+    reportsToEmployeeId: reportsToId,
     head,
     reportsTo,
     employees,
+    parent: parent ? { id: parent.id, name: parent.name, code: parent.code } : null,
+    structureTree,
     parentOptions: parents.filter((p: { id: string }) => p.id !== id).map((p) => ({ id: p.id, name: p.name, code: p.code })),
   };
 }
@@ -175,10 +239,11 @@ export async function listDepartmentEmployees(
   institutionId: string,
   departmentName: string,
   filters?: { q?: string; status?: string; designation?: string },
+  departmentCode?: string,
 ) {
   const where: Prisma.PayrollEmployeeWhereInput = {
     institutionId,
-    department: { equals: departmentName, mode: 'insensitive' },
+    ...departmentMatchFilter({ name: departmentName, code: departmentCode || departmentName }),
   };
   if (filters?.designation) {
     where.designation = { contains: filters.designation, mode: 'insensitive' };
@@ -351,6 +416,15 @@ export async function updateHrDepartment(
     await prisma.payrollEmployee.updateMany({
       where: { institutionId, department: existing.name },
       data: { department: data.name },
+    });
+  }
+
+  const nextHead = data.headEmployeeId ?? existing.headEmployeeId;
+  if (nextHead) {
+    const name = data.name?.trim() || existing.name;
+    await prisma.payrollEmployee.updateMany({
+      where: { institutionId, id: nextHead },
+      data: { department: name },
     });
   }
 
@@ -631,3 +705,5 @@ export async function seedHrDepartmentsDemo(institutionId: string) {
 
   return getHrDepartment(institutionId, dept.id);
 }
+
+export { syncAllEmployeesToDepartments };

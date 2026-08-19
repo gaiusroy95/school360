@@ -355,12 +355,12 @@ export async function getExitDashboard(institutionId: string) {
       retentionType: t.retentionType, status: t.status, notes: t.notes,
     }))),
     handovers: resignations.flatMap((r) => r.handovers.map((h) => ({
-      id: h.id, caseNumber: r.caseNumber, employeeName: r.employeeName,
+      id: h.id, resignationId: r.id, caseNumber: r.caseNumber, employeeName: r.employeeName,
       category: h.category, taskType: h.taskType, description: h.description,
       successor: h.successor, dueDate: formatDate(h.dueDate), status: h.status,
     }))),
     knowledgeTransfers: resignations.flatMap((r) => r.knowledgeTransfers.map((k) => ({
-      id: k.id, caseNumber: r.caseNumber, employeeName: r.employeeName,
+      id: k.id, resignationId: r.id, caseNumber: r.caseNumber, employeeName: r.employeeName,
       transferType: k.transferType, description: k.description,
       status: k.status, dueDate: formatDate(k.dueDate),
     }))),
@@ -377,7 +377,7 @@ export async function getExitDashboard(institutionId: string) {
       recoveryAmount: a.recoveryAmount, status: a.status,
     }))),
     fnfSettlements: resignations.filter((r) => r.fnfSettlement).map((r) => ({
-      id: r.fnfSettlement!.id, caseNumber: r.caseNumber, employeeName: r.employeeName,
+      id: r.fnfSettlement!.id, resignationId: r.id, caseNumber: r.caseNumber, employeeName: r.employeeName,
       earnings: parseJson(r.fnfSettlement!.earnings, []),
       deductions: parseJson(r.fnfSettlement!.deductions, []),
       leaveEncashment: r.fnfSettlement!.leaveEncashment,
@@ -387,27 +387,27 @@ export async function getExitDashboard(institutionId: string) {
       settlementStatus: r.fnfSettlement!.settlementStatus,
     })),
     leaveSettlements: resignations.filter((r) => r.leaveSettlement).map((r) => ({
-      id: r.leaveSettlement!.id, caseNumber: r.caseNumber, employeeName: r.employeeName,
+      id: r.leaveSettlement!.id, resignationId: r.id, caseNumber: r.caseNumber, employeeName: r.employeeName,
       earnedLeave: r.leaveSettlement!.earnedLeave, casualLeave: r.leaveSettlement!.casualLeave,
       sickLeave: r.leaveSettlement!.sickLeave, compOff: r.leaveSettlement!.compOff,
       encashmentAmount: r.leaveSettlement!.encashmentAmount,
       negativeLeaveRecovery: r.leaveSettlement!.negativeLeaveRecovery,
     })),
     exitInterviews: resignations.filter((r) => r.exitInterview).map((r) => ({
-      id: r.exitInterview!.id, caseNumber: r.caseNumber, employeeName: r.employeeName,
+      id: r.exitInterview!.id, resignationId: r.id, caseNumber: r.caseNumber, employeeName: r.employeeName,
       scheduledDate: r.exitInterview!.scheduledDate?.toISOString() ?? '',
       status: r.exitInterview!.status, rehireInterest: r.exitInterview!.rehireInterest,
       responses: parseJson(r.exitInterview!.responses, []),
       hrNotes: r.exitInterview!.hrNotes,
     })),
     documents: resignations.flatMap((r) => r.documents.map((d) => ({
-      id: d.id, caseNumber: r.caseNumber, employeeName: r.employeeName,
+      id: d.id, resignationId: r.id, caseNumber: r.caseNumber, employeeName: r.employeeName,
       documentType: d.documentType, fileName: d.fileName,
       qrVerified: d.qrVerified, digitalSigned: d.digitalSigned,
       sentAt: formatDate(d.sentAt), status: d.status,
     }))),
     alumniRecords: resignations.filter((r) => r.alumniRecord).map((r) => ({
-      id: r.alumniRecord!.id, caseNumber: r.caseNumber, employeeName: r.employeeName,
+      id: r.alumniRecord!.id, resignationId: r.id, caseNumber: r.caseNumber, employeeName: r.employeeName,
       rehireEligibility: r.alumniRecord!.rehireEligibility, notes: r.alumniRecord!.notes,
     })),
     auditLogs: resignations.flatMap((r) => r.auditLogs.map((a) => ({
@@ -709,6 +709,253 @@ export async function initiateRetention(
     data: { retentionStatus: retentionType },
   });
   await auditLog(institutionId, resignationId, `Retention initiated: ${retentionType}`);
+}
+
+export async function updateResignationCase(institutionId: string, id: string, body: Record<string, unknown>) {
+  const row = await prisma.hrExitResignation.findFirst({ where: { id, institutionId } });
+  if (!row) throw new Error('Case not found');
+  const updated = await prisma.hrExitResignation.update({
+    where: { id },
+    data: {
+      employeeName: body.employeeName !== undefined ? String(body.employeeName) : undefined,
+      department: body.department !== undefined ? String(body.department) : undefined,
+      designation: body.designation !== undefined ? String(body.designation) : undefined,
+      reportingManager: body.reportingManager !== undefined ? String(body.reportingManager) : undefined,
+      requestedLastWorkingDay: body.requestedLastWorkingDay !== undefined
+        ? (body.requestedLastWorkingDay ? new Date(String(body.requestedLastWorkingDay)) : null) : undefined,
+      noticePeriodDays: body.noticePeriodDays !== undefined ? Number(body.noticePeriodDays) : undefined,
+      resignationType: body.resignationType !== undefined ? String(body.resignationType) : undefined,
+      detailedReason: body.detailedReason !== undefined ? String(body.detailedReason) : undefined,
+      preferredContactAfterExit: body.preferredContactAfterExit !== undefined ? String(body.preferredContactAfterExit) : undefined,
+    },
+  });
+  await auditLog(institutionId, id, 'Resignation case updated');
+  return updated;
+}
+
+export async function extendNoticePeriod(institutionId: string, resignationId: string, body: Record<string, unknown>) {
+  const row = await prisma.hrExitResignation.findFirst({ where: { id: resignationId, institutionId } });
+  if (!row) throw new Error('Case not found');
+  const extraDays = Number(body.extraDays ?? 7);
+  const newEnd = row.noticeEndDate ? new Date(row.noticeEndDate) : new Date();
+  newEnd.setDate(newEnd.getDate() + extraDays);
+  const updated = await prisma.hrExitResignation.update({
+    where: { id: resignationId },
+    data: {
+      noticeEndDate: newEnd,
+      noticePeriodDays: row.noticePeriodDays + extraDays,
+      requestedLastWorkingDay: newEnd,
+    },
+  });
+  await auditLog(institutionId, resignationId, `Notice period extended by ${extraDays} days`);
+  return updated;
+}
+
+export async function addHandoverTask(institutionId: string, resignationId: string, body: Record<string, unknown>) {
+  const row = await prisma.hrExitHandover.create({
+    data: {
+      institutionId, resignationId,
+      category: String(body.category ?? 'Administrative Staff'),
+      taskType: String(body.taskType),
+      description: String(body.description ?? ''),
+      successor: String(body.successor ?? 'TBD'),
+      dueDate: body.dueDate ? new Date(String(body.dueDate)) : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+    },
+  });
+  await auditLog(institutionId, resignationId, `Handover task added: ${row.taskType}`);
+  return row;
+}
+
+export async function updateHandover(institutionId: string, id: string, body: Record<string, unknown>) {
+  const row = await prisma.hrExitHandover.update({
+    where: { id },
+    data: {
+      successor: body.successor !== undefined ? String(body.successor) : undefined,
+      description: body.description !== undefined ? String(body.description) : undefined,
+      dueDate: body.dueDate !== undefined ? (body.dueDate ? new Date(String(body.dueDate)) : null) : undefined,
+    },
+  });
+  await auditLog(institutionId, row.resignationId, `Handover updated: ${row.taskType}`);
+  return row;
+}
+
+export async function addKnowledgeTransfer(institutionId: string, resignationId: string, body: Record<string, unknown>) {
+  const row = await prisma.hrExitKnowledgeTransfer.create({
+    data: {
+      institutionId, resignationId,
+      transferType: String(body.transferType),
+      description: String(body.description ?? ''),
+      dueDate: body.dueDate ? new Date(String(body.dueDate)) : new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
+    },
+  });
+  await auditLog(institutionId, resignationId, `Knowledge transfer added: ${row.transferType}`);
+  return row;
+}
+
+export async function completeKnowledgeTransfer(institutionId: string, id: string) {
+  const row = await prisma.hrExitKnowledgeTransfer.update({
+    where: { id },
+    data: { status: 'COMPLETED' },
+  });
+  await auditLog(institutionId, row.resignationId, `Knowledge transfer completed: ${row.transferType}`);
+  return row;
+}
+
+export async function rejectClearance(institutionId: string, clearanceId: string, remarks = '') {
+  const c = await prisma.hrExitClearance.findFirst({ where: { id: clearanceId, institutionId } });
+  if (!c) throw new Error('Clearance not found');
+  await prisma.hrExitClearance.update({
+    where: { id: clearanceId },
+    data: { status: 'REJECTED', remarks, pendingItems: String(remarks) },
+  });
+  await auditLog(institutionId, c.resignationId, `Clearance rejected: ${c.department}`);
+}
+
+export async function updateAssetRecovery(institutionId: string, id: string, body: Record<string, unknown>) {
+  const row = await prisma.hrExitAssetRecovery.update({
+    where: { id },
+    data: {
+      condition: body.condition !== undefined ? String(body.condition) : undefined,
+      damageCost: body.damageCost !== undefined ? Number(body.damageCost) : undefined,
+      recoveryAmount: body.recoveryAmount !== undefined ? Number(body.recoveryAmount) : undefined,
+    },
+  });
+  await auditLog(institutionId, row.resignationId, `Asset updated: ${row.assetType} (${row.condition})`);
+  return row;
+}
+
+export async function recalculateFnf(institutionId: string, resignationId: string, body: Record<string, unknown>) {
+  const salary = Number(body.salary ?? 45000);
+  const leaveEnc = Number(body.leaveEncashment ?? 12500);
+  const recoveries = Number(body.recoveries ?? 2000);
+  const fnf = calcFnf(salary, leaveEnc, recoveries);
+  const row = await prisma.hrExitFnfSettlement.upsert({
+    where: { resignationId },
+    create: {
+      institutionId, resignationId,
+      earnings: fnf.earnings, deductions: fnf.deductions,
+      leaveEncashment: leaveEnc, netAmount: fnf.netAmount,
+      settlementStatus: 'CALCULATED',
+    },
+    update: {
+      earnings: fnf.earnings, deductions: fnf.deductions,
+      leaveEncashment: leaveEnc, netAmount: fnf.netAmount,
+      settlementStatus: 'CALCULATED',
+    },
+  });
+  await auditLog(institutionId, resignationId, `F&F recalculated: ₹${fnf.netAmount}`);
+  return row;
+}
+
+export async function markFnfPaid(institutionId: string, resignationId: string, body: Record<string, unknown>) {
+  await prisma.hrExitFnfSettlement.updateMany({
+    where: { resignationId, institutionId },
+    data: {
+      settlementStatus: 'PAID',
+      paymentDate: body.paymentDate ? new Date(String(body.paymentDate)) : new Date(),
+      paymentMode: String(body.paymentMode ?? 'Bank Transfer'),
+    },
+  });
+  await auditLog(institutionId, resignationId, 'F&F settlement marked as paid');
+}
+
+export async function updateLeaveSettlement(institutionId: string, resignationId: string, body: Record<string, unknown>) {
+  const encashRate = Number(body.encashRate ?? 1500);
+  const earned = Number(body.earnedLeave ?? 0);
+  const casual = Number(body.casualLeave ?? 0);
+  const sick = Number(body.sickLeave ?? 0);
+  const comp = Number(body.compOff ?? 0);
+  const encashment = Math.round((earned + casual + sick + comp) * encashRate);
+  const row = await prisma.hrExitLeaveSettlement.upsert({
+    where: { resignationId },
+    create: {
+      institutionId, resignationId,
+      earnedLeave: earned, casualLeave: casual, sickLeave: sick, compOff: comp,
+      encashmentAmount: encashment,
+      negativeLeaveRecovery: Number(body.negativeLeaveRecovery ?? 0),
+    },
+    update: {
+      earnedLeave: earned, casualLeave: casual, sickLeave: sick, compOff: comp,
+      encashmentAmount: encashment,
+      negativeLeaveRecovery: Number(body.negativeLeaveRecovery ?? 0),
+    },
+  });
+  await auditLog(institutionId, resignationId, `Leave encashment updated: ₹${encashment}`);
+  return row;
+}
+
+export async function updateExitInterview(institutionId: string, id: string, body: Record<string, unknown>) {
+  const data: Record<string, unknown> = {};
+  if (body.scheduledDate !== undefined) data.scheduledDate = body.scheduledDate ? new Date(String(body.scheduledDate)) : null;
+  if (body.rehireInterest !== undefined) data.rehireInterest = String(body.rehireInterest);
+  if (body.hrNotes !== undefined) data.hrNotes = String(body.hrNotes);
+  if (body.responses !== undefined) data.responses = body.responses;
+  if (body.status !== undefined) data.status = String(body.status);
+  if (body.status === 'COMPLETED') data.status = 'COMPLETED';
+  const row = await prisma.hrExitInterview.update({ where: { id }, data });
+  await auditLog(institutionId, row.resignationId, `Exit interview ${row.status.toLowerCase()}`);
+  return row;
+}
+
+export async function generateExitDocuments(institutionId: string, resignationId: string) {
+  const row = await prisma.hrExitResignation.findFirst({ where: { id: resignationId, institutionId } });
+  if (!row) throw new Error('Case not found');
+  for (const docType of EXIT_DOCUMENTS) {
+    const exists = await prisma.hrExitDocument.findFirst({ where: { resignationId, documentType: docType } });
+    if (!exists) {
+      await prisma.hrExitDocument.create({
+        data: {
+          institutionId, resignationId, documentType: docType,
+          fileName: `${docType.replace(/\s/g, '_')}_${row.caseNumber}.pdf`,
+          digitalSigned: true, qrVerified: true, sentAt: new Date(), status: 'GENERATED',
+        },
+      });
+    }
+  }
+  await auditLog(institutionId, resignationId, 'Exit documents generated');
+}
+
+export async function sendExitDocument(institutionId: string, documentId: string) {
+  const doc = await prisma.hrExitDocument.update({
+    where: { id: documentId },
+    data: { status: 'SENT', sentAt: new Date() },
+  });
+  await auditLog(institutionId, doc.resignationId, `Document sent: ${doc.documentType}`);
+  return doc;
+}
+
+export async function updateAlumniRecord(institutionId: string, id: string, body: Record<string, unknown>) {
+  const row = await prisma.hrExitAlumniRecord.update({
+    where: { id },
+    data: {
+      rehireEligibility: body.rehireEligibility !== undefined ? String(body.rehireEligibility) : undefined,
+      notes: body.notes !== undefined ? String(body.notes) : undefined,
+    },
+  });
+  await auditLog(institutionId, row.resignationId, `Alumni record updated: ${row.rehireEligibility}`);
+  return row;
+}
+
+export async function closeRetention(institutionId: string, id: string, body: Record<string, unknown>) {
+  const row = await prisma.hrExitRetention.update({
+    where: { id },
+    data: {
+      status: String(body.status ?? 'CLOSED'),
+      notes: String(body.notes ?? ''),
+    },
+  });
+  await auditLog(institutionId, row.resignationId, `Retention ${row.status}: ${row.retentionType}`);
+  return row;
+}
+
+export async function updateExitSettings(institutionId: string, body: Record<string, unknown>) {
+  await ensureSettings(institutionId);
+  const data: Record<string, unknown> = {};
+  if (body.noticePeriodPolicies !== undefined) data.noticePeriodPolicies = body.noticePeriodPolicies;
+  if (body.fnfRules !== undefined) data.fnfRules = body.fnfRules;
+  if (body.notificationRules !== undefined) data.notificationRules = body.notificationRules;
+  if (body.resignationReasons !== undefined) data.resignationReasons = body.resignationReasons;
+  return prisma.hrExitSettings.update({ where: { institutionId }, data });
 }
 
 export async function seedExitDemo(institutionId: string) {

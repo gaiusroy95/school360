@@ -501,10 +501,30 @@ export async function getTeacherAllocationMeta(institutionId: string, academicYe
     ]),
   ].sort((a, b) => a - b);
 
+  const classSet = new Set((filters.classes || []).map((c) => c.trim()).filter(Boolean));
+  const sectionMap = new Map<string, Set<string>>();
+  for (const [cls, sections] of Object.entries(filters.sectionsByClass || {})) {
+    const key = cls.trim();
+    if (!key) continue;
+    classSet.add(key);
+    sectionMap.set(key, new Set((sections || []).map((s) => s.trim()).filter(Boolean)));
+  }
+  for (const cs of classSections) {
+    const className = (cs.className || '').trim();
+    const sectionName = (cs.sectionName || '').trim();
+    if (!className) continue;
+    classSet.add(className);
+    if (!sectionMap.has(className)) sectionMap.set(className, new Set());
+    if (sectionName) sectionMap.get(className)!.add(sectionName);
+  }
+  const collator = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
+
   return {
     academicYear,
-    classes: filters.classes,
-    sectionsByClass: filters.sectionsByClass,
+    classes: [...classSet].sort(collator),
+    sectionsByClass: Object.fromEntries(
+      [...sectionMap.entries()].map(([cls, sections]) => [cls, [...sections].sort(collator)]),
+    ),
     subjects,
     departments: departments.length ? departments : ['General'],
     periodsPerWeek,

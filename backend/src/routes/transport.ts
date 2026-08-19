@@ -4,16 +4,28 @@ import { asyncHandler } from '../lib/asyncHandler.js';
 import { getDefaultInstitutionId } from '../lib/institution.js';
 import { getTransportDashboard, seedTransportDashboard } from '../lib/transportDashboard.js';
 import {
+  addRouteStop,
   archiveTransportRoute,
+  assignMasterStaffToVehicle,
   assignVehicleRoute,
   cloneTransportRoute,
+  createGpsDevice,
+  createMasterStaff,
   createTransportRoute,
   createTransportVehicle,
+  deleteMasterStaff,
+  deleteRouteStop,
   getTransportMaster,
+  linkGpsToVehicle,
   seedTransportMaster,
+  toggleGpsDeviceTracking,
   toggleLiveTracking,
+  updateGpsDevice,
+  updateMasterStaff,
+  updateRouteStop,
 } from '../lib/transportMaster.js';
 import {
+  addPlanStop,
   allocatePlanSeats,
   approveRoutePlan,
   archiveRoutePlan,
@@ -21,6 +33,8 @@ import {
   cancelRoutePlan,
   cloneRoutePlan,
   createRoutePlan,
+  deletePlanStop,
+  deleteRoutePlan,
   getTransportRoutePlanning,
   optimizeRoutePlan,
   pauseRoutePlan,
@@ -28,6 +42,7 @@ import {
   resumeRoutePlan,
   seedTransportRoutePlanning,
   submitPlanForApproval,
+  updatePlanStop,
   updateRoutePlan,
 } from '../lib/transportRoutePlanning.js';
 import {
@@ -250,6 +265,116 @@ transportRouter.post(
   }),
 );
 
+transportRouter.post(
+  '/master/gps-devices',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await createGpsDevice(institutionId, req.body);
+    const data = await getTransportMaster(institutionId);
+    return res.json(data);
+  }),
+);
+
+transportRouter.patch(
+  '/master/gps-devices/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await updateGpsDevice(institutionId, req.params.id, req.body);
+    const data = await getTransportMaster(institutionId);
+    return res.json(data);
+  }),
+);
+
+transportRouter.post(
+  '/master/gps-devices/:id/link-vehicle',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await linkGpsToVehicle(institutionId, req.params.id, String(req.body.vehicleId));
+    const data = await getTransportMaster(institutionId);
+    return res.json(data);
+  }),
+);
+
+transportRouter.post(
+  '/master/gps-devices/:id/toggle-tracking',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await toggleGpsDeviceTracking(institutionId, req.params.id, Boolean(req.body.enabled));
+    const data = await getTransportMaster(institutionId);
+    return res.json(data);
+  }),
+);
+
+transportRouter.post(
+  '/master/routes/:id/stops',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await addRouteStop(institutionId, req.params.id, req.body);
+    const data = await getTransportMaster(institutionId, String(req.body.academicYear ?? '2025-26'));
+    return res.json(data);
+  }),
+);
+
+transportRouter.patch(
+  '/master/stops/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await updateRouteStop(institutionId, req.params.id, req.body);
+    const data = await getTransportMaster(institutionId);
+    return res.json(data);
+  }),
+);
+
+transportRouter.delete(
+  '/master/stops/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await deleteRouteStop(institutionId, req.params.id);
+    const data = await getTransportMaster(institutionId);
+    return res.json(data);
+  }),
+);
+
+transportRouter.post(
+  '/master/staff',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await createMasterStaff(institutionId, req.body);
+    const data = await getTransportMaster(institutionId);
+    return res.json(data);
+  }),
+);
+
+transportRouter.patch(
+  '/master/staff/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await updateMasterStaff(institutionId, req.params.id, req.body);
+    const data = await getTransportMaster(institutionId);
+    return res.json(data);
+  }),
+);
+
+transportRouter.delete(
+  '/master/staff/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await deleteMasterStaff(institutionId, req.params.id);
+    const data = await getTransportMaster(institutionId);
+    return res.json(data);
+  }),
+);
+
+transportRouter.post(
+  '/master/staff/:id/assign',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await assignMasterStaffToVehicle(institutionId, req.params.id, req.body);
+    const data = await getTransportMaster(institutionId);
+    return res.json(data);
+  }),
+);
+
 // ─── Route Planning ─────────────────────────────────────────────────────
 
 transportRouter.get(
@@ -387,6 +512,46 @@ transportRouter.post(
   asyncHandler(async (req, res) => {
     const institutionId = await getDefaultInstitutionId();
     await cloneRoutePlan(institutionId, req.params.id);
+    const data = await getTransportRoutePlanning(institutionId);
+    return res.json(data);
+  }),
+);
+
+transportRouter.delete(
+  '/planning/plans/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await deleteRoutePlan(institutionId, req.params.id);
+    const data = await getTransportRoutePlanning(institutionId);
+    return res.json(data);
+  }),
+);
+
+transportRouter.post(
+  '/planning/plans/:id/stops',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await addPlanStop(institutionId, req.params.id, req.body);
+    const data = await getTransportRoutePlanning(institutionId);
+    return res.json(data);
+  }),
+);
+
+transportRouter.patch(
+  '/planning/plans/stops/:stopId',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await updatePlanStop(institutionId, req.params.stopId, req.body);
+    const data = await getTransportRoutePlanning(institutionId);
+    return res.json(data);
+  }),
+);
+
+transportRouter.delete(
+  '/planning/plans/stops/:stopId',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    await deletePlanStop(institutionId, req.params.stopId);
     const data = await getTransportRoutePlanning(institutionId);
     return res.json(data);
   }),

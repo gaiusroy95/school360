@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Route, Calendar, CheckCircle2, Copy, Pause, Play, Send, Zap, Archive, XCircle,
   Search, RefreshCw, Plus, MapPin, Users, Truck, Clock, Shield, FileText, Smartphone,
+  Pencil, Trash2,
 } from 'lucide-react';
 import {
-  approvePlan, archivePlan, cancelPlan, clonePlan, createRoutePlan,
-  fetchTransportRoutePlanning, optimizePlanRoute, pausePlan, publishPlan,
-  resumePlan, submitPlanApproval, type TransportRoutePlanning,
+  addPlanStop, approvePlan, archivePlan, cancelPlan, clonePlan, createRoutePlan,
+  deletePlanStop, deleteRoutePlan, fetchTransportRoutePlanning, optimizePlanRoute,
+  pausePlan, publishPlan, resumePlan, submitPlanApproval, updateRoutePlan,
+  type TransportRoutePlanning,
 } from '../../../lib/transportServices';
 import {
   am, AcademicLoading, AcademicModal, AcademicPageHeader, AcademicPageShell,
@@ -27,7 +29,7 @@ type Plan = TransportRoutePlanning['plans'][number] & {
   occupiedSeats: number; capacity: number; occupancyPct: number; capacityValid: boolean;
   distanceKm: number; estimatedMinutes: number; fuelEstimate: number; costEstimate: number;
   optimizationNotes: string; weatherAlert: string; trafficAlternate: string; cancelReason: string;
-  stops: { stopName: string; sequenceOrder: number; stopType: string; pickupTime: string; dropTime: string; studentCount: number; geoValidated: boolean }[];
+  stops: { id: string; stopName: string; sequenceOrder: number; stopType: string; pickupTime: string; dropTime: string; studentCount: number; geoValidated: boolean }[];
   allocations: { entityType: string; entityName: string; stopName: string; seatNumber: number | null; specialNeeds: boolean }[];
   approvals: { approverRole: string; action: string; remarks: string }[];
 };
@@ -63,6 +65,13 @@ export function RoutePlanningView() {
     title: '', routeId: '', planType: 'DAILY', transportCategory: 'Regular',
     priority: 'MEDIUM', branch: 'Main Campus', scheduledDate: new Date().toISOString().slice(0, 10),
   });
+  const [editPlan, setEditPlan] = useState<Plan | null>(null);
+  const [editForm, setEditForm] = useState({
+    title: '', startTime: '', endTime: '', priority: 'MEDIUM', transportCategory: 'Regular',
+  });
+  const [stopForm, setStopForm] = useState({
+    stopName: '', stopType: 'PICKUP', pickupTime: '', dropTime: '', sequenceOrder: '',
+  });
 
   const load = useCallback(async (seed = false) => {
     setLoading(true);
@@ -85,6 +94,38 @@ export function RoutePlanningView() {
     setBusy(true); setMessage('');
     try {
       setData(await fn() as TransportRoutePlanning);
+      setMessage(msg);
+    } catch (e) { setMessage(e instanceof Error ? e.message : 'Action failed'); }
+    finally { setBusy(false); }
+  };
+
+  const activePlans = useMemo(
+    () => plans.filter((p) => ['ACTIVE', 'PAUSED', 'APPROVED'].includes(p.status)),
+    [plans],
+  );
+
+  const openEditPlan = (p: Plan) => {
+    setEditPlan(p);
+    setEditForm({
+      title: p.title, startTime: p.startTime, endTime: p.endTime,
+      priority: p.priority, transportCategory: p.transportCategory,
+    });
+    setStopForm({ stopName: '', stopType: 'PICKUP', pickupTime: '', dropTime: '', sequenceOrder: '' });
+  };
+
+  const refreshAndSyncEdit = (next: TransportRoutePlanning) => {
+    setData(next);
+    if (editPlan) {
+      const updated = (next.plans as Plan[]).find((p) => p.id === editPlan.id) ?? null;
+      setEditPlan(updated);
+    }
+  };
+
+  const actEdit = async (fn: () => Promise<TransportRoutePlanning>, msg: string) => {
+    setBusy(true); setMessage('');
+    try {
+      const next = await fn();
+      refreshAndSyncEdit(next);
       setMessage(msg);
     } catch (e) { setMessage(e instanceof Error ? e.message : 'Action failed'); }
     finally { setBusy(false); }
@@ -283,23 +324,120 @@ export function RoutePlanningView() {
 
       {/* ── Active Plans ── */}
       {tab === 'Active Plans' && (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {plans.filter((p) => ['ACTIVE', 'PAUSED', 'APPROVED'].includes(p.status)).map((p) => (
-            <div key={p.id} className={`${am.card} p-4 cursor-pointer hover:shadow-md transition`} onClick={() => setSelectedPlan(p)}>
-              <div className="flex justify-between items-start mb-2">
-                <span className="font-mono text-[10px] font-bold text-blue-600">{p.planNumber}</span>
-                <PlanStatus status={p.status} />
-              </div>
-              <h4 className="font-bold text-sm text-slate-800">{p.title}</h4>
-              <p className="text-[10px] text-slate-500 mt-1">{p.routeName} · {p.vehicleNumber}</p>
-              <div className="flex gap-3 mt-3 text-[10px] text-slate-600">
-                <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{p.startTime}–{p.endTime}</span>
-                <span className="flex items-center gap-1"><Users className="w-3 h-3" />{p.occupiedSeats}/{p.capacity}</span>
-                <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{p.stops?.length ?? 0} stops</span>
-              </div>
-              {p.weatherAlert && <p className="text-[10px] text-amber-600 mt-2">⚠ {p.weatherAlert}</p>}
+        <div className="space-y-4">
+          <div className={`${am.card} p-4`}>
+            <h3 className="text-sm font-bold text-slate-800 mb-1 flex items-center gap-2">
+              <Route className="w-4 h-4 text-emerald-500" /> Active Route Plans
+            </h3>
+            <p className="text-[10px] text-slate-500 mb-3">
+              Manage live, paused, and approved routes — edit plan details, add stops, or remove stops from the current route.
+            </p>
+            <div className={`${am.card} overflow-hidden border`}>
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 border-b">
+                  <tr>
+                    {['Plan #', 'Route', 'Vehicle', 'Schedule', 'Stops', 'Seats', 'Status', 'Actions'].map((h) => (
+                      <th key={h} className="px-3 py-2 text-left font-bold text-slate-500 uppercase text-[10px]">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {activePlans.map((p) => (
+                    <tr key={p.id} className="border-b hover:bg-slate-50/80">
+                      <td className="px-3 py-2">
+                        <p className="font-mono font-bold text-blue-600">{p.planNumber}</p>
+                        <p className="text-[10px] text-slate-500 truncate max-w-[140px]">{p.title}</p>
+                      </td>
+                      <td className="px-3 py-2">
+                        <p className="font-medium">{p.routeCode || '—'}</p>
+                        <p className="text-[10px] text-slate-500">{p.routeName || '—'}</p>
+                      </td>
+                      <td className="px-3 py-2">{p.vehicleNumber || '—'}</td>
+                      <td className="px-3 py-2">
+                        <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{p.startTime}–{p.endTime}</span>
+                        {p.scheduledDate && <p className="text-[10px] text-slate-400">{p.scheduledDate}</p>}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{p.stops?.length ?? 0}</span>
+                      </td>
+                      <td className="px-3 py-2">{p.occupiedSeats}/{p.capacity}</td>
+                      <td className="px-3 py-2"><PlanStatus status={p.status} /></td>
+                      <td className="px-3 py-2">
+                        <div className="flex gap-1">
+                          <button
+                            type="button" title="Edit route & stops" disabled={busy}
+                            onClick={() => openEditPlan(p)}
+                            className="p-1.5 rounded hover:bg-blue-50 text-blue-600 border border-blue-100"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button" title="Delete plan" disabled={busy}
+                            onClick={() => {
+                              if (!window.confirm(`Remove "${p.title}" from active plans?`)) return;
+                              void act(() => deleteRoutePlan(p.id), 'Active plan removed');
+                            }}
+                            className="p-1.5 rounded hover:bg-red-50 text-red-600 border border-red-100"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {activePlans.length === 0 && (
+                    <tr><td colSpan={8} className="px-3 py-8 text-center text-slate-400">No active route plans</td></tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-          ))}
+          </div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {activePlans.map((p) => (
+              <div key={p.id} className={`${am.card} p-4 hover:shadow-md transition`}>
+                <div className="flex justify-between items-start mb-2">
+                  <span className="font-mono text-[10px] font-bold text-blue-600">{p.planNumber}</span>
+                  <PlanStatus status={p.status} />
+                </div>
+                <h4 className="font-bold text-sm text-slate-800">{p.title}</h4>
+                <p className="text-[10px] text-slate-500 mt-1">{p.routeName} · {p.vehicleNumber || 'No vehicle'}</p>
+                <div className="flex gap-3 mt-3 text-[10px] text-slate-600">
+                  <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{p.startTime}–{p.endTime}</span>
+                  <span className="flex items-center gap-1"><Users className="w-3 h-3" />{p.occupiedSeats}/{p.capacity}</span>
+                  <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{p.stops?.length ?? 0} stops</span>
+                </div>
+                {(p.stops ?? []).length > 0 && (
+                  <div className="mt-2 space-y-0.5">
+                    {(p.stops ?? []).slice(0, 3).map((s) => (
+                      <p key={s.id} className="text-[10px] text-slate-500 truncate">
+                        {s.sequenceOrder}. {s.stopName}
+                      </p>
+                    ))}
+                    {(p.stops?.length ?? 0) > 3 && (
+                      <p className="text-[10px] text-slate-400">+{(p.stops?.length ?? 0) - 3} more stops</p>
+                    )}
+                  </div>
+                )}
+                {p.weatherAlert && <p className="text-[10px] text-amber-600 mt-2">⚠ {p.weatherAlert}</p>}
+                <div className="flex gap-2 mt-3 pt-3 border-t">
+                  <button type="button" disabled={busy} onClick={() => openEditPlan(p)} className={`${am.btnSecondary} text-[10px] flex-1`}>
+                    <Pencil className="w-3 h-3" /> Edit
+                  </button>
+                  <button
+                    type="button" disabled={busy}
+                    onClick={() => {
+                      if (!window.confirm(`Remove "${p.title}" from active plans?`)) return;
+                      void act(() => deleteRoutePlan(p.id), 'Active plan removed');
+                    }}
+                    className="text-[10px] px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 className="w-3 h-3 inline" /> Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -438,6 +576,150 @@ export function RoutePlanningView() {
         </div>
       )}
 
+      {/* ── Edit Active Plan Modal ── */}
+      <AcademicModal
+        open={!!editPlan}
+        onClose={() => setEditPlan(null)}
+        title={editPlan ? `Edit Route — ${editPlan.planNumber}` : 'Edit Route'}
+      >
+        {editPlan && (
+          <div className="space-y-4 text-xs max-h-[75vh] overflow-y-auto">
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block col-span-2">
+                Plan Title
+                <input value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} className={`${am.input} w-full mt-1`} />
+              </label>
+              <label className="block">
+                Start Time
+                <input type="time" value={editForm.startTime} onChange={(e) => setEditForm({ ...editForm, startTime: e.target.value })} className={`${am.input} w-full mt-1`} />
+              </label>
+              <label className="block">
+                End Time
+                <input type="time" value={editForm.endTime} onChange={(e) => setEditForm({ ...editForm, endTime: e.target.value })} className={`${am.input} w-full mt-1`} />
+              </label>
+              <label className="block">
+                Priority
+                <select value={editForm.priority} onChange={(e) => setEditForm({ ...editForm, priority: e.target.value })} className={`${am.input} w-full mt-1`}>
+                  {(data?.priorities ?? []).map((pr) => <option key={pr} value={pr}>{pr}</option>)}
+                </select>
+              </label>
+              <label className="block">
+                Category
+                <select value={editForm.transportCategory} onChange={(e) => setEditForm({ ...editForm, transportCategory: e.target.value })} className={`${am.input} w-full mt-1`}>
+                  {(data?.transportCategories ?? []).map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </label>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button" disabled={busy}
+                onClick={() => void actEdit(() => updateRoutePlan(editPlan.id, editForm), 'Plan details saved')}
+                className={am.btnPrimary}
+              >
+                Save Plan Details
+              </button>
+            </div>
+
+            <div className="border-t pt-4">
+              <h4 className="font-bold mb-2 flex items-center justify-between">
+                <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> Route Stops ({editPlan.stops?.length ?? 0})</span>
+                {editPlan.routeName && (
+                  <span className="text-[10px] font-normal text-slate-500">Linked route: {editPlan.routeCode} — {editPlan.routeName}</span>
+                )}
+              </h4>
+
+              <div className="space-y-1 mb-3">
+                {(editPlan.stops ?? []).map((s) => (
+                  <div key={s.id} className="flex items-center justify-between p-2 bg-slate-50 rounded gap-2">
+                    <div className="min-w-0 flex-1">
+                      <span className="font-medium">{s.sequenceOrder}. {s.stopName}</span>
+                      <span className="text-slate-400 ml-2">({s.stopType})</span>
+                      <p className="text-[10px] text-slate-500">{s.pickupTime || s.dropTime || '—'} · {s.studentCount} students</p>
+                    </div>
+                    <button
+                      type="button" title="Remove stop" disabled={busy}
+                      onClick={() => {
+                        if (!window.confirm(`Remove stop "${s.stopName}" from this route?`)) return;
+                        void actEdit(() => deletePlanStop(s.id), 'Stop removed');
+                      }}
+                      className="p-1.5 rounded hover:bg-red-50 text-red-600 shrink-0"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+                {(editPlan.stops ?? []).length === 0 && (
+                  <p className="text-slate-400 text-center py-3">No stops on this route yet</p>
+                )}
+              </div>
+
+              <div className={`${am.card} p-3 border border-dashed border-slate-200`}>
+                <p className="font-bold text-[10px] uppercase text-slate-500 mb-2 flex items-center gap-1">
+                  <Plus className="w-3 h-3" /> Add Stop
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block col-span-2">
+                    Stop Name
+                    <input
+                      value={stopForm.stopName}
+                      onChange={(e) => setStopForm({ ...stopForm, stopName: e.target.value })}
+                      placeholder="e.g. Green Park Junction"
+                      className={`${am.input} w-full mt-1`}
+                    />
+                  </label>
+                  <label className="block">
+                    Type
+                    <select value={stopForm.stopType} onChange={(e) => setStopForm({ ...stopForm, stopType: e.target.value })} className={`${am.input} w-full mt-1`}>
+                      <option value="PICKUP">Pickup</option>
+                      <option value="DROP">Drop</option>
+                      <option value="BOTH">Both</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    Sequence
+                    <input
+                      type="number" min={1}
+                      value={stopForm.sequenceOrder}
+                      onChange={(e) => setStopForm({ ...stopForm, sequenceOrder: e.target.value })}
+                      placeholder="Auto"
+                      className={`${am.input} w-full mt-1`}
+                    />
+                  </label>
+                  <label className="block">
+                    Pickup Time
+                    <input type="time" value={stopForm.pickupTime} onChange={(e) => setStopForm({ ...stopForm, pickupTime: e.target.value })} className={`${am.input} w-full mt-1`} />
+                  </label>
+                  <label className="block">
+                    Drop Time
+                    <input type="time" value={stopForm.dropTime} onChange={(e) => setStopForm({ ...stopForm, dropTime: e.target.value })} className={`${am.input} w-full mt-1`} />
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  disabled={busy || !stopForm.stopName.trim()}
+                  onClick={() => void actEdit(async () => {
+                    const body: Record<string, unknown> = {
+                      stopName: stopForm.stopName.trim(),
+                      stopType: stopForm.stopType,
+                      pickupTime: stopForm.pickupTime,
+                      dropTime: stopForm.dropTime,
+                    };
+                    if (stopForm.sequenceOrder) body.sequenceOrder = Number(stopForm.sequenceOrder);
+                    const result = await addPlanStop(editPlan.id, body);
+                    setStopForm({ stopName: '', stopType: 'PICKUP', pickupTime: '', dropTime: '', sequenceOrder: '' });
+                    return result;
+                  }, 'Stop added to route')}
+                  className={`${am.btnPrimary} mt-3 w-full`}
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add Stop to Route
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </AcademicModal>
+
       {/* ── Plan Detail Modal ── */}
       <AcademicModal open={!!selectedPlan} onClose={() => setSelectedPlan(null)} title={selectedPlan?.title ?? 'Plan Details'}>
         {selectedPlan && (
@@ -461,8 +743,8 @@ export function RoutePlanningView() {
             <div>
               <h4 className="font-bold mb-2 flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> Stops ({selectedPlan.stops?.length ?? 0})</h4>
               <div className="space-y-1">
-                {(selectedPlan.stops ?? []).map((s, i) => (
-                  <div key={i} className="flex justify-between p-2 bg-slate-50 rounded">
+                {(selectedPlan.stops ?? []).map((s) => (
+                  <div key={s.id} className="flex justify-between p-2 bg-slate-50 rounded">
                     <span>{s.sequenceOrder}. {s.stopName} <span className="text-slate-400">({s.stopType})</span></span>
                     <span>{s.pickupTime || s.dropTime} · {s.studentCount} students {s.geoValidated ? '✓ geo' : ''}</span>
                   </div>

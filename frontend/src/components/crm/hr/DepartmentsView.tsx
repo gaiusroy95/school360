@@ -20,12 +20,15 @@ import {
   X,
 } from 'lucide-react';
 import {
+  assignEmployeesToDepartment,
   createHrDepartment,
   deleteHrDepartment,
   fetchDepartmentEmployeeOptions,
   fetchHrDepartment,
   formatInr,
   listHrDepartments,
+  syncHrDepartmentsFromEmployees,
+  unassignEmployeesFromDepartment,
   updateHrDepartment,
   type EmployeeOption,
   type HrDepartmentDetail,
@@ -117,15 +120,18 @@ function EmployeeHeadSelect({
   options,
   disabled,
   onChange,
+  fallbackLabel,
 }: {
   value: string;
   options: EmployeeOption[];
   disabled?: boolean;
   onChange: (id: string) => void;
+  fallbackLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const selected = options.find((o) => o.id === value);
+  const displayLabel = selected?.label || fallbackLabel || '';
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -138,19 +144,19 @@ function EmployeeHeadSelect({
     );
   }, [options, query]);
 
-  if (disabled && selected) {
+  if (disabled && (selected || fallbackLabel)) {
     return (
       <div className={`${am.input} flex items-center justify-between bg-slate-50 text-slate-700`}>
-        <span className="text-xs truncate">{selected.label}</span>
+        <span className="text-xs truncate">{displayLabel || 'Not assigned'}</span>
       </div>
     );
   }
 
   return (
     <div className="relative">
-      {selected && !open ? (
+      {(selected || displayLabel) && !open ? (
         <div className={`${am.input} flex items-center justify-between gap-2 pr-2`}>
-          <span className="text-xs truncate">{selected.label}</span>
+          <span className="text-xs truncate">{displayLabel}</span>
           <button
             type="button"
             onClick={() => onChange('')}
@@ -248,7 +254,7 @@ function PersonCard({ title, person }: { title: string; person: HrDepartmentDeta
           </div>
           <div>
             <p className="text-xs font-bold text-slate-800">{person.fullName}</p>
-            <p className="text-[10px] text-slate-500">{person.designation}</p>
+            <p className="text-[10px] text-slate-500">{person.designation} · {person.employeeCode}</p>
           </div>
         </div>
       ) : (
@@ -280,6 +286,12 @@ export function DepartmentsView({ onNavigate }: Props) {
   const [editMode, setEditMode] = useState(false);
   const [empPage, setEmpPage] = useState(1);
   const [deleting, setDeleting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [showAssign, setShowAssign] = useState(false);
+  const [assignSearch, setAssignSearch] = useState('');
+  const [assignIds, setAssignIds] = useState<Set<string>>(new Set());
+  const [selectedEmpIds, setSelectedEmpIds] = useState<Set<string>>(new Set());
+  const [busyAssign, setBusyAssign] = useState(false);
   const initialAutoOpen = useRef(false);
   const EMP_PAGE_SIZE = 12;
 
@@ -317,6 +329,7 @@ export function DepartmentsView({ onNavigate }: Props) {
       setForm(deptToForm(deptRes.record));
       setEmployeeOptions(optsRes.records);
       setEditMode(false);
+      setSelectedEmpIds(new Set());
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load department');
     } finally {
@@ -436,6 +449,92 @@ export function DepartmentsView({ onNavigate }: Props) {
     }
   };
 
+  const handleSyncEmployees = async () => {
+    setSyncing(true);
+    setError('');
+    try {
+      const result = await syncHrDepartmentsFromEmployees();
+      setList(result.records);
+      setMessage(`Synced ${result.mapped} employee(s) into ${result.departments} department(s)`);
+      if (selectedId) await loadDetail(selectedId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Sync failed');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const openAssignModal = () => {
+    setAssignSearch('');
+    setAssignIds(new Set());
+    setShowAssign(true);
+  };
+
+  const assignableEmployees = useMemo(() => {
+    const inDept = new Set((detail?.employees || []).map((e) => e.id));
+    const q = assignSearch.trim().toLowerCase();
+    return employeeOptions.filter((o) => {
+      if (inDept.has(o.id)) return false;
+      if (!q) return true;
+      return o.label.toLowerCase().includes(q) || o.department.toLowerCase().includes(q);
+    });
+  }, [employeeOptions, detail, assignSearch]);
+
+  const handleAssign = async () => {
+    if (!selectedId || !assignIds.size) return;
+    setBusyAssign(true);
+    setError('');
+    try {
+      const res = await assignEmployeesToDepartment(selectedId, [...assignIds]);
+      setDetail(res.record);
+      setForm(deptToForm(res.record));
+      setShowAssign(false);
+      setAssignIds(new Set());
+      setMessage(`Assigned ${res.assigned} employee(s) to ${res.record.name}`);
+      void loadList();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Assign failed');
+    } finally {
+      setBusyAssign(false);
+    }
+  };
+
+  const handleUnassign = async (ids: string[]) => {
+    if (!selectedId || !ids.length) return;
+    if (!window.confirm(`Remove ${ids.length} employee(s) from this department?`)) return;
+    setBusyAssign(true);
+    setError('');
+    try {
+      const res = await unassignEmployeesFromDepartment(selectedId, ids);
+      setDetail(res.record);
+      setForm(deptToForm(res.record));
+      setSelectedEmpIds(new Set());
+      setMessage(`Removed ${res.unassigned} employee(s) from ${res.record.name}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Remove failed');
+    } finally {
+      setBusyAssign(false);
+    }
+  };
+
+  const toggleEmpSelect = (id: string) => {
+    setSelectedEmpIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAssignPick = (id: string) => {
+    setAssignIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const toggleWorkingDay = (day: string) => {
     setForm((f) => ({
       ...f,
@@ -489,6 +588,15 @@ export function DepartmentsView({ onNavigate }: Props) {
                     {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                     Delete
                   </button>
+                  <button
+                    type="button"
+                    disabled={syncing}
+                    onClick={() => void handleSyncEmployees()}
+                    className={`${am.btnSecondary} bg-white`}
+                  >
+                    {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />}
+                    Sync Employees
+                  </button>
                 </>
               )}
               <button type="button" onClick={() => void openCreate()} className={`${am.btnPrimary} bg-green-600 hover:bg-green-700`}>
@@ -524,6 +632,10 @@ export function DepartmentsView({ onNavigate }: Props) {
               </div>
               <button type="button" onClick={() => void loadList()} className={am.btnSecondary}>
                 <RefreshCcw size={14} />
+              </button>
+              <button type="button" disabled={syncing} onClick={() => void handleSyncEmployees()} className={am.btnSecondary}>
+                {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />}
+                Sync from Employees
               </button>
             </div>
             <div className={am.tableWrap}>
@@ -611,7 +723,18 @@ export function DepartmentsView({ onNavigate }: Props) {
                     value={form.headEmployeeId}
                     options={employeeOptions}
                     disabled={!editMode}
+                    fallbackLabel={detail?.head?.label}
                     onChange={(id) => setForm((f) => ({ ...f, headEmployeeId: id }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600">Reports To</label>
+                  <EmployeeHeadSelect
+                    value={form.reportsToEmployeeId}
+                    options={employeeOptions}
+                    disabled={!editMode}
+                    fallbackLabel={detail?.reportsTo?.label}
+                    onChange={(id) => setForm((f) => ({ ...f, reportsToEmployeeId: id }))}
                   />
                 </div>
                 <div>
@@ -707,9 +830,19 @@ export function DepartmentsView({ onNavigate }: Props) {
                       <h3 className="text-sm font-bold text-slate-800">
                         Employees in Department ({detail.employees.length})
                       </h3>
-                      <button type="button" onClick={goEmployees} className={`${am.btnPrimary} text-xs py-1.5`}>
-                        <Plus size={12} /> Add / Assign Employees
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={!selectedEmpIds.size || busyAssign}
+                          onClick={() => void handleUnassign([...selectedEmpIds])}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                        >
+                          <Trash2 size={12} /> Remove Selected{selectedEmpIds.size ? ` (${selectedEmpIds.size})` : ''}
+                        </button>
+                        <button type="button" onClick={openAssignModal} className={`${am.btnPrimary} text-xs py-1.5`}>
+                          <Plus size={12} /> Add / Assign Employees
+                        </button>
+                      </div>
                     </div>
                     <div className="flex flex-wrap gap-2 mb-3">
                       <div className="relative flex-1 min-w-[180px]">
@@ -735,6 +868,22 @@ export function DepartmentsView({ onNavigate }: Props) {
                       <table className="w-full text-xs">
                         <thead>
                           <tr className="bg-slate-50 text-slate-500">
+                            <th className="px-2 py-2 text-left font-semibold w-8">
+                              <input
+                                type="checkbox"
+                                checked={pagedEmployees.length > 0 && pagedEmployees.every((e) => selectedEmpIds.has(e.id))}
+                                onChange={() => {
+                                  const ids = pagedEmployees.map((e) => e.id);
+                                  const all = ids.every((id) => selectedEmpIds.has(id));
+                                  setSelectedEmpIds((prev) => {
+                                    const next = new Set(prev);
+                                    ids.forEach((id) => (all ? next.delete(id) : next.add(id)));
+                                    return next;
+                                  });
+                                }}
+                                disabled={!pagedEmployees.length}
+                              />
+                            </th>
                             <th className="px-2 py-2 text-left font-semibold">#</th>
                             <th className="px-2 py-2 text-left font-semibold">Employee ID</th>
                             <th className="px-2 py-2 text-left font-semibold">Employee Name</th>
@@ -748,6 +897,9 @@ export function DepartmentsView({ onNavigate }: Props) {
                         <tbody>
                           {pagedEmployees.map((emp, idx) => (
                             <tr key={emp.id} className="border-t border-slate-100 hover:bg-slate-50/50">
+                              <td className="px-2 py-2">
+                                <input type="checkbox" checked={selectedEmpIds.has(emp.id)} onChange={() => toggleEmpSelect(emp.id)} />
+                              </td>
                               <td className="px-2 py-2">{(empPage - 1) * EMP_PAGE_SIZE + idx + 1}</td>
                               <td className="px-2 py-2 font-mono">{emp.employeeCode}</td>
                               <td className="px-2 py-2">
@@ -767,13 +919,27 @@ export function DepartmentsView({ onNavigate }: Props) {
                               </td>
                               <td className="px-2 py-2">
                                 <div className="flex items-center gap-1">
-                                  <button type="button" onClick={goEmployees} className="p-1 text-slate-500 hover:text-blue-600"><Eye size={12} /></button>
-                                  <button type="button" className="p-1 text-slate-500 hover:text-amber-600"><Pencil size={12} /></button>
-                                  <button type="button" className="p-1 text-slate-500 hover:text-red-600"><Trash2 size={12} /></button>
+                                  <button type="button" onClick={goEmployees} className="p-1 text-slate-500 hover:text-blue-600" title="Open employee"><Eye size={12} /></button>
+                                  <button
+                                    type="button"
+                                    disabled={busyAssign}
+                                    onClick={() => void handleUnassign([emp.id])}
+                                    className="p-1 text-slate-500 hover:text-red-600"
+                                    title="Remove from department"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
                                 </div>
                               </td>
                             </tr>
                           ))}
+                          {pagedEmployees.length === 0 && (
+                            <tr>
+                              <td colSpan={9} className="px-2 py-6 text-center text-slate-400">
+                                No employees mapped to this department. Assign staff here or sync from Employees Directory / Excel.
+                              </td>
+                            </tr>
+                          )}
                         </tbody>
                       </table>
                     </div>
@@ -820,7 +986,7 @@ export function DepartmentsView({ onNavigate }: Props) {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
                         <p className="text-[10px] font-bold text-slate-500 uppercase mb-2">Organization Structure</p>
-                        <StructureTree nodes={detail.structureTree} selectedId="academics" />
+                        <StructureTree nodes={detail.structureTree} selectedId={detail.id} />
                       </div>
                       <div className="space-y-3">
                         <PersonCard title="Reports To" person={detail.reportsTo} />
@@ -859,6 +1025,49 @@ export function DepartmentsView({ onNavigate }: Props) {
           </div>
         )}
       </div>
+
+      {showAssign && detail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
+          <div className="w-full max-w-lg bg-white rounded-xl shadow-xl border border-slate-200 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-800">Assign employees to {detail.name}</h3>
+              <button type="button" onClick={() => setShowAssign(false)} className="p-1 text-slate-400 hover:text-slate-700"><X size={16} /></button>
+            </div>
+            <p className="text-xs text-slate-500">
+              Staff added manually or via Excel appear here after sync. Selecting them maps their department to {detail.name}.
+            </p>
+            <input
+              className={am.input}
+              placeholder="Search name, code or current department…"
+              value={assignSearch}
+              onChange={(e) => setAssignSearch(e.target.value)}
+            />
+            <div className="max-h-64 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
+              {assignableEmployees.length === 0 ? (
+                <p className="text-xs text-slate-400 px-3 py-6 text-center">No unassigned employees match this search.</p>
+              ) : assignableEmployees.map((o) => (
+                <label key={o.id} className="flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-50">
+                  <input type="checkbox" checked={assignIds.has(o.id)} onChange={() => toggleAssignPick(o.id)} />
+                  <span className="flex-1 font-medium text-slate-800">{o.label}</span>
+                  <span className="text-slate-400">{o.department || '—'}</span>
+                </label>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setShowAssign(false)} className={am.btnSecondary}>Cancel</button>
+              <button
+                type="button"
+                disabled={!assignIds.size || busyAssign}
+                onClick={() => void handleAssign()}
+                className={am.btnPrimary}
+              >
+                {busyAssign ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                Assign {assignIds.size ? `(${assignIds.size})` : ''}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AcademicPageShell>
   );
 }

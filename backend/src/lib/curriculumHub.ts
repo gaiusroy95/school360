@@ -476,13 +476,22 @@ export async function isClassSubjectAllocated(
   const sub = subjectName.trim();
   if (!cn || !sub) return false;
 
+  const sectionMatch = sn
+    ? {
+        OR: [
+          { sectionName: { equals: sn, mode: 'insensitive' as const } },
+          { sectionName: '' },
+        ],
+      }
+    : {};
+
   const teacherHit = await prisma.academicTeacherAllocation.findFirst({
     where: {
       institutionId,
       academicYear,
-      className: cn,
-      sectionName: sn,
+      className: { equals: cn, mode: 'insensitive' },
       subjectName: { equals: sub, mode: 'insensitive' },
+      ...sectionMatch,
     },
     select: { id: true },
   });
@@ -499,8 +508,8 @@ export async function isClassSubjectAllocated(
       institutionId,
       academicYear,
       subjectId: subject.id,
-      className: cn,
-      sectionName: sn,
+      className: { equals: cn, mode: 'insensitive' },
+      ...sectionMatch,
     },
     select: { id: true },
   });

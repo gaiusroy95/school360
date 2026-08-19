@@ -373,38 +373,57 @@ export async function updateAttendancePolicy(
 
 export async function assignLeavePolicy(
   institutionId: string,
-  data: { policyId: string; employeeId: string; effectiveDate: string },
+  data: { policyId: string; employeeId?: string; employeeIds?: string[]; effectiveDate: string },
 ) {
   const policy = await prisma.hrLeavePolicy.findFirst({
     where: { institutionId, id: data.policyId },
   });
   if (!policy) throw new Error('Policy not found');
 
-  const employee = await prisma.payrollEmployee.findFirst({
-    where: { institutionId, id: data.employeeId },
-  });
-  if (!employee) throw new Error('Employee not found');
+  const employeeIds = [...new Set([...(data.employeeIds ?? []), ...(data.employeeId ? [data.employeeId] : [])])]
+    .map((id) => id.trim())
+    .filter(Boolean);
+  if (!employeeIds.length) throw new Error('Select at least one employee');
 
-  await prisma.hrLeavePolicyAssignment.updateMany({
-    where: { institutionId, employeeId: data.employeeId, status: 'ACTIVE' },
-    data: { status: 'INACTIVE' },
+  const employees = await prisma.payrollEmployee.findMany({
+    where: { institutionId, id: { in: employeeIds } },
+    select: { id: true },
+  });
+  if (employees.length !== employeeIds.length) {
+    throw new Error('One or more selected employees were not found');
+  }
+
+  const effectiveDate = new Date(data.effectiveDate);
+  if (Number.isNaN(effectiveDate.getTime())) throw new Error('Invalid effective date');
+
+  const created = await prisma.$transaction(async (tx) => {
+    await tx.hrLeavePolicyAssignment.updateMany({
+      where: { institutionId, employeeId: { in: employeeIds }, status: 'ACTIVE' },
+      data: { status: 'INACTIVE' },
+    });
+
+    const rows = [];
+    for (const employeeId of employeeIds) {
+      const row = await tx.hrLeavePolicyAssignment.create({
+        data: {
+          institutionId,
+          policyId: data.policyId,
+          employeeId,
+          effectiveDate,
+          status: 'ACTIVE',
+        },
+        include: {
+          employee: { select: { employeeCode: true, fullName: true, department: true } },
+          policy: { select: { policyCode: true, name: true } },
+        },
+      });
+      rows.push(row);
+    }
+    return rows;
   });
 
-  const row = await prisma.hrLeavePolicyAssignment.create({
-    data: {
-      institutionId,
-      policyId: data.policyId,
-      employeeId: data.employeeId,
-      effectiveDate: new Date(data.effectiveDate),
-      status: 'ACTIVE',
-    },
-    include: {
-      employee: { select: { employeeCode: true, fullName: true, department: true } },
-      policy: { select: { policyCode: true, name: true } },
-    },
-  });
-
-  return serializeAssignment(row);
+  const assignments = created.map(serializeAssignment);
+  return { assignment: assignments[0], assignments, assigned: assignments.length };
 }
 
 export async function removeLeavePolicyAssignment(institutionId: string, id: string) {

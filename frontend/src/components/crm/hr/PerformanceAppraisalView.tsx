@@ -9,7 +9,12 @@ import {
   fetchPerformanceAppraisal,
   generatePerformanceAppraisals,
   publishPerformanceToMobile,
+  syncHrKpisFromContinuousEvaluation,
+  syncHrKpisFromDepartmentsDesignations,
+  syncHrPayGradesFromDesignations,
+  updateHrPayGrade,
   updateHrPerformanceAppraisal,
+  updateHrPerformanceKpi,
   updatePerformanceAppraisalSettings,
   type PerformanceAppraisalDashboard,
   type PerformanceAppraisalRow,
@@ -81,6 +86,14 @@ export function PerformanceAppraisalView() {
   const [detail, setDetail] = useState<PerformanceAppraisalRow | null>(null);
   const [editModal, setEditModal] = useState(false);
   const [editForm, setEditForm] = useState<Record<string, number | string>>({});
+  const [editingPayGradeId, setEditingPayGradeId] = useState<string | null>(null);
+  const [payGradeForm, setPayGradeForm] = useState({ level: 0, minSalary: 0, maxSalary: 0 });
+  const [kpiDeptFilter, setKpiDeptFilter] = useState('');
+  const [kpiDesigFilter, setKpiDesigFilter] = useState('');
+  const [kpiEditId, setKpiEditId] = useState<string | null>(null);
+  const [kpiForm, setKpiForm] = useState({
+    category: '', code: '', name: '', staffType: 'ALL', department: '', designation: '', weight: 0, status: 'ACTIVE',
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -102,6 +115,15 @@ export function PerformanceAppraisalView() {
     const q = teacherFilter.toLowerCase();
     return data.appraisals.filter((a) => a.employeeName.toLowerCase().includes(q));
   }, [data, teacherFilter]);
+
+  const filteredKpis = useMemo(() => {
+    if (!data) return [];
+    return data.kpiLibrary.filter((k) => {
+      if (kpiDeptFilter && k.department !== kpiDeptFilter) return false;
+      if (kpiDesigFilter && k.designation !== kpiDesigFilter) return false;
+      return true;
+    });
+  }, [data, kpiDeptFilter, kpiDesigFilter]);
 
   const selectedCycle = data?.selectedCycle;
 
@@ -172,6 +194,74 @@ export function PerformanceAppraisalView() {
       await advancePerformanceWorkflow(id);
       void load();
       setMessage('Workflow advanced to next stage');
+    } finally { setBusy(false); }
+  };
+
+  const startPayGradeEdit = (g: PerformanceAppraisalDashboard['payGrades'][number]) => {
+    setEditingPayGradeId(g.id);
+    setPayGradeForm({ level: g.level, minSalary: g.minSalary, maxSalary: g.maxSalary });
+  };
+
+  const savePayGradeEdit = async () => {
+    if (!editingPayGradeId) return;
+    setBusy(true);
+    try {
+      const r = await updateHrPayGrade(editingPayGradeId, payGradeForm);
+      setData(r.data);
+      setEditingPayGradeId(null);
+      setMessage('Pay grade updated');
+    } finally { setBusy(false); }
+  };
+
+  const handleSyncPayGrades = async () => {
+    setBusy(true);
+    try {
+      const r = await syncHrPayGradesFromDesignations();
+      setData(r.data);
+      setMessage(`Synced ${r.updated} pay grade names from designations${r.created ? ` (${r.created} new grades created)` : ''}`);
+    } finally { setBusy(false); }
+  };
+
+  const openKpiEdit = (k: PerformanceAppraisalDashboard['kpiLibrary'][number]) => {
+    setKpiEditId(k.id);
+    setKpiForm({
+      category: k.category,
+      code: k.code,
+      name: k.name,
+      staffType: k.staffType,
+      department: k.department ?? '',
+      designation: k.designation ?? '',
+      weight: k.weight,
+      status: k.status,
+    });
+  };
+
+  const saveKpiEdit = async () => {
+    if (!kpiEditId) return;
+    setBusy(true);
+    try {
+      const r = await updateHrPerformanceKpi(kpiEditId, kpiForm);
+      setData(r.data);
+      setKpiEditId(null);
+      setMessage('KPI updated');
+    } finally { setBusy(false); }
+  };
+
+  const handleSyncKpisDeptDesig = async () => {
+    setBusy(true);
+    try {
+      const r = await syncHrKpisFromDepartmentsDesignations(academicYear);
+      setData(r.data);
+      setMessage(`Synced ${r.upserted} KPIs across ${r.designations} designations`);
+    } finally { setBusy(false); }
+  };
+
+  const handleSyncKpisContinuousEval = async () => {
+    setBusy(true);
+    try {
+      const r = await syncHrKpisFromContinuousEvaluation(academicYear);
+      setData(r.data);
+      setMessage(`Synced ${r.upserted} teacher KPIs from Continuous Evaluation parameters`);
     } finally { setBusy(false); }
   };
 
@@ -383,7 +473,31 @@ export function PerformanceAppraisalView() {
 
         {tab === 'Goals & KPI' && data && (
           <div className={`${am.card} p-4`}>
-            <h3 className="font-bold text-slate-800 mb-3">KPI Library</h3>
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+              <h3 className="font-bold text-slate-800">KPI Library</h3>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => void handleSyncKpisDeptDesig()} disabled={busy} className={am.btnSecondary}>
+                  <RefreshCw size={14} /> Sync by Dept & Designation
+                </button>
+                <button type="button" onClick={() => void handleSyncKpisContinuousEval()} disabled={busy} className={am.btnSecondary}>
+                  <RefreshCw size={14} /> Sync Teacher KPIs (Continuous Eval)
+                </button>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3 mb-3">
+              <select value={kpiDeptFilter} onChange={(e) => setKpiDeptFilter(e.target.value)} className={am.input}>
+                <option value="">All Departments</option>
+                {(data.filterOptions?.departments ?? []).map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+              <select value={kpiDesigFilter} onChange={(e) => setKpiDesigFilter(e.target.value)} className={am.input}>
+                <option value="">All Designations</option>
+                {(data.filterOptions?.designations ?? []).map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
             <div className={am.tableWrap}>
               <table className="w-full">
                 <thead>
@@ -391,26 +505,38 @@ export function PerformanceAppraisalView() {
                     <th className={am.th}>Category</th>
                     <th className={am.th}>Code</th>
                     <th className={am.th}>KPI Name</th>
+                    <th className={am.th}>Department</th>
+                    <th className={am.th}>Designation</th>
                     <th className={am.th}>Staff Type</th>
                     <th className={am.th}>Weight %</th>
                     <th className={am.th}>Status</th>
+                    <th className={am.th}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.kpiLibrary.map((k) => (
+                  {filteredKpis.length === 0 ? (
+                    <tr><td colSpan={9} className={`${am.td} text-center text-slate-400 py-8`}>No KPIs match the selected filters. Use sync buttons to populate from designations or Continuous Evaluation.</td></tr>
+                  ) : filteredKpis.map((k) => (
                     <tr key={k.id}>
                       <td className={am.td}>{k.category}</td>
-                      <td className={am.td}>{k.code}</td>
+                      <td className={am.td}><span className="font-mono text-xs">{k.code}</span></td>
                       <td className={am.td}>{k.name}</td>
+                      <td className={am.td}>{k.department || '—'}</td>
+                      <td className={am.td}>{k.designation || '—'}</td>
                       <td className={am.td}>{k.staffType}</td>
                       <td className={am.td}>{k.weight}</td>
                       <td className={am.td}><StatusBadge status={k.status} /></td>
+                      <td className={am.td}>
+                        <button type="button" onClick={() => openKpiEdit(k)} className="p-1 hover:bg-slate-100 rounded" title="Edit KPI">
+                          <Pencil size={14} />
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <p className="text-xs text-slate-500 mt-3">Goal categories: Academic, Discipline, Attendance, Administration, Parent Satisfaction, Student Development, Innovation</p>
+            <p className="text-xs text-slate-500 mt-3">Goal categories: Academic, Discipline, Attendance, Administration, Parent Satisfaction, Student Development, Innovation. Teacher KPIs sync from Academic Management › Continuous Evaluation performance parameters.</p>
           </div>
         )}
 
@@ -535,30 +661,68 @@ export function PerformanceAppraisalView() {
         )}
 
         {tab === 'Pay Grades' && data && (
-          <div className={am.tableWrap}>
-            <table className="w-full">
-              <thead>
-                <tr>
-                  <th className={am.th}>Code</th>
-                  <th className={am.th}>Grade Name</th>
-                  <th className={am.th}>Level</th>
-                  <th className={am.th}>Min Salary</th>
-                  <th className={am.th}>Max Salary</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.payGrades.map((g) => (
-                  <tr key={g.id}>
-                    <td className={am.td}><span className="font-mono font-bold">{g.code}</span></td>
-                    <td className={am.td}>{g.name}</td>
-                    <td className={am.td}>{g.level}</td>
-                    <td className={am.td}>₹{g.minSalary.toLocaleString('en-IN')}</td>
-                    <td className={am.td}>₹{g.maxSalary.toLocaleString('en-IN')}</td>
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+              <p className="text-sm text-slate-600">Edit level and salary ranges. Sync grade names from HR Designations (mapped to PG codes by level).</p>
+              <button type="button" onClick={() => void handleSyncPayGrades()} disabled={busy} className={am.btnSecondary}>
+                <RefreshCw size={14} /> Sync Names from Designations
+              </button>
+            </div>
+            <div className={am.tableWrap}>
+              <table className="w-full">
+                <thead>
+                  <tr>
+                    <th className={am.th}>Code</th>
+                    <th className={am.th}>Grade Name</th>
+                    <th className={am.th}>Level</th>
+                    <th className={am.th}>Min Salary</th>
+                    <th className={am.th}>Max Salary</th>
+                    <th className={am.th}>Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {data.payGrades.map((g) => {
+                    const isEditing = editingPayGradeId === g.id;
+                    return (
+                      <tr key={g.id}>
+                        <td className={am.td}><span className="font-mono font-bold">{g.code}</span></td>
+                        <td className={am.td}>{g.name}</td>
+                        <td className={am.td}>
+                          {isEditing ? (
+                            <input type="number" min={1} value={payGradeForm.level} onChange={(e) => setPayGradeForm((f) => ({ ...f, level: Number(e.target.value) }))} className={`${am.input} w-20`} />
+                          ) : g.level}
+                        </td>
+                        <td className={am.td}>
+                          {isEditing ? (
+                            <input type="number" min={0} value={payGradeForm.minSalary} onChange={(e) => setPayGradeForm((f) => ({ ...f, minSalary: Number(e.target.value) }))} className={`${am.input} w-28`} />
+                          ) : `₹${g.minSalary.toLocaleString('en-IN')}`}
+                        </td>
+                        <td className={am.td}>
+                          {isEditing ? (
+                            <input type="number" min={0} value={payGradeForm.maxSalary} onChange={(e) => setPayGradeForm((f) => ({ ...f, maxSalary: Number(e.target.value) }))} className={`${am.input} w-28`} />
+                          ) : `₹${g.maxSalary.toLocaleString('en-IN')}`}
+                        </td>
+                        <td className={am.td}>
+                          {isEditing ? (
+                            <div className="flex gap-1">
+                              <button type="button" onClick={() => void savePayGradeEdit()} disabled={busy} className="p-1 text-green-600 hover:bg-green-50 rounded" title="Save">
+                                <Save size={14} />
+                              </button>
+                              <button type="button" onClick={() => setEditingPayGradeId(null)} className="p-1 text-slate-500 hover:bg-slate-100 rounded text-xs">Cancel</button>
+                            </div>
+                          ) : (
+                            <button type="button" onClick={() => startPayGradeEdit(g)} className="p-1 hover:bg-slate-100 rounded" title="Edit level & salary">
+                              <Pencil size={14} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
 
         {tab === 'EDP' && data && (
@@ -640,6 +804,66 @@ export function PerformanceAppraisalView() {
             <button type="button" onClick={() => setEditModal(false)} className={am.btnSecondary}>Cancel</button>
             <button type="button" onClick={() => void saveEdit()} disabled={busy} className={am.btnPrimary}>
               {busy ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save
+            </button>
+          </div>
+        </AcademicModal>
+      )}
+
+      {kpiEditId && (
+        <AcademicModal open title="Edit KPI" onClose={() => setKpiEditId(null)} large>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="block space-y-1">
+              <span className="text-xs font-semibold text-slate-600">Category</span>
+              <select value={kpiForm.category} onChange={(e) => setKpiForm((f) => ({ ...f, category: e.target.value }))} className={am.input}>
+                {(data?.kpiCategories ?? []).map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="block space-y-1">
+              <span className="text-xs font-semibold text-slate-600">Code</span>
+              <input value={kpiForm.code} readOnly className={`${am.input} bg-slate-50`} />
+            </div>
+            <div className="col-span-2 block space-y-1">
+              <span className="text-xs font-semibold text-slate-600">KPI Name</span>
+              <input value={kpiForm.name} onChange={(e) => setKpiForm((f) => ({ ...f, name: e.target.value }))} className={am.input} />
+            </div>
+            <div className="block space-y-1">
+              <span className="text-xs font-semibold text-slate-600">Department</span>
+              <select value={kpiForm.department} onChange={(e) => setKpiForm((f) => ({ ...f, department: e.target.value }))} className={am.input}>
+                <option value="">All / Global</option>
+                {(data?.filterOptions?.departments ?? []).map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div className="block space-y-1">
+              <span className="text-xs font-semibold text-slate-600">Designation</span>
+              <select value={kpiForm.designation} onChange={(e) => setKpiForm((f) => ({ ...f, designation: e.target.value }))} className={am.input}>
+                <option value="">All / Global</option>
+                {(data?.filterOptions?.designations ?? []).map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div className="block space-y-1">
+              <span className="text-xs font-semibold text-slate-600">Staff Type</span>
+              <select value={kpiForm.staffType} onChange={(e) => setKpiForm((f) => ({ ...f, staffType: e.target.value }))} className={am.input}>
+                <option value="ALL">ALL</option>
+                <option value="TEACHING">TEACHING</option>
+                <option value="NON_TEACHING">NON_TEACHING</option>
+              </select>
+            </div>
+            <div className="block space-y-1">
+              <span className="text-xs font-semibold text-slate-600">Weight %</span>
+              <input type="number" min={0} max={100} value={kpiForm.weight} onChange={(e) => setKpiForm((f) => ({ ...f, weight: Number(e.target.value) }))} className={am.input} />
+            </div>
+            <div className="block space-y-1">
+              <span className="text-xs font-semibold text-slate-600">Status</span>
+              <select value={kpiForm.status} onChange={(e) => setKpiForm((f) => ({ ...f, status: e.target.value }))} className={am.input}>
+                <option value="ACTIVE">ACTIVE</option>
+                <option value="INACTIVE">INACTIVE</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <button type="button" onClick={() => setKpiEditId(null)} className={am.btnSecondary}>Cancel</button>
+            <button type="button" onClick={() => void saveKpiEdit()} disabled={busy} className={am.btnPrimary}>
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save KPI
             </button>
           </div>
         </AcademicModal>

@@ -86,8 +86,11 @@ export type EmployeeDirectoryRow = {
   id: string;
   recordId: string;
   name: string;
+  department: string;
   classGroup: string;
+  designation: string;
   details: string;
+  mapping: string;
   updated: string;
   status: string;
 };
@@ -132,10 +135,18 @@ export type EmployeeDirectoryDetail = {
   } | null;
 };
 
-export async function listEmployeeDirectory(params?: { q?: string; status?: string; seed?: boolean }) {
+export async function listEmployeeDirectory(params?: {
+  q?: string;
+  status?: string;
+  department?: string;
+  classGroup?: string;
+  seed?: boolean;
+}) {
   const q = new URLSearchParams();
   if (params?.q) q.set('q', params.q);
   if (params?.status) q.set('status', params.status);
+  if (params?.department) q.set('department', params.department);
+  if (params?.classGroup) q.set('classGroup', params.classGroup);
   if (params?.seed) q.set('seed', '1');
   const query = q.toString();
   return api<{ records: EmployeeDirectoryRow[] }>(`/api/hr/employees${query ? `?${query}` : ''}`);
@@ -219,6 +230,7 @@ export type HrDepartmentDetail = HrDepartmentSummary & {
   head: { id: string; employeeCode: string; fullName: string; designation: string; label: string } | null;
   reportsTo: { id: string; employeeCode: string; fullName: string; designation: string; label: string } | null;
   employees: HrDepartmentEmployee[];
+  parent: { id: string; name: string; code: string } | null;
   parentOptions: Array<{ id: string; name: string; code: string }>;
   createdAt: string;
 };
@@ -266,6 +278,27 @@ export async function deleteHrDepartment(id: string) {
   return api<{ id: string; code: string; message: string }>(`/api/hr/departments/${id}`, {
     method: 'DELETE',
   });
+}
+
+export async function assignEmployeesToDepartment(id: string, employeeIds: string[]) {
+  return api<{ assigned: number; record: HrDepartmentDetail }>(`/api/hr/departments/${id}/assign-employees`, {
+    method: 'POST',
+    body: JSON.stringify({ employeeIds }),
+  });
+}
+
+export async function unassignEmployeesFromDepartment(id: string, employeeIds: string[]) {
+  return api<{ unassigned: number; record: HrDepartmentDetail }>(`/api/hr/departments/${id}/unassign-employees`, {
+    method: 'POST',
+    body: JSON.stringify({ employeeIds }),
+  });
+}
+
+export async function syncHrDepartmentsFromEmployees() {
+  return api<{ mapped: number; departments: number; employees: number; records: HrDepartmentSummary[] }>(
+    '/api/hr/departments/sync-employees',
+    { method: 'POST' },
+  );
 }
 
 export type DesignationRow = {
@@ -345,6 +378,35 @@ export async function createHrDesignation(body: {
     method: 'POST',
     body: JSON.stringify(body),
   });
+}
+
+export async function bulkUploadHrDesignations(rows: Record<string, unknown>[]) {
+  return api<{
+    created: number;
+    updated: number;
+    total: number;
+    mappedDepartments: number;
+    errors: string[];
+    message: string;
+  }>('/api/hr/designations/bulk', {
+    method: 'POST',
+    body: JSON.stringify({ rows }),
+  });
+}
+
+export async function fetchHrDesignationsExport(params?: {
+  q?: string;
+  department?: string;
+  designationType?: string;
+  status?: string;
+}) {
+  const q = new URLSearchParams();
+  if (params?.q) q.set('q', params.q);
+  if (params?.department) q.set('department', params.department);
+  if (params?.designationType) q.set('designationType', params.designationType);
+  if (params?.status) q.set('status', params.status);
+  const query = q.toString();
+  return api<{ records: DesignationRow[]; total: number }>(`/api/hr/designations/export${query ? `?${query}` : ''}`);
 }
 
 export async function updateHrDesignation(
@@ -546,6 +608,7 @@ export type HrLeaveDashboard = {
   departmentOverview: Array<{ department: string; totalEmployees: number; onLeave: number; available: number; utilization: number }>;
   holidayList: Array<{ id: string; date: string; day: string; name: string; type: string; applicableTo: string; status: string }>;
   legend: Array<{ label: string; color: string }>;
+  sync?: { fromAttendance: number; attendanceSpans: number };
 };
 
 export async function fetchHrLeaveDashboard(params?: {
@@ -563,6 +626,13 @@ export async function fetchHrLeaveDashboard(params?: {
   if (params?.seed) q.set('seed', '1');
   const query = q.toString();
   return api<HrLeaveDashboard>(`/api/hr/leave/dashboard${query ? `?${query}` : ''}`);
+}
+
+export async function syncHrLeaveFromAttendance(academicYear?: string) {
+  return api<HrLeaveDashboard & { message: string }>('/api/hr/leave/sync-attendance', {
+    method: 'POST',
+    body: JSON.stringify({ academicYear }),
+  });
 }
 
 export async function fetchHrLeavePolicies() {
@@ -638,6 +708,16 @@ export type HrPayrollDashboard = {
     summary: Record<string, unknown>;
   };
   payslipGeneration: Record<string, unknown>;
+  school?: {
+    schoolName: string;
+    affiliationNo?: string;
+    registrationNo?: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+    website?: string;
+    logoUrl?: string;
+  };
   subModules: string[];
 };
 
@@ -1068,8 +1148,17 @@ export async function updateAttendancePolicy(body: Record<string, unknown>) {
   });
 }
 
-export async function assignLeavePolicy(body: { policyId: string; employeeId: string; effectiveDate: string }) {
-  return api<{ assignment: AttendancePolicyDashboard['assignments'][0] }>('/api/hr/attendance-policy/assign', {
+export async function assignLeavePolicy(body: {
+  policyId: string;
+  employeeId?: string;
+  employeeIds?: string[];
+  effectiveDate: string;
+}) {
+  return api<{
+    assignment: AttendancePolicyDashboard['assignments'][0];
+    assignments: AttendancePolicyDashboard['assignments'];
+    assigned: number;
+  }>('/api/hr/attendance-policy/assign', {
     method: 'POST',
     body: JSON.stringify(body),
   });
@@ -1135,6 +1224,13 @@ export async function updateShiftWorkingHours(body: Record<string, unknown>) {
 
 export async function assignEmployeeShift(body: Record<string, unknown>) {
   return api<ShiftManagementDashboard>('/api/hr/shift-management/assignments', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function updateEmployeeShiftAssignment(id: string, body: Record<string, unknown>) {
+  return api<ShiftManagementDashboard>(`/api/hr/shift-management/assignments/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
 }
 
 export async function mapDepartmentShift(body: Record<string, unknown>) {
@@ -1229,12 +1325,13 @@ export type PerformanceAppraisalDashboard = {
   annualReviews: Array<Record<string, unknown>>;
   pips: Array<Record<string, unknown>>;
   developmentPlans: Array<Record<string, unknown>>;
-  kpiLibrary: Array<{ id: string; category: string; code: string; name: string; staffType: string; weight: number; status: string }>;
+  kpiLibrary: Array<{ id: string; category: string; code: string; name: string; staffType: string; department: string; designation: string; weight: number; status: string; description?: string }>;
   payGrades: Array<{ id: string; code: string; name: string; level: number; minSalary: number; maxSalary: number; status: string }>;
   settings: Record<string, unknown>;
   employees: Array<{ id: string; employeeCode: string; fullName: string; department: string; designation: string; employmentType: string }>;
   workflowStages: string[];
   kpiCategories: string[];
+  filterOptions: { departments: string[]; designations: string[] };
 };
 
 export async function fetchPerformanceAppraisal(opts?: { seed?: boolean; academicYear?: string; quarter?: string }) {
@@ -1284,6 +1381,35 @@ export async function createHrPerformanceKpi(body: Record<string, unknown>) {
   return api<PerformanceAppraisalDashboard>('/api/hr/performance-appraisal/kpis', { method: 'POST', body: JSON.stringify(body) });
 }
 
+export async function updateHrPerformanceKpi(id: string, body: Record<string, unknown>) {
+  return api<{ kpi: unknown; data: PerformanceAppraisalDashboard }>(`/api/hr/performance-appraisal/kpis/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function syncHrKpisFromDepartmentsDesignations(academicYear?: string) {
+  return api<{ upserted: number; designations: number; data: PerformanceAppraisalDashboard }>(
+    '/api/hr/performance-appraisal/kpis/sync-departments-designations',
+    { method: 'POST', body: JSON.stringify({ academicYear }) },
+  );
+}
+
+export async function syncHrKpisFromContinuousEvaluation(academicYear?: string) {
+  return api<{ upserted: number; data: PerformanceAppraisalDashboard }>(
+    '/api/hr/performance-appraisal/kpis/sync-continuous-evaluation',
+    { method: 'POST', body: JSON.stringify({ academicYear }) },
+  );
+}
+
+export async function updateHrPayGrade(id: string, body: Record<string, unknown>) {
+  return api<{ payGrade: unknown; data: PerformanceAppraisalDashboard }>(`/api/hr/performance-appraisal/pay-grades/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function syncHrPayGradesFromDesignations() {
+  return api<{ updated: number; created: number; totalDesignations: number; data: PerformanceAppraisalDashboard }>(
+    '/api/hr/performance-appraisal/pay-grades/sync-designations',
+    { method: 'POST', body: '{}' },
+  );
+}
+
 export type RecruitmentDashboard = {
   academicYear: string;
   academicYears: string[];
@@ -1310,6 +1436,7 @@ export type RecruitmentDashboard = {
   employmentTypes: string[];
   hiringReasons: string[];
   roles: Array<{ role: string; permissions: string }>;
+  employees: Array<{ id: string; fullName: string; employeeCode: string; department: string; designation: string; email: string }>;
 };
 
 export async function fetchRecruitment(opts?: { seed?: boolean; academicYear?: string }) {
@@ -1391,6 +1518,81 @@ export async function updateRecruitmentSettings(body: Record<string, unknown>) {
   return api<RecruitmentDashboard>('/api/hr/recruitment/settings', { method: 'PATCH', body: JSON.stringify(body) });
 }
 
+export async function bulkUploadRecruitmentCandidates(postingId: string, rows: Record<string, unknown>[]) {
+  return api<{ created: number; updated: number; total: number; data: RecruitmentDashboard }>(
+    '/api/hr/recruitment/candidates/bulk-upload',
+    { method: 'POST', body: JSON.stringify({ postingId, rows }) },
+  );
+}
+
+export async function updateRecruitmentCandidate(id: string, body: Record<string, unknown>) {
+  return api<{ data: RecruitmentDashboard }>(`/api/hr/recruitment/candidates/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function reviewRecruitmentApplication(id: string, action: 'approve' | 'reject') {
+  return api<RecruitmentDashboard>(`/api/hr/recruitment/applications/${id}/review`, {
+    method: 'POST', body: JSON.stringify({ action }),
+  });
+}
+
+export async function selectRecruitmentForInterview(id: string) {
+  return api<RecruitmentDashboard>(`/api/hr/recruitment/applications/${id}/select-interview`, { method: 'POST', body: '{}' });
+}
+
+export async function assignRecruitmentInterview(body: Record<string, unknown>) {
+  return api<{ data: RecruitmentDashboard }>('/api/hr/recruitment/interviews/assign', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function updateRecruitmentInterview(id: string, body: Record<string, unknown>) {
+  return api<{ data: RecruitmentDashboard }>(`/api/hr/recruitment/interviews/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function passRecruitmentInterview(id: string) {
+  return api<{ data: RecruitmentDashboard }>(`/api/hr/recruitment/applications/${id}/interview-passed`, { method: 'POST', body: '{}' });
+}
+
+export async function generateRecruitmentSelectionLetter(offerId: string) {
+  return api<{ data: RecruitmentDashboard }>(`/api/hr/recruitment/offers/${offerId}/generate-selection-letter`, { method: 'POST', body: '{}' });
+}
+
+export async function updateRecruitmentOffer(id: string, body: Record<string, unknown>) {
+  return api<{ data: RecruitmentDashboard }>(`/api/hr/recruitment/offers/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function sendRecruitmentOfferEmail(id: string, body: Record<string, unknown>) {
+  return api<{ data: RecruitmentDashboard }>(`/api/hr/recruitment/offers/${id}/send-email`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function createRecruitmentReference(body: Record<string, unknown>) {
+  return api<{ data: RecruitmentDashboard }>('/api/hr/recruitment/references', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function submitRecruitmentReferenceFeedback(id: string, feedbackType: 'POSITIVE' | 'NEGATIVE', feedback?: string) {
+  return api<{ data: RecruitmentDashboard }>(`/api/hr/recruitment/references/${id}/feedback`, {
+    method: 'POST', body: JSON.stringify({ feedbackType, feedback }),
+  });
+}
+
+export async function approveRecruitmentReferenceHire(id: string) {
+  return api<{ data: RecruitmentDashboard }>(`/api/hr/recruitment/references/${id}/approve-hire`, { method: 'POST', body: '{}' });
+}
+
+export async function updateRecruitmentProbation(id: string, body: Record<string, unknown>) {
+  return api<{ data: RecruitmentDashboard }>(`/api/hr/recruitment/onboarding/${id}/probation`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function extendRecruitmentProbation(id: string, extendedEnd: string, feedback: string) {
+  return api<{ data: RecruitmentDashboard }>(`/api/hr/recruitment/onboarding/${id}/extend-probation`, {
+    method: 'POST', body: JSON.stringify({ extendedEnd, feedback }),
+  });
+}
+
+export async function completeRecruitmentProbation(id: string, feedback: string) {
+  return api<{ data: RecruitmentDashboard }>(`/api/hr/recruitment/onboarding/${id}/complete-probation`, {
+    method: 'POST', body: JSON.stringify({ feedback }),
+  });
+}
+
 export type TrainingDashboard = {
   academicYear: string;
   academicYears: string[];
@@ -1436,6 +1638,86 @@ export async function fetchTrainingDashboard(opts?: { seed?: boolean; academicYe
 
 export async function createTrainingNeed(body: Record<string, unknown>) {
   return api<TrainingDashboard>('/api/hr/training/needs', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function updateTrainingNeed(id: string, body: Record<string, unknown>) {
+  return api<TrainingDashboard>(`/api/hr/training/needs/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function createTrainingCategory(body: Record<string, unknown>) {
+  return api<TrainingDashboard>('/api/hr/training/categories', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function createTrainingCourse(body: Record<string, unknown>) {
+  return api<TrainingDashboard>('/api/hr/training/courses', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function updateTrainingCourse(id: string, body: Record<string, unknown>) {
+  return api<TrainingDashboard>(`/api/hr/training/courses/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function createTrainingTrainer(body: Record<string, unknown>) {
+  return api<TrainingDashboard>('/api/hr/training/trainers', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function createTrainingVenue(body: Record<string, unknown>) {
+  return api<TrainingDashboard>('/api/hr/training/venues', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function createTrainingBatch(body: Record<string, unknown>) {
+  return api<TrainingDashboard>('/api/hr/training/batches', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function createTrainingAnnualPlan(academicYear: string) {
+  return api<TrainingDashboard>('/api/hr/training/annual-plan', { method: 'POST', body: JSON.stringify({ academicYear }) });
+}
+
+export async function confirmTrainingNomination(id: string) {
+  return api<TrainingDashboard>(`/api/hr/training/nominations/${id}/confirm`, { method: 'POST', body: '{}' });
+}
+
+export async function createTrainingAssignment(body: Record<string, unknown>) {
+  return api<TrainingDashboard>('/api/hr/training/assignments', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function gradeTrainingAssignment(id: string, status: string) {
+  return api<TrainingDashboard>(`/api/hr/training/assignments/${id}/grade`, { method: 'PATCH', body: JSON.stringify({ status }) });
+}
+
+export async function submitTrainingFeedback(body: Record<string, unknown>) {
+  return api<TrainingDashboard>('/api/hr/training/feedback', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function issueTrainingCertificate(nominationId: string) {
+  return api<TrainingDashboard>('/api/hr/training/certificates/issue', { method: 'POST', body: JSON.stringify({ nominationId }) });
+}
+
+export async function createTrainingCompetency(body: Record<string, unknown>) {
+  return api<TrainingDashboard>('/api/hr/training/competencies', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function createTrainingIdp(body: Record<string, unknown>) {
+  return api<TrainingDashboard>('/api/hr/training/idps', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function updateTrainingIdp(id: string, body: Record<string, unknown>) {
+  return api<TrainingDashboard>(`/api/hr/training/idps/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function createTrainingBudget(body: Record<string, unknown>) {
+  return api<TrainingDashboard>('/api/hr/training/budgets', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function updateTrainingBudget(id: string, body: Record<string, unknown>) {
+  return api<TrainingDashboard>(`/api/hr/training/budgets/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function createTrainingExternal(body: Record<string, unknown>) {
+  return api<TrainingDashboard>('/api/hr/training/external', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function seedTrainingDemo() {
+  return api<TrainingDashboard>('/api/hr/training/seed-demo', { method: 'POST', body: '{}' });
 }
 
 export async function approveTrainingAnnualPlan(academicYear: string) {
@@ -1490,13 +1772,32 @@ export type EdomsDashboard = {
   automationRules: string[];
 };
 
-export async function fetchEdomsDashboard(seed?: boolean) {
-  const qs = seed ? '?seed=1' : '';
-  return api<EdomsDashboard>(`/api/hr/edoms${qs}`);
+export async function fetchEdomsDashboard() {
+  return api<EdomsDashboard>('/api/hr/edoms');
+}
+
+export async function seedEdomsDemo() {
+  return api<EdomsDashboard>('/api/hr/edoms/seed-demo', { method: 'POST', body: '{}' });
+}
+
+export async function createEdomsCase(body: Record<string, unknown>) {
+  return api<EdomsDashboard>('/api/hr/edoms/cases', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function updateEdomsCase(id: string, body: Record<string, unknown>) {
+  return api<EdomsDashboard>(`/api/hr/edoms/cases/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 
 export async function activateEdomsPortal(caseId: string) {
   return api<EdomsDashboard>(`/api/hr/edoms/cases/${caseId}/activate-portal`, { method: 'POST', body: '{}' });
+}
+
+export async function submitEdomsDocument(id: string, body: Record<string, unknown>) {
+  return api<EdomsDashboard>(`/api/hr/edoms/documents/${id}/submit`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function createEdomsDocumentRecord(caseId: string, body: Record<string, unknown>) {
+  return api<EdomsDashboard>(`/api/hr/edoms/cases/${caseId}/documents`, { method: 'POST', body: JSON.stringify(body) });
 }
 
 export async function verifyEdomsDocument(id: string, action: 'verify' | 'reject' | 'correction') {
@@ -1519,8 +1820,76 @@ export async function completeEdomsChecklist(id: string) {
   });
 }
 
+export async function addEdomsChecklistItem(caseId: string, body: Record<string, unknown>) {
+  return api<EdomsDashboard>(`/api/hr/edoms/cases/${caseId}/checklists`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function updateEdomsVerification(id: string, action: 'complete' | 'fail', remarks = '') {
+  return api<EdomsDashboard>(`/api/hr/edoms/verifications/${id}/update`, {
+    method: 'POST', body: JSON.stringify({ action, remarks }),
+  });
+}
+
+export async function createEdomsQualification(caseId: string, body: Record<string, unknown>) {
+  return api<EdomsDashboard>(`/api/hr/edoms/cases/${caseId}/qualifications`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function verifyEdomsQualification(id: string, status: 'VERIFIED' | 'REJECTED') {
+  return api<EdomsDashboard>(`/api/hr/edoms/qualifications/${id}/verify`, {
+    method: 'POST', body: JSON.stringify({ status }),
+  });
+}
+
+export async function createEdomsEmploymentHistory(caseId: string, body: Record<string, unknown>) {
+  return api<EdomsDashboard>(`/api/hr/edoms/cases/${caseId}/employment-history`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function createEdomsAsset(caseId: string, body: Record<string, unknown>) {
+  return api<EdomsDashboard>(`/api/hr/edoms/cases/${caseId}/assets`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function updateEdomsAssetStatus(id: string, status: 'ISSUED' | 'RETURNED' | 'LOST') {
+  return api<EdomsDashboard>(`/api/hr/edoms/assets/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) });
+}
+
+export async function createEdomsSystemAccess(caseId: string, body: Record<string, unknown>) {
+  return api<EdomsDashboard>(`/api/hr/edoms/cases/${caseId}/system-access`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function activateEdomsSystemAccess(id: string) {
+  return api<EdomsDashboard>(`/api/hr/edoms/system-access/${id}/activate`, { method: 'POST', body: '{}' });
+}
+
+export async function updateEdomsInduction(id: string, body: Record<string, unknown>) {
+  return api<EdomsDashboard>(`/api/hr/edoms/inductions/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function updateEdomsProbation(caseId: string, body: Record<string, unknown>) {
+  return api<EdomsDashboard>(`/api/hr/edoms/cases/${caseId}/probation`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
 export async function confirmEdomsProbation(caseId: string) {
   return api<EdomsDashboard>(`/api/hr/edoms/cases/${caseId}/confirm`, { method: 'POST', body: '{}' });
+}
+
+export async function generateEdomsLetters(caseId: string) {
+  return api<EdomsDashboard>(`/api/hr/edoms/cases/${caseId}/generate-letters`, { method: 'POST', body: '{}' });
+}
+
+export async function acknowledgeEdomsLetter(id: string) {
+  return api<EdomsDashboard>(`/api/hr/edoms/letters/${id}/acknowledge`, { method: 'POST', body: '{}' });
+}
+
+export async function renewEdomsDocument(id: string, body: Record<string, unknown>) {
+  return api<EdomsDashboard>(`/api/hr/edoms/documents/${id}/renew`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function sendEdomsExpiryAlert(id: string) {
+  return api<EdomsDashboard>(`/api/hr/edoms/documents/${id}/expiry-alert`, { method: 'POST', body: '{}' });
+}
+
+export async function updateEdomsSettings(body: Record<string, unknown>) {
+  return api<EdomsDashboard>('/api/hr/edoms/settings', { method: 'PATCH', body: JSON.stringify(body) });
 }
 
 // ─── Staff Resignation & Exit Management (SEMS) ─────────────────────────
@@ -1558,9 +1927,20 @@ export type ExitDashboard = {
   automationRules: string[];
 };
 
-export async function fetchExitDashboard(seed?: boolean) {
-  const qs = seed ? '?seed=1' : '';
-  return api<ExitDashboard>(`/api/hr/exit-management${qs}`);
+export async function fetchExitDashboard() {
+  return api<ExitDashboard>('/api/hr/exit-management');
+}
+
+export async function seedExitDemo() {
+  return api<ExitDashboard>('/api/hr/exit-management/seed-demo', { method: 'POST', body: '{}' });
+}
+
+export async function createExitCase(body: Record<string, unknown>) {
+  return api<ExitDashboard>('/api/hr/exit-management/cases', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function updateExitCase(id: string, body: Record<string, unknown>) {
+  return api<ExitDashboard>(`/api/hr/exit-management/cases/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 
 export async function submitExitResignation(caseId: string) {
@@ -1577,28 +1957,96 @@ export async function advanceExitWorkflow(caseId: string) {
   return api<ExitDashboard>(`/api/hr/exit-management/cases/${caseId}/advance`, { method: 'POST', body: '{}' });
 }
 
-export async function approveExitClearance(id: string, remarks = '') {
-  return api<ExitDashboard>(`/api/hr/exit-management/clearances/${id}/approve`, {
-    method: 'POST', body: JSON.stringify({ remarks }),
+export async function extendExitNotice(caseId: string, extraDays: number) {
+  return api<ExitDashboard>(`/api/hr/exit-management/cases/${caseId}/extend-notice`, {
+    method: 'POST', body: JSON.stringify({ extraDays }),
   });
+}
+
+export async function addExitHandover(caseId: string, body: Record<string, unknown>) {
+  return api<ExitDashboard>(`/api/hr/exit-management/cases/${caseId}/handovers`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function updateExitHandover(id: string, body: Record<string, unknown>) {
+  return api<ExitDashboard>(`/api/hr/exit-management/handovers/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
 }
 
 export async function completeExitHandover(id: string) {
   return api<ExitDashboard>(`/api/hr/exit-management/handovers/${id}/complete`, { method: 'POST', body: '{}' });
 }
 
+export async function addExitKnowledgeTransfer(caseId: string, body: Record<string, unknown>) {
+  return api<ExitDashboard>(`/api/hr/exit-management/cases/${caseId}/knowledge-transfer`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function completeExitKnowledgeTransfer(id: string) {
+  return api<ExitDashboard>(`/api/hr/exit-management/knowledge-transfer/${id}/complete`, { method: 'POST', body: '{}' });
+}
+
+export async function approveExitClearance(id: string, remarks = '') {
+  return api<ExitDashboard>(`/api/hr/exit-management/clearances/${id}/approve`, {
+    method: 'POST', body: JSON.stringify({ remarks }),
+  });
+}
+
+export async function rejectExitClearance(id: string, remarks = '') {
+  return api<ExitDashboard>(`/api/hr/exit-management/clearances/${id}/reject`, {
+    method: 'POST', body: JSON.stringify({ remarks }),
+  });
+}
+
 export async function recoverExitAsset(id: string) {
   return api<ExitDashboard>(`/api/hr/exit-management/assets/${id}/recover`, { method: 'POST', body: '{}' });
+}
+
+export async function updateExitAsset(id: string, body: Record<string, unknown>) {
+  return api<ExitDashboard>(`/api/hr/exit-management/assets/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function recalculateExitFnf(caseId: string, body: Record<string, unknown>) {
+  return api<ExitDashboard>(`/api/hr/exit-management/cases/${caseId}/recalculate-fnf`, { method: 'POST', body: JSON.stringify(body) });
 }
 
 export async function approveExitFnf(caseId: string) {
   return api<ExitDashboard>(`/api/hr/exit-management/cases/${caseId}/approve-fnf`, { method: 'POST', body: '{}' });
 }
 
+export async function markExitFnfPaid(caseId: string, body: Record<string, unknown>) {
+  return api<ExitDashboard>(`/api/hr/exit-management/cases/${caseId}/mark-fnf-paid`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function updateExitLeaveSettlement(caseId: string, body: Record<string, unknown>) {
+  return api<ExitDashboard>(`/api/hr/exit-management/cases/${caseId}/leave-settlement`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function updateExitInterview(id: string, body: Record<string, unknown>) {
+  return api<ExitDashboard>(`/api/hr/exit-management/interviews/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function generateExitDocuments(caseId: string) {
+  return api<ExitDashboard>(`/api/hr/exit-management/cases/${caseId}/generate-documents`, { method: 'POST', body: '{}' });
+}
+
+export async function sendExitDocument(id: string) {
+  return api<ExitDashboard>(`/api/hr/exit-management/documents/${id}/send`, { method: 'POST', body: '{}' });
+}
+
 export async function initiateExitRetention(caseId: string, retentionType: string) {
   return api<ExitDashboard>(`/api/hr/exit-management/cases/${caseId}/retention`, {
     method: 'POST', body: JSON.stringify({ retentionType }),
   });
+}
+
+export async function closeExitRetention(id: string, body: Record<string, unknown>) {
+  return api<ExitDashboard>(`/api/hr/exit-management/retentions/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function updateExitAlumni(id: string, body: Record<string, unknown>) {
+  return api<ExitDashboard>(`/api/hr/exit-management/alumni/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+export async function updateExitSettings(body: Record<string, unknown>) {
+  return api<ExitDashboard>('/api/hr/exit-management/settings', { method: 'PATCH', body: JSON.stringify(body) });
 }
 
 // ─── HR Reports ─────────────────────────────────────────────────────────
@@ -1667,8 +2115,17 @@ export type ModuleApprovalMapping = {
   assigneeEmail: string;
   sortOrder: number;
   isActive: boolean;
+  departmentId?: string;
+  isDepartmentHierarchy?: boolean;
   createdAt: string;
   updatedAt: string;
+};
+
+export type DepartmentHierarchyLevel = {
+  roleKey: string;
+  roleLabel: string;
+  employeeId: string;
+  sortOrder: number;
 };
 
 export async function listApprovalHierarchy() {
@@ -1690,4 +2147,33 @@ export async function updateApprovalMapping(
     body: JSON.stringify(body),
   });
   return data.record;
+}
+
+export async function fetchDepartmentHierarchyPrefill(departmentId: string) {
+  return api<{
+    department: { id: string; code: string; name: string };
+    exists: boolean;
+    levels: DepartmentHierarchyLevel[];
+  }>(`/api/hr/approval-hierarchy/department/${encodeURIComponent(departmentId)}/prefill`);
+}
+
+export async function saveDepartmentApprovalHierarchy(body: {
+  departmentId: string;
+  levels: Array<{ roleKey?: string; roleLabel: string; employeeId?: string; sortOrder?: number }>;
+}) {
+  return api<{
+    department: { id: string; code: string; name: string };
+    records: ModuleApprovalMapping[];
+    message: string;
+  }>('/api/hr/approval-hierarchy/department', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteDepartmentApprovalHierarchy(departmentId: string) {
+  return api<{ ok: boolean; deleted: number }>(
+    `/api/hr/approval-hierarchy/department/${encodeURIComponent(departmentId)}`,
+    { method: 'DELETE' },
+  );
 }

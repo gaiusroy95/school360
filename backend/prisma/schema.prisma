@@ -9925,6 +9925,8 @@ model HrPerformanceKpi {
   name          String
   description   String      @default("")
   staffType     String      @default("ALL") // TEACHING, NON_TEACHING, ALL
+  department    String      @default("")
+  designation   String      @default("")
   weight        Float       @default(0)
   maxScore      Float       @default(100)
   status        String      @default("ACTIVE")
@@ -9933,6 +9935,7 @@ model HrPerformanceKpi {
 
   @@unique([institutionId, code])
   @@index([institutionId, category])
+  @@index([institutionId, department, designation])
 }
 
 /// Quarterly employee appraisal with multi-stage workflow
@@ -10226,8 +10229,9 @@ model HrCandidateApplication {
   requisitionId     String
   requisition       HrJobRequisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
   applicationNumber String
-  pipelineStage     String           @default("APPLICATION_RECEIVED")
+  pipelineStage     String           @default("RECEIVE_APPLICATIONS")
   status            String           @default("ACTIVE")
+  reviewStatus      String           @default("PENDING")
   resumeMatchPct    Float            @default(0)
   skillMatchPct     Float            @default(0)
   experienceMatchPct Float           @default(0)
@@ -10255,7 +10259,10 @@ model HrInterviewFeedback {
   applicationId   String
   application     HrCandidateApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   interviewType   String
+  interviewRoundName String            @default("")
   interviewerName String                 @default("")
+  interviewerDepartment String           @default("")
+  interviewerDesignation String          @default("")
   scheduledAt     DateTime?
   rating          Float                  @default(0)
   comments        String                 @default("")
@@ -10282,6 +10289,11 @@ model HrRecruitmentOffer {
   joiningBonus    Float                  @default(0)
   variablePay     Float                  @default(0)
   probationSalary Float                  @default(0)
+  salaryComponents Json                  @default("{}")
+  emailSubject    String                 @default("")
+  emailBody       String                 @default("")
+  ccEmails        Json                   @default("[]")
+  emailSentLog    Json                   @default("[]")
   workflowStage   String                 @default("HR")
   status          String                 @default("DRAFT")
   offerLetterSentAt DateTime?
@@ -10322,6 +10334,8 @@ model HrReferenceCheck {
   relationship  String                 @default("")
   feedback      String                 @default("")
   recommendation String                @default("")
+  feedbackType  String                 @default("")
+  approvalStatus String                @default("")
   createdAt     DateTime               @default(now())
   updatedAt     DateTime               @updatedAt
 
@@ -10343,6 +10357,8 @@ model HrRecruitmentOnboarding {
   confirmationStatus String                 @default("PENDING")
   mentorName         String                 @default("")
   monthlyReviews     Json                   @default("[]")
+  probationFeedback  Json                   @default("[]")
+  extendedProbationEnd DateTime?            @db.Date
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
 }

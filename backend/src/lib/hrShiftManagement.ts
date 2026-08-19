@@ -510,36 +510,143 @@ export async function updateInstitutionWorkingHours(institutionId: string, data:
   return row;
 }
 
-export async function assignEmployeeShift(institutionId: string, data: {
-  employeeId: string; shiftId: string; effectiveDate: string;
-  employmentType?: string; branch?: string; workingDays?: string[];
-  weeklyOff?: string[]; attendanceRule?: string; payrollRule?: string; remarks?: string;
-}) {
-  await prisma.hrEmployeeShiftAssignment.updateMany({
-    where: { institutionId, employeeId: data.employeeId, status: 'ACTIVE' },
-    data: { status: 'INACTIVE' },
+type ShiftAssignmentInput = {
+  employeeId?: string;
+  employeeIds?: string[];
+  shiftId: string;
+  effectiveDate: string;
+  employmentType?: string;
+  branch?: string;
+  workingDays?: string[];
+  weeklyOff?: string[];
+  attendanceRule?: string;
+  payrollRule?: string;
+  remarks?: string;
+};
+
+function resolveAssignmentEmployeeIds(data: ShiftAssignmentInput) {
+  return [...new Set([...(data.employeeIds ?? []), ...(data.employeeId ? [data.employeeId] : [])])]
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
+
+export async function assignEmployeeShift(institutionId: string, data: ShiftAssignmentInput) {
+  const employeeIds = resolveAssignmentEmployeeIds(data);
+  if (!employeeIds.length) throw new Error('Select at least one employee');
+
+  const shift = await prisma.hrShift.findFirst({ where: { institutionId, id: data.shiftId } });
+  if (!shift) throw new Error('Shift not found');
+
+  const effectiveDate = new Date(data.effectiveDate);
+  if (Number.isNaN(effectiveDate.getTime())) throw new Error('Invalid effective date');
+
+  const employees = await prisma.payrollEmployee.findMany({
+    where: { institutionId, id: { in: employeeIds } },
+    select: { id: true },
   });
-  const row = await prisma.hrEmployeeShiftAssignment.create({
+  if (employees.length !== employeeIds.length) {
+    throw new Error('One or more selected employees were not found');
+  }
+
+  const created = await prisma.$transaction(async (tx) => {
+    await tx.hrEmployeeShiftAssignment.updateMany({
+      where: { institutionId, employeeId: { in: employeeIds }, status: 'ACTIVE' },
+      data: { status: 'INACTIVE' },
+    });
+
+    const rows = [];
+    for (const employeeId of employeeIds) {
+      const row = await tx.hrEmployeeShiftAssignment.create({
+        data: {
+          institutionId,
+          employeeId,
+          shiftId: data.shiftId,
+          effectiveDate,
+          employmentType: data.employmentType ?? 'PERMANENT',
+          branch: data.branch ?? 'Main Branch',
+          workingDays: (data.workingDays ?? []) as Prisma.InputJsonValue,
+          weeklyOff: (data.weeklyOff ?? ['Sunday']) as Prisma.InputJsonValue,
+          attendanceRule: data.attendanceRule ?? '',
+          payrollRule: data.payrollRule ?? '',
+          remarks: data.remarks ?? '',
+          status: 'ACTIVE',
+        },
+        include: {
+          employee: { select: { employeeCode: true, fullName: true, department: true } },
+          shift: { select: { code: true, name: true } },
+        },
+      });
+      rows.push(row);
+    }
+    return rows;
+  });
+
+  return { assignment: created[0], assignments: created, assigned: created.length };
+}
+
+export async function updateEmployeeShiftAssignment(
+  institutionId: string,
+  id: string,
+  data: {
+    shiftId?: string;
+    effectiveDate?: string;
+    employmentType?: string;
+    branch?: string;
+    workingDays?: string[];
+    weeklyOff?: string[];
+    attendanceRule?: string;
+    payrollRule?: string;
+    remarks?: string;
+    status?: string;
+  },
+) {
+  const existing = await prisma.hrEmployeeShiftAssignment.findFirst({
+    where: { institutionId, id },
+  });
+  if (!existing) throw new Error('Assignment not found');
+
+  if (data.shiftId) {
+    const shift = await prisma.hrShift.findFirst({ where: { institutionId, id: data.shiftId } });
+    if (!shift) throw new Error('Shift not found');
+  }
+
+  const effectiveDate = data.effectiveDate ? new Date(data.effectiveDate) : undefined;
+  if (effectiveDate && Number.isNaN(effectiveDate.getTime())) throw new Error('Invalid effective date');
+
+  const nextStatus = data.status ?? existing.status;
+  const nextShiftId = data.shiftId ?? existing.shiftId;
+
+  if (nextStatus === 'ACTIVE' && nextShiftId !== existing.shiftId) {
+    await prisma.hrEmployeeShiftAssignment.updateMany({
+      where: {
+        institutionId,
+        employeeId: existing.employeeId,
+        status: 'ACTIVE',
+        id: { not: id },
+      },
+      data: { status: 'INACTIVE' },
+    });
+  }
+
+  return prisma.hrEmployeeShiftAssignment.update({
+    where: { id },
     data: {
-      institutionId,
-      employeeId: data.employeeId,
       shiftId: data.shiftId,
-      effectiveDate: new Date(data.effectiveDate),
-      employmentType: data.employmentType ?? 'PERMANENT',
-      branch: data.branch ?? 'Main Branch',
-      workingDays: (data.workingDays ?? []) as Prisma.InputJsonValue,
-      weeklyOff: (data.weeklyOff ?? ['Sunday']) as Prisma.InputJsonValue,
-      attendanceRule: data.attendanceRule ?? '',
-      payrollRule: data.payrollRule ?? '',
-      remarks: data.remarks ?? '',
-      status: 'ACTIVE',
+      effectiveDate,
+      employmentType: data.employmentType,
+      branch: data.branch,
+      workingDays: data.workingDays as Prisma.InputJsonValue | undefined,
+      weeklyOff: data.weeklyOff as Prisma.InputJsonValue | undefined,
+      attendanceRule: data.attendanceRule,
+      payrollRule: data.payrollRule,
+      remarks: data.remarks,
+      status: data.status,
     },
     include: {
-      employee: { select: { employeeCode: true, fullName: true, department: true } },
-      shift: { select: { code: true, name: true } },
+      employee: { select: { employeeCode: true, fullName: true, department: true, designation: true, employmentType: true } },
+      shift: { select: { code: true, name: true, shiftType: true, startTime: true, endTime: true } },
     },
   });
-  return row;
 }
 
 export async function mapDepartmentShift(institutionId: string, data: { department: string; shiftId: string; branch?: string }) {

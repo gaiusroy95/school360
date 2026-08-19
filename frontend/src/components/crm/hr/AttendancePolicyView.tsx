@@ -1,14 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CalendarDays,
+  Check,
+  ChevronDown,
   ClipboardList,
   Loader2,
   RefreshCcw,
   Save,
+  Search,
   Settings2,
   Trash2,
   UserPlus,
   Users,
+  X,
 } from 'lucide-react';
 import {
   assignLeavePolicy,
@@ -46,6 +50,131 @@ function RuleToggle({
         {description && <p className="text-[10px] text-slate-500 mt-0.5">{description}</p>}
       </div>
     </label>
+  );
+}
+
+function EmployeeMultiSelect({
+  employees,
+  selectedIds,
+  onChange,
+}: {
+  employees: Array<{ id: string; employeeCode: string; fullName: string; department: string }>;
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
+
+  useEffect(() => {
+    const onDoc = (event: MouseEvent) => {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return employees;
+    return employees.filter(
+      (e) =>
+        e.fullName.toLowerCase().includes(q) ||
+        e.employeeCode.toLowerCase().includes(q) ||
+        e.department.toLowerCase().includes(q),
+    );
+  }, [employees, query]);
+
+  const toggle = (id: string) => {
+    onChange(selected.has(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id]);
+  };
+
+  const allVisibleSelected = filtered.length > 0 && filtered.every((e) => selected.has(e.id));
+  const label =
+    selectedIds.length === 0
+      ? 'Select employees…'
+      : selectedIds.length === 1
+        ? (employees.find((e) => e.id === selectedIds[0])?.fullName ?? '1 employee selected')
+        : `${selectedIds.length} employees selected`;
+
+  return (
+    <div ref={wrapRef} className="relative min-w-[220px] w-64">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`${am.input} w-full text-xs text-left flex items-center justify-between gap-2 ${
+          selectedIds.length ? 'text-slate-800' : 'text-slate-400'
+        }`}
+      >
+        <span className="truncate">{label}</span>
+        <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+      </button>
+      {open && (
+        <div className="absolute z-30 mt-1 w-[min(100vw-2rem,22rem)] right-0 sm:right-auto sm:left-0 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+          <div className="p-2 border-b border-slate-100 space-y-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search name, code or department…"
+                className={`${am.input} pl-8 text-xs py-1.5`}
+                autoFocus
+              />
+            </div>
+            <div className="flex items-center justify-between text-[10px]">
+              <button
+                type="button"
+                className="font-semibold text-blue-600 hover:underline"
+                onClick={() => {
+                  const ids = filtered.map((e) => e.id);
+                  if (allVisibleSelected) {
+                    onChange(selectedIds.filter((id) => !ids.includes(id)));
+                  } else {
+                    onChange([...new Set([...selectedIds, ...ids])]);
+                  }
+                }}
+              >
+                {allVisibleSelected ? 'Clear visible' : 'Select all visible'}
+              </button>
+              <span className="text-slate-400">{selectedIds.length} selected</span>
+            </div>
+          </div>
+          <div className="max-h-56 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <p className="px-3 py-6 text-center text-xs text-slate-400">No employees match</p>
+            ) : (
+              filtered.map((emp) => {
+                const checked = selected.has(emp.id);
+                return (
+                  <label
+                    key={emp.id}
+                    className="flex items-start gap-2 px-3 py-2 text-xs hover:bg-slate-50 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggle(emp.id)}
+                      className="mt-0.5 rounded border-slate-300"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1 font-semibold text-slate-800">
+                        {emp.fullName}
+                        {checked && <Check className="w-3 h-3 text-blue-600 shrink-0" />}
+                      </span>
+                      <span className="block text-[10px] text-slate-400">
+                        {emp.employeeCode} · {emp.department || '—'}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -98,7 +227,7 @@ export function AttendancePolicyView() {
     lopCalculation: '',
   });
 
-  const [assignEmployeeId, setAssignEmployeeId] = useState('');
+  const [assignEmployeeIds, setAssignEmployeeIds] = useState<string[]>([]);
   const [assignEffectiveDate, setAssignEffectiveDate] = useState(new Date().toISOString().slice(0, 10));
 
   const load = useCallback(async () => {
@@ -201,22 +330,45 @@ export function AttendancePolicyView() {
   };
 
   const handleAssign = async () => {
-    if (!selectedPolicyId || !assignEmployeeId) {
-      setError('Select policy and employee');
+    if (!selectedPolicyId || assignEmployeeIds.length === 0) {
+      setError('Select a policy and at least one employee');
       return;
     }
     setSaving(true);
+    setError('');
     try {
       const res = await assignLeavePolicy({
         policyId: selectedPolicyId,
-        employeeId: assignEmployeeId,
+        employeeIds: assignEmployeeIds,
         effectiveDate: assignEffectiveDate,
       });
-      setData((prev) =>
-        prev ? { ...prev, assignments: [res.assignment, ...prev.assignments.filter((a) => a.id !== res.assignment.id)] } : prev,
+      const incoming = res.assignments?.length ? res.assignments : res.assignment ? [res.assignment] : [];
+      setData((prev) => {
+        if (!prev) return prev;
+        const incomingEmp = new Set(incoming.map((a) => a.employeeId));
+        return {
+          ...prev,
+          assignments: [...incoming, ...prev.assignments.filter((a) => !incomingEmp.has(a.employeeId))],
+          policies: prev.policies.map((p) =>
+            p.id === selectedPolicyId
+              ? {
+                  ...p,
+                  assignmentCount: new Set([
+                    ...prev.assignments.filter((a) => a.policyId === p.id && !incomingEmp.has(a.employeeId)).map((a) => a.employeeId),
+                    ...incoming.map((a) => a.employeeId),
+                  ]).size,
+                }
+              : p,
+          ),
+        };
+      });
+      setAssignEmployeeIds([]);
+      const count = res.assigned || incoming.length;
+      setMessage(
+        count === 1
+          ? `Policy assigned to ${incoming[0]?.employeeName || 'employee'}`
+          : `Policy assigned to ${count} employees`,
       );
-      setAssignEmployeeId('');
-      setMessage('Policy assigned to employee');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Assignment failed');
     } finally {
@@ -430,19 +582,50 @@ export function AttendancePolicyView() {
               <UserPlus className="w-4 h-4 text-blue-600" />
               Employee Assignment
             </h3>
-            <div className="flex flex-wrap gap-2">
-              <select value={assignEmployeeId} onChange={(e) => setAssignEmployeeId(e.target.value)} className={`${am.input} w-48 text-xs`}>
-                <option value="">Select employee…</option>
-                {data?.employees.map((e) => (
-                  <option key={e.id} value={e.id}>{e.fullName} ({e.employeeCode})</option>
-                ))}
-              </select>
+            <div className="flex flex-wrap items-center gap-2">
+              <EmployeeMultiSelect
+                employees={data?.employees ?? []}
+                selectedIds={assignEmployeeIds}
+                onChange={setAssignEmployeeIds}
+              />
               <input type="date" value={assignEffectiveDate} onChange={(e) => setAssignEffectiveDate(e.target.value)} className={`${am.input} w-36 text-xs`} />
-              <button type="button" onClick={() => void handleAssign()} disabled={saving} className={am.btnPrimary}>
-                Assign
+              <button type="button" onClick={() => void handleAssign()} disabled={saving || assignEmployeeIds.length === 0} className={am.btnPrimary}>
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
+                Assign{assignEmployeeIds.length ? ` (${assignEmployeeIds.length})` : ''}
               </button>
             </div>
           </div>
+          {assignEmployeeIds.length > 0 && (
+            <div className="px-4 py-2 border-b border-slate-100 flex flex-wrap items-center gap-1.5">
+              {assignEmployeeIds.map((id) => {
+                const emp = data?.employees.find((e) => e.id === id);
+                if (!emp) return null;
+                return (
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 text-[10px] font-semibold border border-blue-100"
+                  >
+                    {emp.fullName}
+                    <button
+                      type="button"
+                      onClick={() => setAssignEmployeeIds((prev) => prev.filter((x) => x !== id))}
+                      className="text-blue-500 hover:text-blue-800"
+                      aria-label={`Remove ${emp.fullName}`}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => setAssignEmployeeIds([])}
+                className="text-[10px] font-semibold text-slate-500 hover:text-slate-800 ml-1"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>

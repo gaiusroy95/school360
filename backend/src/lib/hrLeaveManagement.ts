@@ -65,6 +65,160 @@ function countDays(from: Date, to: Date) {
   return Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
 }
 
+function addUtcDays(d: Date, days: number) {
+  const next = new Date(d);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function eachUtcDate(from: Date, to: Date) {
+  const dates: Date[] = [];
+  const cur = new Date(from);
+  while (cur <= to) {
+    dates.push(new Date(cur));
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+const ATTENDANCE_LEAVE_STATUS: Record<string, string> = {
+  PAID_LEAVE: 'CL',
+  ON_LEAVE: 'CL',
+  LWP: 'LWP',
+  COMP_OFF: 'CO',
+  HALF_DAY: 'HD',
+};
+
+function leaveTypeToAttendanceStatus(leaveType: string) {
+  if (leaveType === 'LWP') return 'LWP';
+  if (leaveType === 'CO') return 'COMP_OFF';
+  if (leaveType === 'HD') return 'HALF_DAY';
+  return 'PAID_LEAVE';
+}
+
+async function markAttendanceForLeave(
+  institutionId: string,
+  employeeId: string,
+  from: Date,
+  to: Date,
+  leaveType: string,
+) {
+  const status = leaveTypeToAttendanceStatus(leaveType);
+  for (const date of eachUtcDate(from, to)) {
+    await prisma.hrAttendanceDailyRecord.upsert({
+      where: { employeeId_recordDate: { employeeId, recordDate: date } },
+      create: {
+        institutionId,
+        employeeId,
+        recordDate: date,
+        shiftCode: 'GEN',
+        status,
+        approvalStatus: 'APPROVED',
+        source: 'LEAVE',
+        remarks: `Synced from leave (${leaveType})`,
+      },
+      update: {
+        status,
+        approvalStatus: 'APPROVED',
+        source: 'LEAVE',
+      },
+    });
+  }
+}
+
+export async function syncAttendanceLeaveToApplications(
+  institutionId: string,
+  academicYear = '2025-26',
+) {
+  const records = await prisma.hrAttendanceDailyRecord.findMany({
+    where: {
+      institutionId,
+      status: { in: Object.keys(ATTENDANCE_LEAVE_STATUS) },
+    },
+    include: {
+      employee: { select: { id: true, employeeCode: true, fullName: true, department: true, designation: true } },
+    },
+    orderBy: [{ employeeId: 'asc' }, { recordDate: 'asc' }],
+  });
+
+  type Span = {
+    employeeId: string;
+    employeeCode: string;
+    leaveType: string;
+    from: Date;
+    to: Date;
+    days: number;
+    reason: string;
+  };
+  const spans: Span[] = [];
+  for (const rec of records) {
+    const leaveType = ATTENDANCE_LEAVE_STATUS[rec.status] || 'CL';
+    const date = parseDateOnly(rec.recordDate);
+    const last = spans[spans.length - 1];
+    if (
+      last
+      && last.employeeId === rec.employeeId
+      && last.leaveType === leaveType
+      && formatDateIso(addUtcDays(last.to, 1)) === formatDateIso(date)
+    ) {
+      last.to = date;
+      last.days += rec.status === 'HALF_DAY' ? 0.5 : 1;
+      continue;
+    }
+    spans.push({
+      employeeId: rec.employeeId,
+      employeeCode: rec.employee.employeeCode,
+      leaveType,
+      from: date,
+      to: date,
+      days: rec.status === 'HALF_DAY' ? 0.5 : 1,
+      reason: rec.remarks || 'Synced from Attendance & Leave',
+    });
+  }
+
+  const userApps = await prisma.hrLeaveApplication.findMany({
+    where: { institutionId, NOT: { recordId: { startsWith: 'ATT-' } } },
+    select: { employeeId: true, fromDate: true, toDate: true },
+  });
+
+  await prisma.hrLeaveApplication.deleteMany({
+    where: { institutionId, recordId: { startsWith: 'ATT-' } },
+  });
+
+  let created = 0;
+  for (const span of spans) {
+    const covered = userApps.some(
+      (app) =>
+        app.employeeId === span.employeeId
+        && app.fromDate <= span.to
+        && app.toDate >= span.from,
+    );
+    if (covered) continue;
+    const recordId = `ATT-${(span.employeeCode || span.employeeId).replace(/[^A-Za-z0-9]+/g, '')}-${formatDateIso(span.from)}-${span.leaveType}`;
+    await prisma.hrLeaveApplication.create({
+      data: {
+        institutionId,
+        recordId,
+        employeeId: span.employeeId,
+        academicYear,
+        leaveType: span.leaveType,
+        fromDate: span.from,
+        toDate: span.to,
+        totalDays: span.days,
+        session: span.leaveType === 'HD' ? 'FIRST_HALF' : 'FULL',
+        reason: span.reason,
+        remarks: '[ATTENDANCE] Synced from Attendance & Leave',
+        status: 'APPROVED',
+        approvedBy: 'Attendance',
+        approvedAt: new Date(),
+      },
+    });
+    created += 1;
+  }
+
+  return { created, spans: spans.length };
+}
+
 async function ensureLeaveSettings(institutionId: string) {
   let row = await prisma.hrLeaveSettings.findUnique({ where: { institutionId } });
   if (!row) row = await prisma.hrLeaveSettings.create({ data: { institutionId } });
@@ -159,6 +313,9 @@ function serializeApplication(
     appliedDate: formatDateIso(row.appliedDate),
     remarks: row.remarks,
     reviewerRemarks: row.reviewerRemarks,
+    source: row.recordId.startsWith('ATT-') || String(row.remarks || '').startsWith('[ATTENDANCE]')
+      ? 'Attendance'
+      : 'Leave',
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -169,11 +326,14 @@ export async function getHrLeaveDashboard(
 ) {
   const filters = await getInstitutionFilterMeta(institutionId);
   const academicYear = opts.academicYear || filters.defaultAcademicYear;
-  const today = new Date();
+  const today = parseDateOnly(new Date());
   const year = opts.year ?? today.getUTCFullYear();
   const month = opts.month ?? today.getUTCMonth() + 1;
   const monthStart = new Date(Date.UTC(year, month - 1, 1));
   const monthEnd = new Date(Date.UTC(year, month, 0));
+
+  const sync = await syncAttendanceLeaveToApplications(institutionId, academicYear);
+  const attendanceSettings = await prisma.hrAttendanceSettings.findUnique({ where: { institutionId } });
 
   const [
     totalEmployees,
@@ -181,11 +341,18 @@ export async function getHrLeaveDashboard(
     holidays,
     balances,
     employees,
-    onLeaveToday,
+    attendanceOnLeaveToday,
   ] = await Promise.all([
     prisma.payrollEmployee.count({ where: { institutionId, status: FeeMasterStatus.ACTIVE } }),
     prisma.hrLeaveApplication.findMany({
-      where: { institutionId, academicYear },
+      where: {
+        institutionId,
+        OR: [
+          { academicYear },
+          { recordId: { startsWith: 'ATT-' } },
+          { fromDate: { lte: monthEnd }, toDate: { gte: monthStart } },
+        ],
+      },
       include: { employee: true },
       orderBy: { createdAt: 'desc' },
     }),
@@ -201,23 +368,32 @@ export async function getHrLeaveDashboard(
       where: { institutionId, status: FeeMasterStatus.ACTIVE },
       select: { id: true, department: true },
     }),
-    prisma.hrLeaveApplication.count({
+    prisma.hrAttendanceDailyRecord.findMany({
       where: {
         institutionId,
-        status: 'APPROVED',
-        fromDate: { lte: today },
-        toDate: { gte: today },
+        recordDate: today,
+        status: { in: ['PAID_LEAVE', 'ON_LEAVE', 'LWP', 'COMP_OFF', 'HALF_DAY'] },
       },
+      select: { employeeId: true },
     }),
   ]);
 
-  const monthApps = applications.filter((a) => a.createdAt >= monthStart && a.createdAt <= monthEnd);
+  const monthApps = applications.filter((a) => {
+    const overlapsMonth = a.fromDate <= monthEnd && a.toDate >= monthStart;
+    const createdThisMonth = a.createdAt >= monthStart && a.createdAt <= monthEnd;
+    return overlapsMonth || createdThisMonth;
+  });
   const pending = applications.filter((a) => a.status === 'PENDING');
   const approvedMonth = monthApps.filter((a) => a.status === 'APPROVED');
   const rejectedMonth = monthApps.filter((a) => a.status === 'REJECTED');
   const lwpMonth = monthApps.filter((a) => a.leaveType === 'LWP' && a.status === 'APPROVED');
 
-  const leaveRequests = applications.slice(0, 50).map((a) => serializeApplication(a, a.employee));
+  const onLeaveEmployeeIds = new Set<string>(attendanceOnLeaveToday.map((r) => r.employeeId));
+  for (const app of applications.filter((a) => a.status === 'APPROVED' && a.fromDate <= today && a.toDate >= today)) {
+    onLeaveEmployeeIds.add(app.employeeId);
+  }
+
+  const leaveRequests = applications.map((a) => serializeApplication(a, a.employee));
 
   const balanceSummary = balances.reduce((acc: Map<string, Record<string, number>>, b) => {
     const key = b.employeeId;
@@ -279,12 +455,23 @@ export async function getHrLeaveDashboard(
     const iso = formatDateIso(cur);
     const events: Array<{ label: string; type: string }> = [];
     const hol = holidays.find((h) => formatDateIso(h.date) === iso);
-    if (hol) events.push({ label: hol.name, type: HOLIDAY_TYPE_LABELS[hol.type] ?? hol.type });
-    for (const app of applications.filter((a) => a.fromDate <= cur && a.toDate >= cur && a.status === 'APPROVED')) {
-      events.push({ label: `${app.employee.fullName} - ${LEAVE_TYPE_LABELS[app.leaveType]}`, type: 'Employee Leave' });
+    if (hol) {
+      const mappedType = HOLIDAY_TYPE_LABELS[hol.type] ?? hol.type;
+      const allow =
+        (hol.type === 'NATIONAL' && (attendanceSettings?.mapPublicHoliday ?? true))
+        || ((hol.type === 'RESTRICTED' || hol.type === 'OPTIONAL') && (attendanceSettings?.mapRestrictedHoliday ?? true))
+        || ((hol.type === 'INSTITUTIONAL' || hol.type === 'OTHER') && (attendanceSettings?.mapSchoolHoliday ?? true));
+      if (allow) events.push({ label: hol.name, type: mappedType });
+    }
+    if (attendanceSettings?.mapApprovedLeave ?? true) {
+      for (const app of applications.filter((a) => a.fromDate <= cur && a.toDate >= cur && a.status === 'APPROVED')) {
+        events.push({ label: `${app.employee.fullName} - ${LEAVE_TYPE_LABELS[app.leaveType] ?? app.leaveType}`, type: 'Employee Leave' });
+      }
     }
     const dow = cur.getUTCDay();
-    if (dow === 0 || dow === 6) events.push({ label: 'Weekend', type: 'Weekend' });
+    if ((dow === 0 || dow === 6) && (attendanceSettings?.mapWeeklyOff ?? true)) {
+      events.push({ label: 'Weekend', type: 'Weekend' });
+    }
     calendarDays.push({ date: iso, day: cur.getUTCDate(), events });
     cur.setUTCDate(cur.getUTCDate() + 1);
   }
@@ -295,12 +482,12 @@ export async function getHrLeaveDashboard(
     year,
     month,
     summary: {
-      totalEmployees: totalEmployees || 248,
-      onLeaveToday: onLeaveToday || 18,
-      pendingRequests: pending.length || 7,
-      approvedThisMonth: approvedMonth.length || 56,
-      rejectedThisMonth: rejectedMonth.length || 4,
-      lwpThisMonth: lwpMonth.length || 2,
+      totalEmployees,
+      onLeaveToday: onLeaveEmployeeIds.size,
+      pendingRequests: pending.length,
+      approvedThisMonth: approvedMonth.length,
+      rejectedThisMonth: rejectedMonth.length,
+      lwpThisMonth: lwpMonth.length,
     },
     leaveRequests,
     holidayCalendar: { year, month, days: calendarDays },
@@ -322,6 +509,10 @@ export async function getHrLeaveDashboard(
       { label: 'Weekend', color: 'purple' },
       { label: 'Employee Leave', color: 'blue' },
     ],
+    sync: {
+      fromAttendance: sync.created,
+      attendanceSpans: sync.spans,
+    },
   };
 }
 
@@ -444,6 +635,10 @@ export async function createHrLeaveApplication(
     });
   }
 
+  if (row.status === 'APPROVED') {
+    await markAttendanceForLeave(institutionId, row.employeeId, from, to, row.leaveType);
+  }
+
   return serializeApplication(row, row.employee);
 }
 
@@ -501,18 +696,7 @@ export async function updateHrLeaveApplicationStatus(
       },
     });
 
-    await prisma.hrAttendanceDailyRecord.updateMany({
-      where: {
-        institutionId,
-        employeeId: row.employeeId,
-        recordDate: { gte: row.fromDate, lte: row.toDate },
-      },
-      data: {
-        status: row.leaveType === 'LWP' ? 'LWP' : 'PAID_LEAVE',
-        approvalStatus: 'APPROVED',
-        source: 'LEAVE',
-      },
-    });
+    await markAttendanceForLeave(institutionId, row.employeeId, row.fromDate, row.toDate, row.leaveType);
   }
 
   return serializeApplication(updated, updated.employee);
@@ -638,8 +822,10 @@ export async function seedHrLeaveManagementDemo(institutionId: string) {
     }
   }
 
-  const existingApps = await prisma.hrLeaveApplication.count({ where: { institutionId } });
-  if (existingApps < 5 && employees.length >= 5) {
+  const existingApps = await prisma.hrLeaveApplication.count({
+    where: { institutionId, NOT: { recordId: { startsWith: 'ATT-' } } },
+  });
+  if (existingApps < 5 && employees.length >= 1) {
     const samples = [
       { leaveType: 'CL', reason: 'Personal Work', days: 2, status: 'PENDING' },
       { leaveType: 'EL', reason: 'Family Function', days: 3, status: 'APPROVED' },

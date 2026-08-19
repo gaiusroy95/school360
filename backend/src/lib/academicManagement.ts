@@ -520,3 +520,33 @@ export async function getAcademicDashboard(
     insights,
   };
 }
+
+/** Union Institution Setup / student classes with Academic Class & Sections rows. */
+export function mergeClassSectionFilters(
+  base: { classes: string[]; sectionsByClass: Record<string, string[]> },
+  rows: Array<{ className: string; sectionName: string }>,
+) {
+  const classSet = new Set((base.classes || []).map((c) => c.trim()).filter(Boolean));
+  const sectionMap = new Map<string, Set<string>>();
+  for (const [cls, sections] of Object.entries(base.sectionsByClass || {})) {
+    const key = cls.trim();
+    if (!key) continue;
+    classSet.add(key);
+    sectionMap.set(key, new Set((sections || []).map((s) => s.trim()).filter(Boolean)));
+  }
+  for (const row of rows) {
+    const className = (row.className || '').trim();
+    const sectionName = (row.sectionName || '').trim();
+    if (!className) continue;
+    classSet.add(className);
+    if (!sectionMap.has(className)) sectionMap.set(className, new Set());
+    if (sectionName) sectionMap.get(className)!.add(sectionName);
+  }
+  const collator = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
+  return {
+    classes: [...classSet].sort(collator),
+    sectionsByClass: Object.fromEntries(
+      [...sectionMap.entries()].map(([cls, sections]) => [cls, [...sections].sort(collator)]),
+    ),
+  };
+}

@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, AlertTriangle, BookOpen, GraduationCap, Layers, Users, FileText,
-  BrainCircuit, Share2, Link as LinkIcon, CheckCircle, Download, Upload,
+  BrainCircuit, Share2, Link as LinkIcon, CheckCircle, Download, Upload, Trash2,
 } from 'lucide-react';
 import {
-  bulkAssignElectives, bulkUploadSyllabusChapters, createLessonPlan, createSyllabusChapter, fetchAcademicMeta,
+  bulkAssignElectives, bulkDeleteAcademicSubjects, bulkDeleteClassSections, bulkDeleteLessonPlans,
+  bulkDeleteSyllabusChapters, bulkDeleteTeacherAllocations, bulkUploadSyllabusChapters,
+  createLessonPlan, createSyllabusChapter, deleteAcademicSubject, deleteClassSection,
+  deleteLessonPlan, deleteSyllabusChapter, deleteTeacherAllocation, fetchAcademicMeta,
   fetchAcademicSubjects, fetchClassSections, fetchCurriculumAnalytics, fetchCurriculumFramework,
-  fetchCurriculumTeacherWorkload, fetchElectives, fetchLessonPlans, fetchSyllabus,
-  fetchTeacherAllocationMeta, fetchTimetableConflicts, saveCurriculumFramework, updateLessonPlan, updateSyllabusChapter,
+  fetchElectives, fetchLessonPlans, fetchSyllabus,
+  fetchTeacherAllocationMeta, fetchTeacherAllocations, fetchTimetableConflicts,
+  saveCurriculumFramework, updateLessonPlan, updateSyllabusChapter,
   type CurriculumAnalytics, type CurriculumFramework, type LessonPlan, type SyllabusChapter,
   type TeacherAllocationMeta,
 } from '../../../lib/academicServices';
@@ -45,6 +49,33 @@ const EMPTY_LESSON = {
 };
 
 const btnExcel = 'inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100';
+const btnDanger =
+  'inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold shadow-sm transition-colors disabled:opacity-60';
+
+type GradeRow = {
+  id: string;
+  className: string;
+  sectionName: string;
+  classGroup: string;
+  capacity: number;
+  classTeacher: string;
+};
+
+type TeacherAllocRow = {
+  id: string;
+  teacherName: string;
+  className: string;
+  sectionName: string;
+  subjectName: string;
+  periodsPerWeek: number;
+  workloadLevel: string;
+};
+
+function uniqueSorted(values: string[]) {
+  return [...new Set(values.map((v) => v.trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true }),
+  );
+}
 
 
 export function CurriculumSyllabusView() {
@@ -59,15 +90,18 @@ export function CurriculumSyllabusView() {
   const [message, setMessage] = useState('');
   const [formError, setFormError] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [busyDelete, setBusyDelete] = useState(false);
+  const [savingLesson, setSavingLesson] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [framework, setFramework] = useState<CurriculumFramework | null>(null);
   const [instFramework, setInstFramework] = useState<Record<string, string>>({});
-  const [classSections, setClassSections] = useState<{ className: string; sectionName: string; classGroup: string; capacity: number; classTeacher: string }[]>([]);
+  const [classSections, setClassSections] = useState<GradeRow[]>([]);
   const [subjects, setSubjects] = useState<{ id: string; subjectName: string; subjectType: string; isElective: boolean; subjectCode: string }[]>([]);
   const [chapters, setChapters] = useState<SyllabusChapter[]>([]);
   const [analytics, setAnalytics] = useState<CurriculumAnalytics | null>(null);
-  const [teachers, setTeachers] = useState<{ teacherName: string; periodsPerWeek: number; isOverloaded: boolean; workloadLevel: string }[]>([]);
+  const [teacherAllocations, setTeacherAllocations] = useState<TeacherAllocRow[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
   const [conflicts, setConflicts] = useState<{ message: string; details: string }[]>([]);
   const [electives, setElectives] = useState<Record<string, unknown>[]>([]);
@@ -98,73 +132,96 @@ export function CurriculumSyllabusView() {
     return slots;
   }, [allocMeta]);
 
-  const chapterClassOptions = useMemo(() => {
-    const fromAlloc = [...new Set(allocationSlots.map((s) => s.className).filter(Boolean))];
-    return fromAlloc.length ? fromAlloc.sort() : (allocMeta?.classes || meta?.classes || []);
-  }, [allocationSlots, allocMeta, meta]);
+  const pageClassOptions = useMemo(
+    () => uniqueSorted([...(meta?.classes || []), ...classSections.map((r) => r.className)]),
+    [meta, classSections],
+  );
+
+  const pageSectionOptions = useMemo(() => {
+    if (!className) return [] as string[];
+    return uniqueSorted([
+      ...(meta?.sectionsByClass[className] || []),
+      ...classSections.filter((r) => r.className === className).map((r) => r.sectionName),
+    ]);
+  }, [className, meta, classSections]);
+
+  const chapterClassOptions = useMemo(
+    () => uniqueSorted([
+      ...classSections.map((r) => r.className),
+      ...(allocMeta?.classes || []),
+      ...(meta?.classes || []),
+      ...allocationSlots.map((s) => s.className),
+    ]),
+    [classSections, allocationSlots, allocMeta, meta],
+  );
 
   const chapterSectionOptions = useMemo(() => {
     if (!chapterForm.className) return [] as string[];
-    const fromAlloc = [...new Set(
-      allocationSlots.filter((s) => s.className === chapterForm.className).map((s) => s.sectionName).filter(Boolean),
-    )];
-    if (fromAlloc.length) return fromAlloc.sort();
-    return allocMeta?.sectionsByClass[chapterForm.className] || meta?.sectionsByClass[chapterForm.className] || [];
-  }, [allocationSlots, chapterForm.className, allocMeta, meta]);
+    return uniqueSorted([
+      ...classSections.filter((r) => r.className === chapterForm.className).map((r) => r.sectionName),
+      ...(allocMeta?.sectionsByClass[chapterForm.className] || []),
+      ...(meta?.sectionsByClass[chapterForm.className] || []),
+      ...allocationSlots.filter((s) => s.className === chapterForm.className).map((s) => s.sectionName),
+    ]);
+  }, [allocationSlots, chapterForm.className, allocMeta, meta, classSections]);
 
   const chapterSubjectOptions = useMemo(() => {
     if (!chapterForm.className) return [] as string[];
-    return [...new Set(
-      allocationSlots
-        .filter((s) =>
-          s.className === chapterForm.className
-          && (!chapterForm.sectionName || s.sectionName === chapterForm.sectionName || !s.sectionName),
-        )
-        .map((s) => s.subjectName)
-        .filter(Boolean),
-    )].sort();
-  }, [allocationSlots, chapterForm.className, chapterForm.sectionName]);
+    const allocated = allocationSlots
+      .filter((s) =>
+        s.className === chapterForm.className
+        && (!chapterForm.sectionName || s.sectionName === chapterForm.sectionName || !s.sectionName),
+      )
+      .map((s) => s.subjectName);
+    return uniqueSorted([...allocated, ...subjects.map((s) => s.subjectName)]);
+  }, [allocationSlots, chapterForm.className, chapterForm.sectionName, subjects]);
 
-  const lessonClassOptions = useMemo(() => {
-    const fromAlloc = [...new Set(allocationSlots.map((s) => s.className).filter(Boolean))];
-    return fromAlloc.length ? fromAlloc.sort() : (allocMeta?.classes || meta?.classes || []);
-  }, [allocationSlots, allocMeta, meta]);
+  const lessonClassOptions = useMemo(
+    () => uniqueSorted([
+      ...classSections.map((r) => r.className),
+      ...(allocMeta?.classes || []),
+      ...(meta?.classes || []),
+      ...allocationSlots.map((s) => s.className),
+    ]),
+    [classSections, allocationSlots, allocMeta, meta],
+  );
 
   const lessonSectionOptions = useMemo(() => {
     if (!lessonForm.className) return [] as string[];
-    const fromAlloc = [...new Set(
-      allocationSlots.filter((s) => s.className === lessonForm.className).map((s) => s.sectionName).filter(Boolean),
-    )];
-    if (fromAlloc.length) return fromAlloc.sort();
-    return allocMeta?.sectionsByClass[lessonForm.className] || meta?.sectionsByClass[lessonForm.className] || [];
-  }, [allocationSlots, lessonForm.className, allocMeta, meta]);
+    return uniqueSorted([
+      ...classSections.filter((r) => r.className === lessonForm.className).map((r) => r.sectionName),
+      ...(allocMeta?.sectionsByClass[lessonForm.className] || []),
+      ...(meta?.sectionsByClass[lessonForm.className] || []),
+      ...allocationSlots.filter((s) => s.className === lessonForm.className).map((s) => s.sectionName),
+    ]);
+  }, [allocationSlots, lessonForm.className, allocMeta, meta, classSections]);
 
   const lessonSubjectOptions = useMemo(() => {
     if (!lessonForm.className) return [] as string[];
-    return [...new Set(
-      allocationSlots
-        .filter((s) =>
-          s.className === lessonForm.className
-          && (!lessonForm.sectionName || s.sectionName === lessonForm.sectionName || !s.sectionName),
-        )
-        .map((s) => s.subjectName)
-        .filter(Boolean),
-    )].sort();
-  }, [allocationSlots, lessonForm.className, lessonForm.sectionName]);
+    const allocated = allocationSlots
+      .filter((s) =>
+        s.className === lessonForm.className
+        && (!lessonForm.sectionName || s.sectionName === lessonForm.sectionName || !s.sectionName),
+      )
+      .map((s) => s.subjectName);
+    return uniqueSorted([...allocated, ...subjects.map((s) => s.subjectName)]);
+  }, [allocationSlots, lessonForm.className, lessonForm.sectionName, subjects]);
 
   const lessonTeacherOptions = useMemo(() => {
-    if (!lessonForm.className || !lessonForm.subjectName) return [] as string[];
-    return [...new Set(
-      allocationSlots
-        .filter((s) =>
-          s.className === lessonForm.className
-          && s.subjectName === lessonForm.subjectName
-          && (!lessonForm.sectionName || s.sectionName === lessonForm.sectionName || !s.sectionName),
-        )
-        .map((s) => s.teacherName)
-        .filter(Boolean),
-    )].sort();
-  }, [allocationSlots, lessonForm.className, lessonForm.sectionName, lessonForm.subjectName]);
+    const allocated = allocationSlots
+      .filter((s) =>
+        (!lessonForm.className || s.className === lessonForm.className)
+        && (!lessonForm.subjectName || s.subjectName === lessonForm.subjectName)
+        && (!lessonForm.sectionName || s.sectionName === lessonForm.sectionName || !s.sectionName),
+      )
+      .map((s) => s.teacherName);
+    const classTeachers = classSections
+      .filter((r) => (!lessonForm.className || r.className === lessonForm.className)
+        && (!lessonForm.sectionName || r.sectionName === lessonForm.sectionName))
+      .map((r) => r.classTeacher);
+    const roster = (allocMeta?.teachers || []).map((t) => t.teacherName);
+    return uniqueSorted([...allocated, ...classTeachers, ...roster]);
+  }, [allocationSlots, lessonForm.className, lessonForm.sectionName, lessonForm.subjectName, classSections, allocMeta]);
 
   const linkedChapterOptions = useMemo(() => {
     return chapters.filter((c) =>
@@ -179,29 +236,45 @@ export function CurriculumSyllabusView() {
     try {
       const m = await fetchAcademicMeta();
       setMeta(m);
-      const [fw, cs, sub, syl, ana, tw, lp, tc, el, alloc] = await Promise.all([
+      const [fw, cs, sub, syl, ana, lp, tc, el, alloc, ta] = await Promise.all([
         fetchCurriculumFramework(academicYear),
         fetchClassSections(academicYear),
         fetchAcademicSubjects(),
         fetchSyllabus({ academicYear, className: className || undefined }),
         fetchCurriculumAnalytics({ academicYear, term, className: className || undefined, sectionName: sectionName || undefined }),
-        fetchCurriculumTeacherWorkload(academicYear),
         fetchLessonPlans(academicYear),
         fetchTimetableConflicts(academicYear),
         fetchElectives({ academicYear, className: className || undefined, sectionName: sectionName || undefined }),
         fetchTeacherAllocationMeta(academicYear).catch(() => null),
+        fetchTeacherAllocations(academicYear).catch(() => ({ records: [] as Record<string, unknown>[] })),
       ]);
       setFramework(fw.curriculum);
       setInstFramework(fw.institutionFramework);
-      setClassSections(cs.records.map((r) => ({ className: r.className, sectionName: r.sectionName, classGroup: r.classGroup, capacity: r.capacity, classTeacher: r.classTeacher })));
+      setClassSections(cs.records.map((r) => ({
+        id: r.id,
+        className: r.className,
+        sectionName: r.sectionName,
+        classGroup: r.classGroup,
+        capacity: r.capacity,
+        classTeacher: r.classTeacher,
+      })));
       setSubjects(sub.records.map((r) => ({ id: r.id, subjectName: r.subjectName, subjectType: r.subjectType, isElective: r.isElective, subjectCode: r.subjectCode })));
       setChapters(syl.records as SyllabusChapter[]);
       setAnalytics(ana);
-      setTeachers(tw.teachers);
       setLessonPlans(lp.records);
       setConflicts(tc.conflicts);
       setElectives(el.records);
       setAllocMeta(alloc);
+      setTeacherAllocations((ta.records || []).map((r) => ({
+        id: String(r.id || ''),
+        teacherName: String(r.teacherName || ''),
+        className: String(r.className || ''),
+        sectionName: String(r.sectionName || ''),
+        subjectName: String(r.subjectName || ''),
+        periodsPerWeek: Number(r.periodsPerWeek || 0),
+        workloadLevel: String(r.workloadLevel || 'MEDIUM'),
+      })).filter((r) => r.id));
+      setSelectedIds(new Set());
     } finally {
       setLoading(false);
     }
@@ -226,12 +299,17 @@ export function CurriculumSyllabusView() {
     setLessonForm({ ...EMPTY_LESSON });
     setFormError('');
     setShowLessonForm(true);
+    void fetchTeacherAllocationMeta(academicYear)
+      .then((metaRes) => setAllocMeta(metaRes))
+      .catch((err) => {
+        setFormError(err instanceof Error ? err.message : 'Could not refresh class and teacher lists.');
+      });
   };
 
   const addChapter = async () => {
     setFormError('');
     if (!chapterForm.className || !chapterForm.sectionName || !chapterForm.subjectName || !chapterForm.chapterTitle.trim()) {
-      setFormError('Select class, section, subject (from allocations) and enter a chapter title.');
+      setFormError('Select class, section, subject and enter a chapter title.');
       return;
     }
     try {
@@ -247,9 +325,10 @@ export function CurriculumSyllabusView() {
   const addLessonWithLms = async () => {
     setFormError('');
     if (!lessonForm.title.trim() || !lessonForm.className || !lessonForm.sectionName || !lessonForm.subjectName) {
-      setFormError('Enter lesson title and select class, section, subject from allocations.');
+      setFormError('Enter a lesson title and select class, section, and subject.');
       return;
     }
+    setSavingLesson(true);
     try {
       const resources = lessonForm.resourceUrl
         ? [{ type: 'link' as const, title: lessonForm.resourceTitle || 'Resource', url: lessonForm.resourceUrl }]
@@ -271,6 +350,8 @@ export function CurriculumSyllabusView() {
       void load();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Failed to create lesson plan');
+    } finally {
+      setSavingLesson(false);
     }
   };
 
@@ -319,6 +400,84 @@ export function CurriculumSyllabusView() {
     setMessage(`Assigned ${res.created} student(s) to elective (${res.skipped} already mapped)`);
     setShowElectiveModal(false);
     void load();
+  };
+
+  const tabRowIds = useMemo(() => {
+    if (tab === 'grades') return classSections.map((r) => r.id);
+    if (tab === 'subjects') return subjects.map((r) => r.id);
+    if (tab === 'syllabus') return chapters.map((r) => r.id);
+    if (tab === 'teachers') return teacherAllocations.map((r) => r.id);
+    if (tab === 'lessons') return lessonPlans.map((r) => r.id);
+    return [] as string[];
+  }, [tab, classSections, subjects, chapters, teacherAllocations, lessonPlans]);
+
+  const allSelected = tabRowIds.length > 0 && tabRowIds.every((id) => selectedIds.has(id));
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      if (allSelected) {
+        const next = new Set(prev);
+        tabRowIds.forEach((id) => next.delete(id));
+        return next;
+      }
+      const next = new Set(prev);
+      tabRowIds.forEach((id) => next.add(id));
+      return next;
+    });
+  };
+
+  const deleteOne = async (kind: 'grades' | 'subjects' | 'syllabus' | 'teachers' | 'lessons', id: string, label: string) => {
+    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return;
+    setBusyDelete(true);
+    try {
+      if (kind === 'grades') await deleteClassSection(id);
+      else if (kind === 'subjects') await deleteAcademicSubject(id);
+      else if (kind === 'syllabus') await deleteSyllabusChapter(id);
+      else if (kind === 'teachers') await deleteTeacherAllocation(id);
+      else await deleteLessonPlan(id);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      setMessage(`Deleted ${label}`);
+      void load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      setBusyDelete(false);
+    }
+  };
+
+  const deleteSelected = async (kind: 'grades' | 'subjects' | 'syllabus' | 'teachers' | 'lessons') => {
+    const ids = tabRowIds.filter((id) => selectedIds.has(id));
+    if (!ids.length) return;
+    if (!window.confirm(`Delete ${ids.length} selected record(s)? This cannot be undone.`)) return;
+    setBusyDelete(true);
+    try {
+      let deleted = ids.length;
+      if (kind === 'grades') deleted = (await bulkDeleteClassSections(ids)).deleted;
+      else if (kind === 'subjects') deleted = (await bulkDeleteAcademicSubjects(ids)).deleted;
+      else if (kind === 'syllabus') deleted = (await bulkDeleteSyllabusChapters(ids)).deleted;
+      else if (kind === 'teachers') deleted = (await bulkDeleteTeacherAllocations(ids)).deleted;
+      else deleted = (await bulkDeleteLessonPlans(ids)).deleted;
+      setSelectedIds(new Set());
+      setMessage(`Deleted ${deleted} record(s)`);
+      void load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Bulk delete failed');
+    } finally {
+      setBusyDelete(false);
+    }
   };
 
   if (loading && !framework) return <AcademicLoading label="Loading curriculum hub…" />;
@@ -414,33 +573,70 @@ export function CurriculumSyllabusView() {
 
         {/* Grade Levels */}
         {tab === 'grades' && (
-          <div className={am.tableWrap}>
-            <table className="w-full"><thead><tr>
-              <th className={am.th}>Class</th><th className={am.th}>Section</th><th className={am.th}>Capacity</th><th className={am.th}>Class Teacher</th>
-            </tr></thead><tbody>
-              {classSections.map((r, i) => (
-                <tr key={i}><td className={am.td}>{r.className}</td><td className={am.td}>{r.sectionName}</td><td className={am.td}>{r.capacity}</td><td className={am.td}>{r.classTeacher || '—'}</td></tr>
-              ))}
-            </tbody></table>
+          <div className="space-y-3">
+            <div className="flex justify-end">
+              <button type="button" disabled={!selectedIds.size || busyDelete} onClick={() => void deleteSelected('grades')} className={btnDanger}>
+                <Trash2 size={14} /> Delete Selected{selectedIds.size ? ` (${selectedIds.size})` : ''}
+              </button>
+            </div>
+            <div className={am.tableWrap}>
+              <table className="w-full"><thead><tr>
+                <th className={`${am.th} w-10`}>
+                  <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} disabled={!classSections.length} />
+                </th>
+                <th className={am.th}>Class</th><th className={am.th}>Section</th><th className={am.th}>Capacity</th><th className={am.th}>Class Teacher</th><th className={am.th}>Actions</th>
+              </tr></thead><tbody>
+                {classSections.length === 0 ? (
+                  <tr><td colSpan={6} className={`${am.td} text-center text-slate-400 py-8`}>No class-sections for {academicYear}.</td></tr>
+                ) : classSections.map((r) => (
+                  <tr key={r.id} className={selectedIds.has(r.id) ? 'bg-amber-50/40' : undefined}>
+                    <td className={am.td}><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
+                    <td className={am.td}>{r.className}</td>
+                    <td className={am.td}>{r.sectionName}</td>
+                    <td className={am.td}>{r.capacity}</td>
+                    <td className={am.td}>{r.classTeacher || '—'}</td>
+                    <td className={am.td}>
+                      <button type="button" disabled={busyDelete} onClick={() => void deleteOne('grades', r.id, `${r.className}-${r.sectionName}`)} className="text-red-600 hover:text-red-800" title="Delete">
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody></table>
+            </div>
           </div>
         )}
 
         {/* Subjects */}
         {tab === 'subjects' && (
           <div className="space-y-3">
-            <div className="flex justify-end">
+            <div className="flex flex-wrap justify-end gap-2">
+              <button type="button" disabled={!selectedIds.size || busyDelete} onClick={() => void deleteSelected('subjects')} className={btnDanger}>
+                <Trash2 size={14} /> Delete Selected{selectedIds.size ? ` (${selectedIds.size})` : ''}
+              </button>
               <button type="button" onClick={() => void openElectiveBulk()} className={am.btnSecondary}>Bulk Assign Electives</button>
             </div>
             <div className={am.tableWrap}>
               <table className="w-full"><thead><tr>
-                <th className={am.th}>Subject</th><th className={am.th}>Code</th><th className={am.th}>Type</th><th className={am.th}>Category</th><th className={am.th}>Elective Enrollments</th>
+                <th className={`${am.th} w-10`}>
+                  <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} disabled={!subjects.length} />
+                </th>
+                <th className={am.th}>Subject</th><th className={am.th}>Code</th><th className={am.th}>Type</th><th className={am.th}>Category</th><th className={am.th}>Elective Enrollments</th><th className={am.th}>Actions</th>
               </tr></thead><tbody>
-                {subjects.map((s) => (
-                  <tr key={s.id}>
+                {subjects.length === 0 ? (
+                  <tr><td colSpan={7} className={`${am.td} text-center text-slate-400 py-8`}>No subjects yet.</td></tr>
+                ) : subjects.map((s) => (
+                  <tr key={s.id} className={selectedIds.has(s.id) ? 'bg-amber-50/40' : undefined}>
+                    <td className={am.td}><input type="checkbox" checked={selectedIds.has(s.id)} onChange={() => toggleSelect(s.id)} /></td>
                     <td className={am.td}>{s.subjectName}</td><td className={am.td}>{s.subjectCode}</td>
                     <td className={am.td}><span className={`text-xs font-bold px-2 py-0.5 rounded ${s.isElective ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{s.subjectType}</span></td>
                     <td className={am.td}>{s.isElective ? 'Elective' : 'Core'}</td>
                     <td className={am.td}>{electives.filter((e) => e.subjectId === s.id).length}</td>
+                    <td className={am.td}>
+                      <button type="button" disabled={busyDelete} onClick={() => void deleteOne('subjects', s.id, s.subjectName)} className="text-red-600 hover:text-red-800" title="Delete">
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody></table>
@@ -452,6 +648,9 @@ export function CurriculumSyllabusView() {
         {tab === 'syllabus' && (
           <div className="space-y-3">
             <div className="flex flex-wrap justify-end gap-2">
+              <button type="button" disabled={!selectedIds.size || busyDelete} onClick={() => void deleteSelected('syllabus')} className={btnDanger}>
+                <Trash2 size={14} /> Delete Selected{selectedIds.size ? ` (${selectedIds.size})` : ''}
+              </button>
               <button type="button" onClick={() => downloadSyllabusChapterTemplate()} className={btnExcel}>
                 <Download size={14} /> Excel Template
               </button>
@@ -478,15 +677,21 @@ export function CurriculumSyllabusView() {
             </div>
             {allocationSlots.length === 0 && (
               <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                No teacher/subject allocations found for {academicYear}. Allocate class–section–subject under Subject Management or Teacher Allocation before adding syllabus chapters.
+                No teacher/subject allocations found for {academicYear}. You can still pick classes from Class & Sections. Allocate teachers to auto-fill lesson teachers.
               </p>
             )}
             <div className={am.tableWrap}>
               <table className="w-full"><thead><tr>
-                <th className={am.th}>Class-Section</th><th className={am.th}>Subject</th><th className={am.th}>Chapter</th><th className={am.th}>Board Code</th><th className={am.th}>Planned End</th><th className={am.th}>Progress</th><th className={am.th}>Status</th>
+                <th className={`${am.th} w-10`}>
+                  <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} disabled={!chapters.length} />
+                </th>
+                <th className={am.th}>Class-Section</th><th className={am.th}>Subject</th><th className={am.th}>Chapter</th><th className={am.th}>Board Code</th><th className={am.th}>Planned End</th><th className={am.th}>Progress</th><th className={am.th}>Status</th><th className={am.th}>Actions</th>
               </tr></thead><tbody>
-                {chapters.map((r) => (
-                  <tr key={r.id}>
+                {chapters.length === 0 ? (
+                  <tr><td colSpan={9} className={`${am.td} text-center text-slate-400 py-8`}>No syllabus chapters yet.</td></tr>
+                ) : chapters.map((r) => (
+                  <tr key={r.id} className={selectedIds.has(r.id) ? 'bg-amber-50/40' : undefined}>
+                    <td className={am.td}><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                     <td className={am.td}>{r.classGroup}</td><td className={am.td}>{r.subjectName}</td><td className={am.td}>{r.chapterTitle}</td>
                     <td className={am.td}>{r.boardTopicCode || '—'}</td>
                     <td className={am.td}>{r.plannedEndDate ? new Date(r.plannedEndDate).toLocaleDateString('en-IN') : '—'}</td>
@@ -506,6 +711,11 @@ export function CurriculumSyllabusView() {
                         <span className="text-xs font-bold text-green-600 flex items-center gap-1"><CheckCircle size={12} /> On track</span>
                       )}
                     </td>
+                    <td className={am.td}>
+                      <button type="button" disabled={busyDelete} onClick={() => void deleteOne('syllabus', r.id, r.chapterTitle)} className="text-red-600 hover:text-red-800" title="Delete">
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody></table>
@@ -516,15 +726,33 @@ export function CurriculumSyllabusView() {
         {/* Phase C: Teacher Allocation */}
         {tab === 'teachers' && (
           <div className="space-y-4">
+            <div className="flex justify-end">
+              <button type="button" disabled={!selectedIds.size || busyDelete} onClick={() => void deleteSelected('teachers')} className={btnDanger}>
+                <Trash2 size={14} /> Delete Selected{selectedIds.size ? ` (${selectedIds.size})` : ''}
+              </button>
+            </div>
             <div className={am.tableWrap}>
               <table className="w-full"><thead><tr>
-                <th className={am.th}>Teacher</th><th className={am.th}>Periods/Week</th><th className={am.th}>Workload</th><th className={am.th}>Status</th>
+                <th className={`${am.th} w-10`}>
+                  <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} disabled={!teacherAllocations.length} />
+                </th>
+                <th className={am.th}>Teacher</th><th className={am.th}>Class-Section</th><th className={am.th}>Subject</th><th className={am.th}>Periods/Week</th><th className={am.th}>Workload</th><th className={am.th}>Actions</th>
               </tr></thead><tbody>
-                {teachers.map((t) => (
-                  <tr key={t.teacherName}>
-                    <td className={am.td}>{t.teacherName}</td><td className={am.td}>{t.periodsPerWeek}</td>
+                {teacherAllocations.length === 0 ? (
+                  <tr><td colSpan={7} className={`${am.td} text-center text-slate-400 py-8`}>No teacher allocations for {academicYear}.</td></tr>
+                ) : teacherAllocations.map((t) => (
+                  <tr key={t.id} className={selectedIds.has(t.id) ? 'bg-amber-50/40' : undefined}>
+                    <td className={am.td}><input type="checkbox" checked={selectedIds.has(t.id)} onChange={() => toggleSelect(t.id)} /></td>
+                    <td className={am.td}>{t.teacherName}</td>
+                    <td className={am.td}>{t.className}{t.sectionName ? ` - ${t.sectionName}` : ''}</td>
+                    <td className={am.td}>{t.subjectName}</td>
+                    <td className={am.td}>{t.periodsPerWeek}</td>
                     <td className={am.td}>{t.workloadLevel}</td>
-                    <td className={am.td}>{t.isOverloaded ? <span className="text-red-600 font-bold text-xs">Overloaded</span> : <span className="text-green-600 text-xs">OK</span>}</td>
+                    <td className={am.td}>
+                      <button type="button" disabled={busyDelete} onClick={() => void deleteOne('teachers', t.id, `${t.teacherName} · ${t.subjectName}`)} className="text-red-600 hover:text-red-800" title="Delete">
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody></table>
@@ -541,15 +769,24 @@ export function CurriculumSyllabusView() {
         {/* Phase D: Lesson Plans & LMS */}
         {tab === 'lessons' && (
           <div className="space-y-3">
-            <div className="flex justify-end">
+            <div className="flex flex-wrap justify-end gap-2">
+              <button type="button" disabled={!selectedIds.size || busyDelete} onClick={() => void deleteSelected('lessons')} className={btnDanger}>
+                <Trash2 size={14} /> Delete Selected{selectedIds.size ? ` (${selectedIds.size})` : ''}
+              </button>
               <button type="button" onClick={openLessonForm} className={am.btnPrimary}><Plus size={14} /> New Lesson Plan</button>
             </div>
             <div className={am.tableWrap}>
               <table className="w-full"><thead><tr>
-                <th className={am.th}>Title</th><th className={am.th}>Class</th><th className={am.th}>Subject</th><th className={am.th}>Linked Syllabus</th><th className={am.th}>LMS Resources</th><th className={am.th}>Status</th>
+                <th className={`${am.th} w-10`}>
+                  <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} disabled={!lessonPlans.length} />
+                </th>
+                <th className={am.th}>Title</th><th className={am.th}>Class</th><th className={am.th}>Subject</th><th className={am.th}>Linked Syllabus</th><th className={am.th}>LMS Resources</th><th className={am.th}>Status</th><th className={am.th}>Actions</th>
               </tr></thead><tbody>
-                {lessonPlans.map((lp) => (
-                  <tr key={lp.id}>
+                {lessonPlans.length === 0 ? (
+                  <tr><td colSpan={8} className={`${am.td} text-center text-slate-400 py-8`}>No lesson plans yet.</td></tr>
+                ) : lessonPlans.map((lp) => (
+                  <tr key={lp.id} className={selectedIds.has(lp.id) ? 'bg-amber-50/40' : undefined}>
+                    <td className={am.td}><input type="checkbox" checked={selectedIds.has(lp.id)} onChange={() => toggleSelect(lp.id)} /></td>
                     <td className={am.td}>{lp.title}</td><td className={am.td}>{lp.classGroup}</td><td className={am.td}>{lp.subjectName}</td>
                     <td className={am.td}>{lp.syllabusChapterId ? chapters.find((c) => c.id === lp.syllabusChapterId)?.chapterTitle || 'Linked' : '—'}</td>
                     <td className={am.td}>{(lp.resources as unknown[])?.length || 0} file(s)</td>
@@ -558,6 +795,11 @@ export function CurriculumSyllabusView() {
                       {lp.status !== 'COMPLETED' && (
                         <button type="button" className="text-xs text-green-600 ml-2" onClick={() => void updateLessonPlan(lp.id, { status: 'COMPLETED' }).then(load)}>Complete</button>
                       )}
+                    </td>
+                    <td className={am.td}>
+                      <button type="button" disabled={busyDelete} onClick={() => void deleteOne('lessons', lp.id, lp.title)} className="text-red-600 hover:text-red-800" title="Delete">
+                        <Trash2 size={14} />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -635,7 +877,7 @@ export function CurriculumSyllabusView() {
 
       <AcademicModal open={showChapterForm} onClose={() => setShowChapterForm(false)} title="Add Syllabus Chapter" large>
         <p className="text-xs text-slate-500 mb-2">
-          Class, section and subject are loaded from Subject Management / Teacher Allocation for {academicYear}.
+          Class and section are loaded from Class & Sections for {academicYear}. Subjects include allocated ones plus the subject catalog.
         </p>
         {formError && <p className="text-xs text-red-600 mb-2">{formError}</p>}
         <div className="grid grid-cols-2 gap-3">
@@ -719,7 +961,7 @@ export function CurriculumSyllabusView() {
 
       <AcademicModal open={showLessonForm} onClose={() => setShowLessonForm(false)} title="Lesson Plan + LMS Resource" large>
         <p className="text-xs text-slate-500 mb-2">
-          Class, section, subject and teacher are synced from Subject Management / Teacher Allocation.
+          Class and section list every Class & Sections row for {academicYear}, not only allocated ones. Teacher is filled from allocations when available.
         </p>
         {formError && <p className="text-xs text-red-600 mb-2">{formError}</p>}
         <div className="space-y-3">
@@ -794,7 +1036,7 @@ export function CurriculumSyllabusView() {
                 value={lessonForm.teacherName}
                 onChange={(e) => setLessonForm((f) => ({ ...f, teacherName: e.target.value }))}
                 className={am.input}
-                disabled={!lessonForm.subjectName}
+                disabled={!lessonForm.className}
               >
                 <option value="">Select teacher…</option>
                 {lessonTeacherOptions.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -822,7 +1064,9 @@ export function CurriculumSyllabusView() {
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={() => setShowLessonForm(false)} className={am.btnSecondary}>Cancel</button>
-          <button type="button" onClick={() => void addLessonWithLms()} className={am.btnPrimary}>Create & Share</button>
+          <button type="button" disabled={savingLesson} onClick={() => void addLessonWithLms()} className={am.btnPrimary}>
+            {savingLesson ? 'Creating…' : 'Create & Share'}
+          </button>
         </div>
       </AcademicModal>
 

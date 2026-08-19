@@ -22,7 +22,7 @@ type TabId = (typeof TABS)[number];
 type Enrollment = {
   id: string; applicationNumber: string; studentName: string; admissionNumber: string;
   className: string; sectionName: string; category: string; status: string; workflowStage: string;
-  routeName: string; routeCode: string; vehicleNumber: string; driverName: string;
+  routeId: string; routeName: string; routeCode: string; vehicleNumber: string; driverName: string;
   pickupStopName: string; dropStopName: string; pickupTime: string; dropTime: string;
   seatNumber: number | null; feeStatus: string; feeDueAmount: number;
   specialAssistance: boolean; medicalAlerts: string[];
@@ -53,9 +53,32 @@ export function StudentTransportationView() {
   const [selected, setSelected] = useState<Enrollment | null>(null);
   const [showAppModal, setShowAppModal] = useState(false);
   const [appForm, setAppForm] = useState({
-    studentName: '', admissionNumber: '', className: '', sectionName: '',
+    className: '', sectionName: '', studentId: '', routeId: '', pickupStopId: '',
     category: 'Day Scholar', pickupAddress: '', guardianName: '', guardianMobile: '',
   });
+
+  const resetAppForm = () => setAppForm({
+    className: '', sectionName: '', studentId: '', routeId: '', pickupStopId: '',
+    category: 'Day Scholar', pickupAddress: '', guardianName: '', guardianMobile: '',
+  });
+
+  const studentPicker = data?.studentPicker;
+  const sectionOptions = useMemo(
+    () => (appForm.className ? studentPicker?.sectionsByClass?.[appForm.className] ?? [] : []),
+    [appForm.className, studentPicker],
+  );
+  const studentOptions = useMemo(
+    () => (studentPicker?.students ?? []).filter((s) =>
+      (!appForm.className || s.className === appForm.className)
+      && (!appForm.sectionName || s.sectionName === appForm.sectionName)),
+    [studentPicker, appForm.className, appForm.sectionName],
+  );
+  const selectedRouteOption = useMemo(
+    () => (data?.routeOptions ?? []).find((r) => r.id === appForm.routeId),
+    [data?.routeOptions, appForm.routeId],
+  );
+  const stopOptions = selectedRouteOption?.stops ?? [];
+  const selectedStudent = studentOptions.find((s) => s.id === appForm.studentId);
 
   const load = useCallback(async (seed = false) => {
     setLoading(true);
@@ -107,7 +130,7 @@ export function StudentTransportationView() {
             <button type="button" onClick={() => void load(true)} disabled={busy} className={am.btnSecondary}>
               <RefreshCw className="w-3.5 h-3.5" /> Refresh
             </button>
-            <button type="button" onClick={() => setShowAppModal(true)} className={am.btnPrimary}>
+            <button type="button" onClick={() => { resetAppForm(); setShowAppModal(true); }} className={am.btnPrimary}>
               <Plus className="w-3.5 h-3.5" /> New Application
             </button>
           </div>
@@ -232,7 +255,7 @@ export function StudentTransportationView() {
                         {e.status === 'PENDING' && (
                           <button type="button" title="Allocate" disabled={busy}
                             onClick={() => void act(() => allocateStudentTransport(e.id, {
-                              routeId: (data?.routes?.[0] as { id: string })?.id,
+                              routeId: e.routeId || (data?.routes?.[0] as { id: string })?.id,
                               vehicleId: (data?.vehicles?.[0] as { id: string })?.id,
                             }), 'Allocated')} className="p-1 rounded hover:bg-blue-50 text-blue-600"><MapPin className="w-3.5 h-3.5" /></button>
                         )}
@@ -291,11 +314,12 @@ export function StudentTransportationView() {
               <span className="font-mono text-[10px] text-indigo-600 font-bold">{e.applicationNumber}</span>
               <h4 className="font-bold mt-1">{e.studentName}</h4>
               <p className="text-[10px] text-slate-500">{e.className}-{e.sectionName} · {e.category}</p>
-              <p className="text-xs mt-2 flex items-center gap-1"><MapPin className="w-3 h-3" /> {e.pickupAddress}</p>
+              <p className="text-xs mt-2 flex items-center gap-1"><MapPin className="w-3 h-3" /> {e.pickupStopName || e.pickupAddress}</p>
+              {e.routeCode && <p className="text-[10px] text-slate-500 mt-1">Route: {e.routeCode} — {e.routeName}</p>}
               <p className="text-[10px] text-slate-400 mt-1">Stage: {e.workflowStage.replace(/_/g, ' ')}</p>
               <div className="flex gap-2 mt-3">
                 <button type="button" disabled={busy} onClick={() => void act(() => allocateStudentTransport(e.id, {
-                  routeId: (data?.routes?.[0] as { id: string })?.id,
+                  routeId: e.routeId || (data?.routes?.[0] as { id: string })?.id,
                   vehicleId: (data?.vehicles?.[0] as { id: string })?.id,
                 }), 'Allocated')} className={am.btnPrimary}>Allocate Route</button>
               </div>
@@ -550,25 +574,149 @@ export function StudentTransportationView() {
 
       <AcademicModal open={showAppModal} onClose={() => setShowAppModal(false)} title="New Transport Application">
         <div className="space-y-3 text-xs">
-          <label className="block">Student Name<input value={appForm.studentName} onChange={(e) => setAppForm({ ...appForm, studentName: e.target.value })} className={`${am.input} w-full mt-1`} /></label>
           <div className="grid grid-cols-2 gap-2">
-            <label className="block">Admission #<input value={appForm.admissionNumber} onChange={(e) => setAppForm({ ...appForm, admissionNumber: e.target.value })} className={`${am.input} w-full mt-1`} /></label>
-            <label className="block">Category<select value={appForm.category} onChange={(e) => setAppForm({ ...appForm, category: e.target.value })} className={`${am.input} w-full mt-1`}>{(data?.studentCategories ?? []).map((c) => <option key={c}>{c}</option>)}</select></label>
+            <label className="block">
+              Class
+              <select
+                value={appForm.className}
+                onChange={(e) => setAppForm({
+                  ...appForm, className: e.target.value, sectionName: '', studentId: '',
+                  pickupAddress: '', guardianName: '', guardianMobile: '',
+                })}
+                className={`${am.input} w-full mt-1`}
+              >
+                <option value="">Select class…</option>
+                {(studentPicker?.classes ?? []).map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              Section
+              <select
+                value={appForm.sectionName}
+                disabled={!appForm.className}
+                onChange={(e) => setAppForm({
+                  ...appForm, sectionName: e.target.value, studentId: '',
+                  pickupAddress: '', guardianName: '', guardianMobile: '',
+                })}
+                className={`${am.input} w-full mt-1`}
+              >
+                <option value="">Select section…</option>
+                {sectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
           </div>
+
+          <label className="block">
+            Student Name
+            <select
+              value={appForm.studentId}
+              disabled={!appForm.className || !appForm.sectionName}
+              onChange={(e) => {
+                const student = studentOptions.find((s) => s.id === e.target.value);
+                setAppForm({
+                  ...appForm,
+                  studentId: e.target.value,
+                  category: student?.category || appForm.category,
+                  pickupAddress: student?.address || '',
+                  guardianName: student?.guardianName || '',
+                  guardianMobile: student?.guardianMobile || '',
+                });
+              }}
+              className={`${am.input} w-full mt-1`}
+            >
+              <option value="">Select student…</option>
+              {studentOptions.map((s) => (
+                <option key={s.id} value={s.id} disabled={s.hasTransport}>
+                  {s.name} ({s.admissionNumber}){s.hasTransport ? ' — already enrolled' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {selectedStudent && (
+            <div className="bg-slate-50 p-2 rounded text-[10px] text-slate-600">
+              Admission: <strong>{selectedStudent.admissionNumber}</strong>
+              {' · '}{selectedStudent.className}-{selectedStudent.sectionName}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-2">
-            <label className="block">Class<input value={appForm.className} onChange={(e) => setAppForm({ ...appForm, className: e.target.value })} className={`${am.input} w-full mt-1`} /></label>
-            <label className="block">Section<input value={appForm.sectionName} onChange={(e) => setAppForm({ ...appForm, sectionName: e.target.value })} className={`${am.input} w-full mt-1`} /></label>
+            <label className="block">
+              Route Number
+              <select
+                value={appForm.routeId}
+                onChange={(e) => setAppForm({ ...appForm, routeId: e.target.value, pickupStopId: '' })}
+                className={`${am.input} w-full mt-1`}
+              >
+                <option value="">Select route…</option>
+                {(data?.routeOptions ?? []).map((r) => (
+                  <option key={r.id} value={r.id}>{r.routeCode} — {r.routeName}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              Stop Name
+              <select
+                value={appForm.pickupStopId}
+                disabled={!appForm.routeId}
+                onChange={(e) => setAppForm({ ...appForm, pickupStopId: e.target.value })}
+                className={`${am.input} w-full mt-1`}
+              >
+                <option value="">Select stop…</option>
+                {stopOptions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.sequenceOrder}. {s.stopName} ({s.stopType}){s.estimatedArrival ? ` · ${s.estimatedArrival}` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
-          <label className="block">Pickup Address<input value={appForm.pickupAddress} onChange={(e) => setAppForm({ ...appForm, pickupAddress: e.target.value })} className={`${am.input} w-full mt-1`} /></label>
+
+          <label className="block">
+            Category
+            <select value={appForm.category} onChange={(e) => setAppForm({ ...appForm, category: e.target.value })} className={`${am.input} w-full mt-1`}>
+              {(data?.studentCategories ?? []).map((c) => <option key={c}>{c}</option>)}
+            </select>
+          </label>
+
+          <label className="block">
+            Pickup Address
+            <input value={appForm.pickupAddress} onChange={(e) => setAppForm({ ...appForm, pickupAddress: e.target.value })} className={`${am.input} w-full mt-1`} />
+          </label>
+
           <div className="grid grid-cols-2 gap-2">
-            <label className="block">Guardian<input value={appForm.guardianName} onChange={(e) => setAppForm({ ...appForm, guardianName: e.target.value })} className={`${am.input} w-full mt-1`} /></label>
-            <label className="block">Mobile<input value={appForm.guardianMobile} onChange={(e) => setAppForm({ ...appForm, guardianMobile: e.target.value })} className={`${am.input} w-full mt-1`} /></label>
+            <label className="block">
+              Guardian
+              <input value={appForm.guardianName} onChange={(e) => setAppForm({ ...appForm, guardianName: e.target.value })} className={`${am.input} w-full mt-1`} />
+            </label>
+            <label className="block">
+              Mobile
+              <input value={appForm.guardianMobile} onChange={(e) => setAppForm({ ...appForm, guardianMobile: e.target.value })} className={`${am.input} w-full mt-1`} />
+            </label>
           </div>
-          <button type="button" disabled={busy || !appForm.studentName} onClick={() => void act(async () => {
-            await createStudentTransportApp({ ...appForm, academicYear });
-            setShowAppModal(false);
-            return fetchTransportStudentTransport(false, academicYear);
-          }, 'Application submitted')} className={`${am.btnPrimary} w-full`}>Submit Application</button>
+
+          <button
+            type="button"
+            disabled={busy || !appForm.studentId || !appForm.routeId || !appForm.pickupStopId}
+            onClick={() => void act(async () => {
+              await createStudentTransportApp({
+                studentId: appForm.studentId,
+                routeId: appForm.routeId,
+                pickupStopId: appForm.pickupStopId,
+                category: appForm.category,
+                pickupAddress: appForm.pickupAddress,
+                guardianName: appForm.guardianName,
+                guardianMobile: appForm.guardianMobile,
+                academicYear,
+              });
+              setShowAppModal(false);
+              resetAppForm();
+              return fetchTransportStudentTransport(false, academicYear);
+            }, 'Application submitted')}
+            className={`${am.btnPrimary} w-full`}
+          >
+            Submit Application
+          </button>
         </div>
       </AcademicModal>
     </AcademicPageShell>

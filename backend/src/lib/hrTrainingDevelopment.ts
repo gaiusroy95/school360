@@ -484,7 +484,202 @@ export async function updateTrainingSettings(institutionId: string, body: Record
   const data: Prisma.HrTrainingSettingsUpdateInput = {};
   if (body.automationRules !== undefined) data.automationRules = body.automationRules as Prisma.InputJsonValue;
   if (body.mobileSyncEnabled !== undefined) data.mobileSyncEnabled = Boolean(body.mobileSyncEnabled);
+  if (body.roleMatrix !== undefined) data.roleMatrix = body.roleMatrix as Prisma.InputJsonValue;
   return prisma.hrTrainingSettings.update({ where: { id: existing.id }, data });
+}
+
+export async function createTrainingCategory(institutionId: string, body: Record<string, unknown>) {
+  const count = await prisma.hrTrainingCategory.count({ where: { institutionId } });
+  return prisma.hrTrainingCategory.create({
+    data: {
+      institutionId,
+      code: String(body.code ?? `CAT-${String(count + 1).padStart(3, '0')}`),
+      name: String(body.name),
+      parentGroup: String(body.parentGroup ?? 'Academic'),
+      description: String(body.description ?? ''),
+      status: String(body.status ?? 'ACTIVE'),
+    },
+  });
+}
+
+export async function updateTrainingNeed(institutionId: string, id: string, body: Record<string, unknown>) {
+  const row = await prisma.hrTrainingNeed.findFirst({ where: { id, institutionId } });
+  if (!row) throw Object.assign(new Error('Training need not found'), { status: 404 });
+  const data: Prisma.HrTrainingNeedUpdateInput = {};
+  if (body.status !== undefined) data.status = String(body.status);
+  if (body.priority !== undefined) data.priority = String(body.priority);
+  if (body.budget !== undefined) data.budget = Number(body.budget);
+  if (body.skillGap !== undefined) data.skillGap = String(body.skillGap);
+  return prisma.hrTrainingNeed.update({ where: { id }, data });
+}
+
+export async function updateTrainingCourse(institutionId: string, id: string, body: Record<string, unknown>) {
+  const row = await prisma.hrTrainingCourse.findFirst({ where: { id, institutionId } });
+  if (!row) throw Object.assign(new Error('Course not found'), { status: 404 });
+  const data: Prisma.HrTrainingCourseUpdateInput = {};
+  if (body.name !== undefined) data.name = String(body.name);
+  if (body.description !== undefined) data.description = String(body.description);
+  if (body.durationHours !== undefined) data.durationHours = Number(body.durationHours);
+  if (body.mode !== undefined) data.mode = String(body.mode);
+  if (body.passingMarks !== undefined) data.passingMarks = Number(body.passingMarks);
+  if (body.isMandatory !== undefined) data.isMandatory = Boolean(body.isMandatory);
+  if (body.modules !== undefined) data.modules = body.modules as Prisma.InputJsonValue;
+  if (body.status !== undefined) data.status = String(body.status);
+  if (body.categoryId !== undefined) data.category = body.categoryId ? { connect: { id: String(body.categoryId) } } : { disconnect: true };
+  return prisma.hrTrainingCourse.update({ where: { id }, data });
+}
+
+export async function createTrainingTrainer(institutionId: string, body: Record<string, unknown>) {
+  return prisma.hrTrainingTrainer.create({
+    data: {
+      institutionId,
+      trainerType: String(body.trainerType ?? 'INTERNAL'),
+      employeeId: String(body.employeeId ?? ''),
+      fullName: String(body.fullName),
+      department: String(body.department ?? ''),
+      organization: String(body.organization ?? ''),
+      expertise: String(body.expertise ?? ''),
+      experienceYears: Number(body.experienceYears ?? 0),
+      feesPerSession: Number(body.feesPerSession ?? 0),
+      contactEmail: String(body.contactEmail ?? ''),
+      contactPhone: String(body.contactPhone ?? ''),
+      rating: Number(body.rating ?? 4),
+    },
+  });
+}
+
+export async function createTrainingVenue(institutionId: string, body: Record<string, unknown>) {
+  const count = await prisma.hrTrainingVenue.count({ where: { institutionId } });
+  return prisma.hrTrainingVenue.create({
+    data: {
+      institutionId,
+      code: String(body.code ?? `VEN-${String(count + 1).padStart(3, '0')}`),
+      name: String(body.name),
+      venueType: String(body.venueType ?? 'CLASSROOM'),
+      branch: String(body.branch ?? 'Main Campus'),
+      capacity: Number(body.capacity ?? 30),
+      platform: String(body.platform ?? ''),
+      virtualLink: String(body.virtualLink ?? ''),
+    },
+  });
+}
+
+export async function createTrainingAssignment(institutionId: string, body: Record<string, unknown>) {
+  return prisma.hrTrainingAssignment.create({
+    data: {
+      institutionId,
+      nominationId: String(body.nominationId),
+      title: String(body.title),
+      assignmentType: String(body.assignmentType ?? 'LESSON_PLAN'),
+      fileName: String(body.fileName ?? ''),
+      status: String(body.status ?? 'SUBMITTED'),
+    },
+  });
+}
+
+export async function gradeTrainingAssignment(institutionId: string, id: string, status: string) {
+  const row = await prisma.hrTrainingAssignment.findFirst({ where: { id, institutionId } });
+  if (!row) throw Object.assign(new Error('Assignment not found'), { status: 404 });
+  return prisma.hrTrainingAssignment.update({ where: { id }, data: { status } });
+}
+
+export async function submitTrainingFeedback(institutionId: string, body: Record<string, unknown>) {
+  return prisma.hrTrainingFeedback.create({
+    data: {
+      institutionId,
+      nominationId: String(body.nominationId),
+      feedbackBy: String(body.feedbackBy ?? 'EMPLOYEE'),
+      rating: Number(body.rating ?? 4),
+      comments: String(body.comments ?? ''),
+      effectivenessScore: Number(body.effectivenessScore ?? 80),
+    },
+  });
+}
+
+export async function issueTrainingCertificate(institutionId: string, nominationId: string) {
+  const nom = await prisma.hrTrainingNomination.findFirst({ where: { id: nominationId, institutionId } });
+  if (!nom) throw Object.assign(new Error('Nomination not found'), { status: 404 });
+  return issueCertificate(institutionId, nominationId, nom.employeeId);
+}
+
+export async function createTrainingCompetency(institutionId: string, body: Record<string, unknown>) {
+  const count = await prisma.hrTrainingCompetency.count({ where: { institutionId } });
+  return prisma.hrTrainingCompetency.create({
+    data: {
+      institutionId,
+      code: String(body.code ?? `COMP-${String(count + 1).padStart(3, '0')}`),
+      name: String(body.name),
+      category: String(body.category ?? 'Teaching Skills'),
+      description: String(body.description ?? ''),
+    },
+  });
+}
+
+export async function createTrainingIdp(institutionId: string, body: Record<string, unknown>) {
+  return prisma.hrTrainingIdp.create({
+    data: {
+      institutionId,
+      employeeId: String(body.employeeId),
+      academicYear: String(body.academicYear ?? '2025-26'),
+      skillGaps: (body.skillGaps ?? []) as Prisma.InputJsonValue,
+      recommendedTraining: (body.recommendedTraining ?? []) as Prisma.InputJsonValue,
+      mentorName: String(body.mentorName ?? ''),
+      timeline: String(body.timeline ?? ''),
+      completionPct: Number(body.completionPct ?? 0),
+      nextReview: body.nextReview ? new Date(String(body.nextReview)) : null,
+    },
+  });
+}
+
+export async function updateTrainingIdp(institutionId: string, id: string, body: Record<string, unknown>) {
+  const row = await prisma.hrTrainingIdp.findFirst({ where: { id, institutionId } });
+  if (!row) throw Object.assign(new Error('IDP not found'), { status: 404 });
+  const data: Prisma.HrTrainingIdpUpdateInput = {};
+  if (body.completionPct !== undefined) data.completionPct = Number(body.completionPct);
+  if (body.mentorName !== undefined) data.mentorName = String(body.mentorName);
+  if (body.skillGaps !== undefined) data.skillGaps = body.skillGaps as Prisma.InputJsonValue;
+  if (body.recommendedTraining !== undefined) data.recommendedTraining = body.recommendedTraining as Prisma.InputJsonValue;
+  if (body.nextReview !== undefined) data.nextReview = body.nextReview ? new Date(String(body.nextReview)) : null;
+  return prisma.hrTrainingIdp.update({ where: { id }, data });
+}
+
+export async function createTrainingBudget(institutionId: string, body: Record<string, unknown>) {
+  return prisma.hrTrainingBudget.create({
+    data: {
+      institutionId,
+      academicYear: String(body.academicYear ?? '2025-26'),
+      category: String(body.category),
+      allocated: Number(body.allocated ?? 0),
+      utilized: Number(body.utilized ?? 0),
+      approvalStatus: String(body.approvalStatus ?? 'PENDING'),
+    },
+  });
+}
+
+export async function updateTrainingBudget(institutionId: string, id: string, body: Record<string, unknown>) {
+  const row = await prisma.hrTrainingBudget.findFirst({ where: { id, institutionId } });
+  if (!row) throw Object.assign(new Error('Budget not found'), { status: 404 });
+  const data: Prisma.HrTrainingBudgetUpdateInput = {};
+  if (body.allocated !== undefined) data.allocated = Number(body.allocated);
+  if (body.utilized !== undefined) data.utilized = Number(body.utilized);
+  if (body.approvalStatus !== undefined) data.approvalStatus = String(body.approvalStatus);
+  return prisma.hrTrainingBudget.update({ where: { id }, data });
+}
+
+export async function createTrainingExternal(institutionId: string, body: Record<string, unknown>) {
+  return prisma.hrTrainingExternal.create({
+    data: {
+      institutionId,
+      vendorName: String(body.vendorName),
+      programType: String(body.programType ?? 'WORKSHOP'),
+      employeeName: String(body.employeeName ?? ''),
+      employeeId: String(body.employeeId ?? ''),
+      expenseAmount: Number(body.expenseAmount ?? 0),
+      approvalStatus: String(body.approvalStatus ?? 'PENDING'),
+      status: String(body.status ?? 'PLANNED'),
+      certificateUploaded: Boolean(body.certificateUploaded),
+    },
+  });
 }
 
 export async function seedTrainingDemo(institutionId: string) {

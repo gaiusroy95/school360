@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Briefcase,
   Building2,
@@ -22,14 +22,23 @@ import {
   UserX,
 } from 'lucide-react';
 import {
+  bulkUploadHrDesignations,
   createHrDesignation,
   deleteHrDesignation,
   fetchDesignationReference,
   fetchDesignationsDashboard,
+  fetchHrDesignationsExport,
+  listHrDepartments,
   updateHrDesignation,
   type DesignationRow,
   type DesignationsDashboard,
+  type HrDepartmentSummary,
 } from '../../../lib/hrServices';
+import {
+  downloadDesignationTemplate,
+  exportDesignationsToExcel,
+  parseDesignationUploadFile,
+} from '../../../lib/designationExcel';
 import {
   am,
   AcademicLoading,
@@ -131,8 +140,13 @@ export function DesignationsView() {
   const [pageSize, setPageSize] = useState(20);
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<DesignationRow | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm());
+  const [departments, setDepartments] = useState<HrDepartmentSummary[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -162,6 +176,28 @@ export function DesignationsView() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await listHrDepartments({ seed: true });
+        if (!cancelled) setDepartments(res.records || []);
+      } catch {
+        /* designation mapping still works with typed department names */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const departmentOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const d of departments) if (d.name) names.add(d.name);
+    for (const d of data?.filterOptions.departments || []) if (d) names.add(d);
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [departments, data]);
 
   const deptTotals = useMemo(() => {
     if (!data) return { totalPositions: 0, filled: 0, vacant: 0 };
@@ -253,28 +289,54 @@ export function DesignationsView() {
     }
   };
 
-  const exportCsv = () => {
-    if (!data?.records.length) return;
-    const headers = ['#', 'Designation Name', 'Department', 'Type', 'Total Positions', 'Filled', 'Vacant', 'Utilization %', 'Status'];
-    const rows = data.records.map((r, i) => [
-      String((page - 1) * pageSize + i + 1),
-      r.name,
-      r.department,
-      r.designationType,
-      String(r.totalPositions),
-      String(r.filledPositions),
-      String(r.vacantPositions),
-      String(r.utilizationPct),
-      r.statusLabel,
-    ]);
-    const csv = [headers, ...rows].map((row) => row.map((c) => `"${c.replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'designations.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleDownloadTemplate = () => {
+    downloadDesignationTemplate(
+      departments.map((d) => ({ code: d.code, name: d.name })),
+    );
+    setMessage('Downloaded designation bulk-upload template with department mapping sheet.');
+  };
+
+  const handleBulkUpload = async (file: File) => {
+    setBulkBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const rows = await parseDesignationUploadFile(file);
+      const result = await bulkUploadHrDesignations(rows as unknown as Record<string, unknown>[]);
+      setMessage(result.message);
+      if (result.errors.length) {
+        setError(result.errors.slice(0, 8).join(' · ') + (result.errors.length > 8 ? ` …(+${result.errors.length - 8} more)` : ''));
+      }
+      setImportOpen(false);
+      void load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Bulk upload failed');
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    setError('');
+    try {
+      const result = await fetchHrDesignationsExport({
+        q: tableQ.trim() || filterQ.trim() || undefined,
+        department: tableDept || filterDept || undefined,
+        designationType: filterType || undefined,
+        status: tableStatus || filterStatus || undefined,
+      });
+      exportDesignationsToExcel(result.records);
+      setMessage(
+        result.records.length
+          ? `Exported ${result.records.length} designation(s) from the system.`
+          : 'Exported an empty designations workbook (no matching records).',
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Export failed');
+    } finally {
+      setExporting(false);
+    }
   };
 
   if (loading && !data) {
@@ -298,7 +360,10 @@ export function DesignationsView() {
             <button type="button" className={`${am.btnSecondary} bg-white`}>
               <FileText size={14} /> Report
             </button>
-            <button type="button" className={`${am.btnSecondary} bg-white`}>
+            <button type="button" onClick={handleDownloadTemplate} className={`${am.btnSecondary} bg-white`}>
+              <Download size={14} /> Excel Template
+            </button>
+            <button type="button" onClick={() => setImportOpen(true)} className={`${am.btnSecondary} bg-white`}>
               <Upload size={14} /> Import
             </button>
             <button type="button" onClick={openCreate} className={am.btnPrimary}>
@@ -382,7 +447,7 @@ export function DesignationsView() {
                   <label className="text-xs font-semibold text-slate-600">Department</label>
                   <select className={`${am.select} w-full`} value={filterDept} onChange={(e) => setFilterDept(e.target.value)}>
                     <option value="">All Departments</option>
-                    {(data?.filterOptions.departments || []).map((d) => (
+                    {departmentOptions.map((d) => (
                       <option key={d} value={d}>{d}</option>
                     ))}
                   </select>
@@ -467,8 +532,8 @@ export function DesignationsView() {
                   <button type="button" onClick={() => void load()} className={am.btnSecondary}>
                     <RefreshCcw size={14} />
                   </button>
-                  <button type="button" onClick={exportCsv} className={`${am.btnSecondary} bg-white`}>
-                    <Download size={14} /> Export
+                  <button type="button" disabled={exporting} onClick={() => void handleExport()} className={`${am.btnSecondary} bg-white`}>
+                    {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Export
                   </button>
                 </div>
               </div>
@@ -489,7 +554,7 @@ export function DesignationsView() {
                   onChange={(e) => { setTableDept(e.target.value); setPage(1); }}
                 >
                   <option value="">All Departments</option>
-                  {(data?.filterOptions.departments || []).map((d) => (
+                  {departmentOptions.map((d) => (
                     <option key={d} value={d}>{d}</option>
                   ))}
                 </select>
@@ -645,17 +710,19 @@ export function DesignationsView() {
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600">Department *</label>
-            <input
-              className={am.input}
-              list="dept-options"
+            <select
+              className={`${am.select} w-full`}
               value={form.department}
               onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))}
-            />
-            <datalist id="dept-options">
-              {(data?.filterOptions.departments || []).map((d) => (
-                <option key={d} value={d} />
+            >
+              <option value="">Select department…</option>
+              {departmentOptions.map((d) => (
+                <option key={d} value={d}>{d}</option>
               ))}
-            </datalist>
+              {form.department && !departmentOptions.includes(form.department) && (
+                <option value={form.department}>{form.department}</option>
+              )}
+            </select>
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600">Designation Type</label>
@@ -694,6 +761,51 @@ export function DesignationsView() {
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : null}
               {editing ? 'Save Changes' : 'Create Designation'}
+            </button>
+          </div>
+        </div>
+      </AcademicModal>
+
+      <AcademicModal open={importOpen} onClose={() => setImportOpen(false)} title="Bulk Upload Designations">
+        <div className="space-y-3">
+          <p className="text-xs text-slate-600">
+            Upload an Excel file to add or update designations and map each row to an HR department
+            (by department name or department code).
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={handleDownloadTemplate} className={am.btnSecondary}>
+              <Download size={14} /> Download Template
+            </button>
+            <button
+              type="button"
+              disabled={bulkBusy}
+              onClick={() => importFileRef.current?.click()}
+              className={am.btnPrimary}
+            >
+              {bulkBusy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              Choose Excel File
+            </button>
+            <input
+              ref={importFileRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleBulkUpload(file);
+                e.target.value = '';
+              }}
+            />
+          </div>
+          <ul className="text-[11px] text-slate-500 list-disc pl-4 space-y-1">
+            <li>Required column: designationName</li>
+            <li>Map department using department and/or departmentCode from the Departments sheet</li>
+            <li>Existing designation + department combinations are updated; new ones are created</li>
+            <li>Unknown departments are created in HR Departments so mapping stays in sync</li>
+          </ul>
+          <div className="flex justify-end pt-1">
+            <button type="button" onClick={() => setImportOpen(false)} className={am.btnSecondary}>
+              Close
             </button>
           </div>
         </div>

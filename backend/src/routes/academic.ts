@@ -15,6 +15,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import {
   getAcademicDashboard,
+  mergeClassSectionFilters,
   nextAcademicRecordId,
   serializeClassSection,
   serializeHomework,
@@ -148,6 +149,10 @@ const yearTermSchema = z.object({
   sectionName: z.string().optional(),
 });
 
+const bulkIdsSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1).max(500),
+});
+
 academicRouter.get(
   '/meta',
   asyncHandler(async (_req, res) => {
@@ -155,11 +160,16 @@ academicRouter.get(
     const filters = await getInstitutionFilterMeta(institutionId);
     const setupMeta = await getAcademicMetaFromSetup(institutionId);
     const teachingStaff = await listTeachingStaffForAcademic(institutionId);
+    const classSectionRows = await prisma.academicClassSection.findMany({
+      where: { institutionId, isActive: true },
+      select: { className: true, sectionName: true },
+    });
+    const classFilters = mergeClassSectionFilters(filters, classSectionRows);
     return res.json({
       defaultAcademicYear: setupMeta.defaultAcademicYear || filters.defaultAcademicYear,
       academicYears: filters.academicYears,
-      classes: filters.classes,
-      sectionsByClass: filters.sectionsByClass,
+      classes: classFilters.classes,
+      sectionsByClass: classFilters.sectionsByClass,
       terms: setupMeta.terms,
       framework: setupMeta.framework,
       teachingStaff,
@@ -315,6 +325,19 @@ academicRouter.delete(
   }),
 );
 
+academicRouter.post(
+  '/class-sections/bulk-delete',
+  asyncHandler(async (req, res) => {
+    const parsed = bulkIdsSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const institutionId = await getDefaultInstitutionId();
+    const result = await prisma.academicClassSection.deleteMany({
+      where: { institutionId, id: { in: parsed.data.ids } },
+    });
+    return res.json({ deleted: result.count });
+  }),
+);
+
 // ─── Subjects ─────────────────────────────────────────────────────────────────
 
 academicRouter.get(
@@ -441,6 +464,19 @@ academicRouter.delete(
   }),
 );
 
+academicRouter.post(
+  '/subjects/bulk-delete',
+  asyncHandler(async (req, res) => {
+    const parsed = bulkIdsSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const institutionId = await getDefaultInstitutionId();
+    const result = await prisma.academicSubject.deleteMany({
+      where: { institutionId, id: { in: parsed.data.ids } },
+    });
+    return res.json({ deleted: result.count });
+  }),
+);
+
 // ─── Syllabus ─────────────────────────────────────────────────────────────────
 
 academicRouter.get(
@@ -561,6 +597,30 @@ academicRouter.patch(
     if (body.revisionDeadline) data.revisionDeadline = new Date(String(body.revisionDeadline));
     const row = await prisma.academicSyllabusChapter.update({ where: { id: existing.id }, data });
     return res.json({ record: serializeSyllabusChapter(row) });
+  }),
+);
+
+academicRouter.delete(
+  '/syllabus/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const existing = await prisma.academicSyllabusChapter.findFirst({ where: { institutionId, id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    await prisma.academicSyllabusChapter.delete({ where: { id: existing.id } });
+    return res.json({ ok: true });
+  }),
+);
+
+academicRouter.post(
+  '/syllabus/bulk-delete',
+  asyncHandler(async (req, res) => {
+    const parsed = bulkIdsSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const institutionId = await getDefaultInstitutionId();
+    const result = await prisma.academicSyllabusChapter.deleteMany({
+      where: { institutionId, id: { in: parsed.data.ids } },
+    });
+    return res.json({ deleted: result.count });
   }),
 );
 
@@ -840,17 +900,35 @@ academicRouter.post(
     const parsed = lessonPlanSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const institutionId = await getDefaultInstitutionId();
+    const academicYear = parsed.data.academicYear || '2025-26';
     const allocated = await isClassSubjectAllocated(
       institutionId,
-      parsed.data.academicYear || '2025-26',
+      academicYear,
       parsed.data.className,
       parsed.data.sectionName || '',
       parsed.data.subjectName,
     );
-    if (!allocated) {
+    const classSection = allocated
+      ? true
+      : await prisma.academicClassSection.findFirst({
+          where: {
+            institutionId,
+            academicYear,
+            className: { equals: parsed.data.className.trim(), mode: 'insensitive' },
+            sectionName: { equals: (parsed.data.sectionName || '').trim(), mode: 'insensitive' },
+          },
+          select: { id: true },
+        });
+    const subjectExists = allocated
+      ? true
+      : await prisma.academicSubject.findFirst({
+          where: { institutionId, subjectName: { equals: parsed.data.subjectName.trim(), mode: 'insensitive' } },
+          select: { id: true },
+        });
+    if (!allocated && (!classSection || !subjectExists)) {
       return res.status(400).json({
         error:
-          'Class, section and subject must match an existing teacher or subject allocation. Allocate them first under Subject Management or Teacher Allocation.',
+          'Class, section and subject must exist in Class & Sections and Subjects (or a teacher/subject allocation). Sync classes first, then try again.',
       });
     }
     const recordId = await nextAcademicRecordId(institutionId, 'lessonPlan');
@@ -958,6 +1036,19 @@ academicRouter.post(
   }),
 );
 
+academicRouter.post(
+  '/lesson-plans/bulk-delete',
+  asyncHandler(async (req, res) => {
+    const parsed = bulkIdsSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const institutionId = await getDefaultInstitutionId();
+    const result = await prisma.academicLessonPlan.deleteMany({
+      where: { institutionId, id: { in: parsed.data.ids } },
+    });
+    return res.json({ deleted: result.count });
+  }),
+);
+
 academicRouter.patch(
   '/lesson-plans/:id',
   asyncHandler(async (req, res) => {
@@ -992,6 +1083,17 @@ academicRouter.patch(
       },
     });
     return res.json({ record: serializeLessonPlan(row) });
+  }),
+);
+
+academicRouter.delete(
+  '/lesson-plans/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const existing = await prisma.academicLessonPlan.findFirst({ where: { institutionId, id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    await prisma.academicLessonPlan.delete({ where: { id: existing.id } });
+    return res.json({ ok: true });
   }),
 );
 
@@ -1328,6 +1430,30 @@ academicRouter.patch(
     }
     const row = await prisma.academicHomework.update({ where: { id: existing.id }, data });
     return res.json({ record: serializeHomework(row) });
+  }),
+);
+
+academicRouter.delete(
+  '/homework/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const existing = await prisma.academicHomework.findFirst({ where: { institutionId, id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    await prisma.academicHomework.delete({ where: { id: existing.id } });
+    return res.json({ ok: true });
+  }),
+);
+
+academicRouter.post(
+  '/homework/bulk-delete',
+  asyncHandler(async (req, res) => {
+    const parsed = bulkIdsSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const institutionId = await getDefaultInstitutionId();
+    const result = await prisma.academicHomework.deleteMany({
+      where: { institutionId, id: { in: parsed.data.ids } },
+    });
+    return res.json({ deleted: result.count });
   }),
 );
 
@@ -2038,6 +2164,32 @@ academicRouter.post(
       teacherName: parsed.data.teacherName,
     });
     return res.status(201).json({ record: row, homeworkRemapped: remap.remapped });
+  }),
+);
+
+academicRouter.delete(
+  '/teacher-allocations/:id',
+  asyncHandler(async (req, res) => {
+    const institutionId = await getDefaultInstitutionId();
+    const existing = await prisma.academicTeacherAllocation.findFirst({
+      where: { institutionId, id: req.params.id },
+    });
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    await prisma.academicTeacherAllocation.delete({ where: { id: existing.id } });
+    return res.json({ ok: true });
+  }),
+);
+
+academicRouter.post(
+  '/teacher-allocations/bulk-delete',
+  asyncHandler(async (req, res) => {
+    const parsed = bulkIdsSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const institutionId = await getDefaultInstitutionId();
+    const result = await prisma.academicTeacherAllocation.deleteMany({
+      where: { institutionId, id: { in: parsed.data.ids } },
+    });
+    return res.json({ deleted: result.count });
   }),
 );
 

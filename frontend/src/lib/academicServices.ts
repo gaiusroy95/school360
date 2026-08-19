@@ -377,6 +377,13 @@ export async function deleteClassSection(id: string) {
   return api<{ ok: boolean }>(`/api/academic/class-sections/${id}`, { method: 'DELETE' });
 }
 
+export async function bulkDeleteClassSections(ids: string[]) {
+  return api<{ deleted: number }>('/api/academic/class-sections/bulk-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  });
+}
+
 export async function fetchAcademicSubjects() {
   return api<{ records: AcademicSubject[] }>('/api/academic/subjects');
 }
@@ -438,6 +445,13 @@ export async function deleteAcademicSubject(id: string) {
   return api<{ ok: boolean }>(`/api/academic/subjects/${id}`, { method: 'DELETE' });
 }
 
+export async function bulkDeleteAcademicSubjects(ids: string[]) {
+  return api<{ deleted: number }>('/api/academic/subjects/bulk-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  });
+}
+
 export async function fetchSyllabus(params?: { academicYear?: string; className?: string }) {
   return api<{ records: Record<string, unknown>[] }>(`/api/academic/syllabus${qs(params)}`);
 }
@@ -475,6 +489,17 @@ export async function bulkUploadSyllabusChapters(payload: {
 
 export async function updateSyllabusChapter(id: string, payload: Record<string, unknown>) {
   return api<{ record: Record<string, unknown> }>(`/api/academic/syllabus/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+}
+
+export async function deleteSyllabusChapter(id: string) {
+  return api<{ ok: boolean }>(`/api/academic/syllabus/${id}`, { method: 'DELETE' });
+}
+
+export async function bulkDeleteSyllabusChapters(ids: string[]) {
+  return api<{ deleted: number }>('/api/academic/syllabus/bulk-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  });
 }
 
 export async function fetchTimetable(params?: {
@@ -577,6 +602,17 @@ export async function updateLessonPlan(id: string, payload: Record<string, unkno
   return api<{ record: LessonPlan }>(`/api/academic/lesson-plans/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
 }
 
+export async function deleteLessonPlan(id: string) {
+  return api<{ ok: boolean }>(`/api/academic/lesson-plans/${id}`, { method: 'DELETE' });
+}
+
+export async function bulkDeleteLessonPlans(ids: string[]) {
+  return api<{ deleted: number }>('/api/academic/lesson-plans/bulk-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  });
+}
+
 export async function createClassTestForLessonPlan(lessonPlanId: string, payload?: { title?: string; maxMarks?: number }) {
   return api<{ record: ClassTest }>(`/api/academic/lesson-plans/${lessonPlanId}/class-test`, { method: 'POST', body: JSON.stringify(payload || {}) });
 }
@@ -669,6 +705,17 @@ export async function uploadHomeworkAttachment(payload: {
 
 export async function updateHomework(id: string, payload: Record<string, unknown>) {
   return api<{ record: Homework }>(`/api/academic/homework/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+}
+
+export async function deleteHomework(id: string) {
+  return api<{ ok: boolean }>(`/api/academic/homework/${id}`, { method: 'DELETE' });
+}
+
+export async function bulkDeleteHomework(ids: string[]) {
+  return api<{ deleted: number }>('/api/academic/homework/bulk-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  });
 }
 
 export type CalendarEvent = {
@@ -921,6 +968,17 @@ export async function fetchTeacherAllocations(academicYear?: string) {
 
 export async function createTeacherAllocation(payload: Record<string, unknown>) {
   return api<{ record: Record<string, unknown> }>('/api/academic/teacher-allocations', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export async function deleteTeacherAllocation(id: string) {
+  return api<{ ok: boolean }>(`/api/academic/teacher-allocations/${id}`, { method: 'DELETE' });
+}
+
+export async function bulkDeleteTeacherAllocations(ids: string[]) {
+  return api<{ deleted: number }>('/api/academic/teacher-allocations/bulk-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  });
 }
 
 // ─── Teacher Roster Planner ───────────────────────────────────────────────────

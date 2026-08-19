@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Ban,
   Calendar,
@@ -29,6 +29,7 @@ import {
   fetchHrLeavePolicies,
   fetchHrLeavePolicy,
   fetchHrLeaveSettings,
+  syncHrLeaveFromAttendance,
   type EmployeeOption,
   type HrLeaveDashboard,
 } from '../../../lib/hrServices';
@@ -42,7 +43,7 @@ import {
   StatusBadge,
 } from '../FeeFinanceManagement/FeeFinanceUi';
 
-const ACADEMIC_YEARS = ['2025-26', '2024-25', '2023-24'];
+const ACADEMIC_YEARS = ['2026-27', '2025-26', '2024-25', '2023-24'];
 const CAMPUSES = ['Main Campus', 'North Campus', 'South Campus', 'Junior Wing'];
 const LEAVE_TABS = [
   'Leave Requests',
@@ -121,6 +122,7 @@ type LeaveRequest = {
   statusLabel: string;
   remarks: string;
   reviewerRemarks: string;
+  source?: string;
 };
 
 type PolicyRow = Record<string, unknown>;
@@ -183,7 +185,7 @@ function UtilizationBar({ pct }: { pct: number }) {
 
 export function LeaveManagementView() {
   const now = new Date();
-  const [academicYear, setAcademicYear] = useState('2025-26');
+  const [academicYear, setAcademicYear] = useState('2026-27');
   const [campus, setCampus] = useState('Main Campus');
   const [calYear, setCalYear] = useState(now.getFullYear());
   const [calMonth, setCalMonth] = useState(now.getMonth() + 1);
@@ -236,19 +238,27 @@ export function LeaveManagementView() {
   const [workflowSaving, setWorkflowSaving] = useState(false);
 
   const loadDashboard = useCallback(
-    async (seed = false) => {
+    async (opts?: { seed?: boolean; sync?: boolean }) => {
       setLoading(true);
       setError('');
       try {
-        const res = await fetchHrLeaveDashboard({
-          academicYear,
-          campus,
-          year: calYear,
-          month: calMonth,
-          seed,
-        });
+        const res = opts?.sync
+          ? await syncHrLeaveFromAttendance(academicYear)
+          : await fetchHrLeaveDashboard({
+              academicYear,
+              campus,
+              year: calYear,
+              month: calMonth,
+            });
         setData(res);
-        if (seed) setMessage('Leave management demo data loaded');
+        if (opts?.sync) {
+          const synced = res.sync?.fromAttendance ?? 0;
+          setMessage(
+            'message' in res && res.message
+              ? String(res.message)
+              : `Leave and attendance synced · ${synced} record(s) from Attendance & Leave`,
+          );
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load leave dashboard');
       } finally {
@@ -258,12 +268,8 @@ export function LeaveManagementView() {
     [academicYear, campus, calYear, calMonth],
   );
 
-  const initialLoad = useRef(true);
-
   useEffect(() => {
-    const seed = initialLoad.current;
-    initialLoad.current = false;
-    void loadDashboard(seed);
+    void loadDashboard();
   }, [academicYear, campus, calYear, calMonth, loadDashboard]);
 
   useEffect(() => {
@@ -375,7 +381,7 @@ export function LeaveManagementView() {
       setMessage(asDraft ? 'Leave saved as draft' : 'Leave application submitted');
       setApplyOpen(false);
       setApplyForm({ employeeId: '', leaveType: 'CL', fromDate: todayIso(), toDate: todayIso(), session: 'FULL', reason: '' });
-      void loadDashboard(false);
+      void loadDashboard();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to submit leave');
     } finally {
@@ -399,7 +405,7 @@ export function LeaveManagementView() {
       setMessage(`Leave ${workflowAction === 'approve' ? 'approved' : 'rejected'} successfully`);
       setWorkflowOpen(false);
       setSelectedLeave(null);
-      void loadDashboard(false);
+      void loadDashboard();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Workflow action failed');
     } finally {
@@ -426,7 +432,7 @@ export function LeaveManagementView() {
   const exportLeaveRequests = () => {
     downloadCsv(
       'leave-requests.csv',
-      ['Leave ID', 'Employee', 'Department', 'Leave Type', 'Date Range', 'Days', 'Reason', 'Status'],
+      ['Leave ID', 'Employee', 'Department', 'Leave Type', 'Date Range', 'Days', 'Reason', 'Status', 'Source'],
       leaveRequests.map((r) => [
         r.recordId,
         r.employeeName,
@@ -436,6 +442,7 @@ export function LeaveManagementView() {
         String(r.totalDays),
         r.reason,
         r.statusLabel,
+        r.source || 'Leave',
       ]),
     );
   };
@@ -493,7 +500,7 @@ export function LeaveManagementView() {
       <AcademicPageHeader
         breadcrumb="HR & Payroll Management › Leave Management"
         title="Leave Management & Holiday Mapping"
-        subtitle="Manage employee leave applications, balances, holiday calendar, and leave policies across campuses."
+        subtitle="Leave requests, balances and holiday mapping stay in sync with Attendance & Leave."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <select
@@ -520,10 +527,13 @@ export function LeaveManagementView() {
             <button type="button" onClick={() => setHolidayModalOpen(true)} className={am.btnSecondary}>
               <CalendarDays size={14} /> Holiday Calendar
             </button>
+            <button type="button" onClick={() => void loadDashboard({ sync: true })} className={am.btnSecondary}>
+              <RefreshCcw size={14} /> Sync Attendance
+            </button>
             <button type="button" onClick={() => setApplyOpen(true)} className={am.btnPrimary}>
               <Plus size={14} /> Apply Leave
             </button>
-            <button type="button" onClick={() => void loadDashboard(false)} className={am.btnSecondary} title="Refresh">
+            <button type="button" onClick={() => void loadDashboard()} className={am.btnSecondary} title="Refresh">
               <RefreshCcw size={14} />
             </button>
           </div>
@@ -594,6 +604,7 @@ export function LeaveManagementView() {
                     <th className="px-2 py-2 text-left font-semibold">Date Range</th>
                     <th className="px-2 py-2 text-right font-semibold">Total Days</th>
                     <th className="px-2 py-2 text-left font-semibold">Reason</th>
+                    <th className="px-2 py-2 text-left font-semibold">Source</th>
                     <th className="px-2 py-2 text-left font-semibold">Status</th>
                     <th className="px-2 py-2 text-center font-semibold">Actions</th>
                   </tr>
@@ -601,7 +612,7 @@ export function LeaveManagementView() {
                 <tbody>
                   {pagedRequests.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-2 py-8 text-center text-slate-400">No leave requests found</td>
+                      <td colSpan={10} className="px-2 py-8 text-center text-slate-400">No leave requests found. Mark leave in Attendance & Leave or click Sync Attendance.</td>
                     </tr>
                   ) : (
                     pagedRequests.map((row) => (
@@ -619,6 +630,11 @@ export function LeaveManagementView() {
                         <td className="px-2 py-2 text-slate-600 whitespace-nowrap">{row.dateRange}</td>
                         <td className="px-2 py-2 text-right tabular-nums font-semibold">{row.totalDays}</td>
                         <td className="px-2 py-2 text-slate-600 max-w-[140px] truncate" title={row.reason}>{row.reason}</td>
+                        <td className="px-2 py-2">
+                          <span className={`text-[10px] font-semibold ${row.source === 'Attendance' ? 'text-indigo-700' : 'text-slate-500'}`}>
+                            {row.source || 'Leave'}
+                          </span>
+                        </td>
                         <td className="px-2 py-2"><StatusBadge status={row.status} /></td>
                         <td className="px-2 py-2">
                           <div className="flex items-center justify-center gap-1">

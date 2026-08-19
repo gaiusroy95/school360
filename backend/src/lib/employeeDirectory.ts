@@ -1,5 +1,6 @@
 import { FeeMasterStatus, PayrollEmploymentType, Prisma } from '@prisma/client';
 import { prisma } from './prisma.js';
+import { syncEmployeeToDepartment } from './employeeDepartmentSync.js';
 
 export type EmployeeEducation = { degree: string; year: string; institution: string };
 export type EmployeeExperience = { company: string; role: string; from: string; to: string };
@@ -155,8 +156,11 @@ function buildDirectoryRow(row: {
     id: row.id,
     recordId: row.employeeCode,
     name: row.fullName,
-    classGroup: row.classGroup || row.department,
-    details: `${row.designation} · ${row.department}`,
+    department: row.department || '',
+    classGroup: row.classGroup || '',
+    designation: row.designation || '',
+    details: [row.designation, row.department].filter(Boolean).join(' · ') || '—',
+    mapping: [row.department, row.classGroup].filter(Boolean).join(' / ') || 'Unmapped',
     updated: formatDate(row.updatedAt),
     status: row.status,
   };
@@ -233,10 +237,16 @@ async function loadEmployeeRow(institutionId: string, id: string) {
 
 export async function listEmployeeDirectory(
   institutionId: string,
-  filters?: { q?: string; status?: FeeMasterStatus },
+  filters?: { q?: string; status?: FeeMasterStatus; department?: string; classGroup?: string },
 ) {
   const where: Prisma.PayrollEmployeeWhereInput = { institutionId };
   if (filters?.status) where.status = filters.status;
+  if (filters?.department?.trim()) {
+    where.department = { equals: filters.department.trim(), mode: 'insensitive' };
+  }
+  if (filters?.classGroup?.trim()) {
+    where.classGroup = { equals: filters.classGroup.trim(), mode: 'insensitive' };
+  }
   if (filters?.q?.trim()) {
     const q = filters.q.trim();
     where.OR = [
@@ -323,6 +333,7 @@ export async function updateEmployeeDirectoryProfile(
   id: string,
   data: {
     fullName?: string;
+    employeeCode?: string;
     employmentType?: PayrollEmploymentType;
     department?: string;
     designation?: string;
@@ -344,10 +355,18 @@ export async function updateEmployeeDirectoryProfile(
   const currentProfile = parseProfile(existing.profileData);
   const nextProfile = data.profile ? { ...currentProfile, ...data.profile } : currentProfile;
 
+  if (data.employeeCode?.trim() && data.employeeCode.trim() !== existing.employeeCode) {
+    const taken = await prisma.payrollEmployee.findFirst({
+      where: { institutionId, employeeCode: data.employeeCode.trim(), NOT: { id } },
+    });
+    if (taken) throw new Error(`Employee code ${data.employeeCode.trim()} already exists`);
+  }
+
   const row = await prisma.payrollEmployee.update({
     where: { id },
     data: {
       fullName: data.fullName?.trim() || undefined,
+      employeeCode: data.employeeCode?.trim() || undefined,
       employmentType: data.employmentType,
       department: data.department?.trim(),
       designation: data.designation?.trim(),
@@ -372,8 +391,26 @@ export async function updateEmployeeDirectoryProfile(
     },
   });
 
+  await syncDirectoryEmployee(institutionId, row.id);
   const school = await institutionName(institutionId);
   return buildDetail(row, school);
+}
+
+async function syncDirectoryEmployee(institutionId: string, employeeId: string) {
+  const emp = await prisma.payrollEmployee.findFirst({
+    where: { institutionId, id: employeeId },
+    select: { id: true, department: true, designation: true, profileData: true },
+  });
+  if (!emp) return;
+  const profile = emp.profileData && typeof emp.profileData === 'object' && !Array.isArray(emp.profileData)
+    ? (emp.profileData as { reportingTo?: string })
+    : {};
+  await syncEmployeeToDepartment(institutionId, {
+    id: emp.id,
+    department: emp.department,
+    designation: emp.designation,
+    profileReportingTo: profile.reportingTo,
+  });
 }
 
 export async function createEmployeeDirectoryEntry(
@@ -422,6 +459,7 @@ export async function createEmployeeDirectoryEntry(
     },
   });
 
+  await syncDirectoryEmployee(institutionId, row.id);
   return buildDetail(row, school);
 }
 
@@ -663,6 +701,7 @@ export async function bulkUpsertEmployeeDirectory(
         await upsertEmployeeSalaryStructure(institutionId, employee.id, employee.employeeCode, row);
         salaryUpserted += 1;
       }
+      await syncDirectoryEmployee(institutionId, employee.id);
     } catch (err) {
       errors.push(`Row ${line}: ${err instanceof Error ? err.message : 'Failed'}`);
     }

@@ -1,5 +1,6 @@
 import { FeeMasterStatus, Prisma } from '@prisma/client';
 import { prisma } from './prisma.js';
+import { ensureHrDepartmentForLabel, findHrDepartmentByLabel } from './employeeDepartmentSync.js';
 
 export type DesignationFilters = {
   q?: string;
@@ -73,6 +74,26 @@ async function employeeFillCounts(institutionId: string) {
   return map;
 }
 
+function designationWhere(institutionId: string, filters: DesignationFilters = {}): Prisma.HrDesignationWhereInput {
+  const where: Prisma.HrDesignationWhereInput = { institutionId };
+  if (filters.status) where.status = filters.status;
+  if (filters.department?.trim()) {
+    where.department = { equals: filters.department.trim(), mode: 'insensitive' };
+  }
+  if (filters.designationType?.trim()) {
+    where.designationType = { equals: filters.designationType.trim(), mode: 'insensitive' };
+  }
+  if (filters.q?.trim()) {
+    const term = filters.q.trim();
+    where.OR = [
+      { name: { contains: term, mode: 'insensitive' } },
+      { department: { contains: term, mode: 'insensitive' } },
+      { designationType: { contains: term, mode: 'insensitive' } },
+    ];
+  }
+  return where;
+}
+
 function serializeRow(
   row: {
     id: string;
@@ -109,19 +130,7 @@ export async function getDesignationsDashboard(
 ): Promise<DesignationsDashboard> {
   const page = Math.max(1, filters.page ?? 1);
   const pageSize = Math.min(100, Math.max(1, filters.pageSize ?? 20));
-
-  const where: Prisma.HrDesignationWhereInput = { institutionId };
-  if (filters.status) where.status = filters.status;
-  if (filters.department) where.department = filters.department;
-  if (filters.designationType) where.designationType = filters.designationType;
-  if (filters.q?.trim()) {
-    const term = filters.q.trim();
-    where.OR = [
-      { name: { contains: term, mode: 'insensitive' } },
-      { department: { contains: term, mode: 'insensitive' } },
-      { designationType: { contains: term, mode: 'insensitive' } },
-    ];
-  }
+  const where = designationWhere(institutionId, filters);
 
   const [allRows, pagedRows, departments, types, employeeCounts] = await Promise.all([
     prisma.hrDesignation.findMany({ where: { institutionId, status: 'ACTIVE' } }),
@@ -261,6 +270,115 @@ export async function deleteHrDesignation(institutionId: string, id: string) {
   if (!existing) throw new Error('Designation not found');
   await prisma.hrDesignation.delete({ where: { id } });
   return { ok: true };
+}
+
+export async function listHrDesignationsExport(institutionId: string, filters: DesignationFilters = {}) {
+  const where = designationWhere(institutionId, filters);
+  const [rows, employeeCounts] = await Promise.all([
+    prisma.hrDesignation.findMany({
+      where,
+      orderBy: [{ department: 'asc' }, { name: 'asc' }],
+    }),
+    employeeFillCounts(institutionId),
+  ]);
+  return rows.map((r) => serializeRow(r, employeeCounts));
+}
+
+export type DesignationBulkRow = {
+  name: string;
+  department?: string;
+  departmentCode?: string;
+  designationType?: string;
+  totalPositions?: number;
+  filledPositions?: number;
+  status?: string;
+};
+
+function normalizeStatus(raw?: string) {
+  const value = String(raw || 'ACTIVE').trim().toUpperCase().replace(/\s+/g, '_');
+  if (value === 'INACTIVE' || value === 'DISABLED') return 'INACTIVE';
+  return 'ACTIVE';
+}
+
+async function resolveMappedDepartment(institutionId: string, row: DesignationBulkRow) {
+  const code = String(row.departmentCode || '').trim();
+  const label = String(row.department || '').trim();
+  if (code) {
+    const byCode = await findHrDepartmentByLabel(institutionId, code);
+    if (byCode) return byCode;
+  }
+  if (label) {
+    const byName = await findHrDepartmentByLabel(institutionId, label);
+    if (byName) return byName;
+    return ensureHrDepartmentForLabel(institutionId, label);
+  }
+  return null;
+}
+
+export async function bulkUpsertHrDesignations(institutionId: string, rows: DesignationBulkRow[]) {
+  let created = 0;
+  let updated = 0;
+  const errors: string[] = [];
+  const mappedDepartments = new Set<string>();
+
+  for (let i = 0; i < rows.length; i += 1) {
+    const line = i + 2;
+    const row = rows[i];
+    const name = String(row.name || '').trim();
+    if (!name) {
+      errors.push(`Row ${line}: designation name is required`);
+      continue;
+    }
+    try {
+      const dept = await resolveMappedDepartment(institutionId, row);
+      const department = (dept?.name || String(row.department || '').trim());
+      if (!department) {
+        errors.push(`Row ${line}: department or departmentCode is required to map "${name}"`);
+        continue;
+      }
+      mappedDepartments.add(department);
+
+      const existing = await prisma.hrDesignation.findFirst({
+        where: {
+          institutionId,
+          name: { equals: name, mode: 'insensitive' },
+          department: { equals: department, mode: 'insensitive' },
+        },
+      });
+
+      const payload = {
+        name,
+        department,
+        designationType: String(row.designationType || existing?.designationType || 'Teaching').trim() || 'Teaching',
+        totalPositions: Number.isFinite(row.totalPositions) ? Math.max(0, Number(row.totalPositions)) : existing?.totalPositions ?? 1,
+        filledPositions: Number.isFinite(row.filledPositions)
+          ? Math.max(0, Number(row.filledPositions))
+          : existing?.filledPositions ?? 0,
+        status: row.status ? normalizeStatus(row.status) : existing?.status || 'ACTIVE',
+      };
+
+      if (existing) {
+        await prisma.hrDesignation.update({ where: { id: existing.id }, data: payload });
+        updated += 1;
+      } else {
+        await prisma.hrDesignation.create({ data: { institutionId, ...payload } });
+        created += 1;
+      }
+    } catch (err) {
+      errors.push(`Row ${line}: ${err instanceof Error ? err.message : 'Failed'}`);
+    }
+  }
+
+  return {
+    created,
+    updated,
+    total: rows.length,
+    mappedDepartments: mappedDepartments.size,
+    errors,
+    message: `Imported ${created + updated} designation(s) (${created} created, ${updated} updated) mapped to ${mappedDepartments.size} department(s)${
+      errors.length ? ` · ${errors.length} row error(s)` : ''
+    }`,
+  };
 }
 
 type SeedRow = [string, string, string, number, number];
