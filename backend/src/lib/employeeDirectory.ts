@@ -348,7 +348,7 @@ export async function updateEmployeeDirectoryProfile(
     pfNumber?: string;
     esicNumber?: string;
     status?: FeeMasterStatus;
-    profile?: Partial<EmployeeProfileData>;
+    profile?: Partial<EmployeeProfileData> | Record<string, unknown>;
   },
 ) {
   const existing = await loadEmployeeRow(institutionId, id);
@@ -424,8 +424,8 @@ export async function createEmployeeDirectoryEntry(
     classGroup?: string;
     mobile?: string;
     email?: string;
-    joinDate?: string;
-    profile?: Partial<EmployeeProfileData>;
+    joinDate?: string | null;
+    profile?: Partial<EmployeeProfileData> | Record<string, unknown>;
   },
 ) {
   const count = await prisma.payrollEmployee.count({ where: { institutionId } });

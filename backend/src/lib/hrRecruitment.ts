@@ -122,7 +122,7 @@ export async function getRecruitmentDashboard(institutionId: string, academicYea
     }),
     prisma.hrRecruitmentOffer.findMany({
       where: { institutionId },
-      include: { application: { include: { candidate: { select: { fullName: true } } } } },
+      include: { application: { include: { candidate: { select: { fullName: true, email: true } } } } },
       orderBy: { createdAt: 'desc' },
     }),
     prisma.hrBackgroundVerification.findMany({ where: { institutionId } }),
